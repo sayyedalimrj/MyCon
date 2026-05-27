@@ -1,0 +1,693 @@
+project:
+  name: site01
+  run_id: 2026-04-30_site01_baseline
+  root: /workspace
+  random_seed: 42
+inputs:
+  video: data/raw/site01.mp4
+  ifc: data/bim/design/model.ifc
+  schedule: data/bim/design/schedule.csv
+paths:
+  normalized_video: data/normalized/site01_normalized.mp4
+  metadata_json: data/normalized/site01_metadata.json
+  quality_csv: data/normalized/site01_frame_quality.csv
+  keyframes_dir: data/frames/key/site01
+  manifest_csv: data/frames/key/site01_manifest.csv
+  contact_sheet: data/frames/key/site01_contact_sheet.jpg
+  colmap_db: data/sfm/site01/database.db
+  sparse_dir: data/sparse/site01
+  sparse_refined_dir: data/sparse_refined/site01
+  dense_workspace: data/dense/site01
+  fused_ply: data/dense/site01/fused.ply
+  da3_dir: data/da3/site01
+  clean_dir: data/clean/site01
+  bim_aligned_dir: data/bim/aligned/site01
+  metrics_dir: data/bim/metrics/site01
+  sfm_dir: data/sfm/site01
+  sparse_report_json: runs/2026-04-30_site01_baseline/reports/sparse_stats.json
+  sparse_mask_dir: data/masks/site01
+  da3_decision_json: data/da3/site01/decision.json
+  da3_depth_manifest_csv: data/da3/site01/depth_manifest.csv
+  da3_alignment_manifest_csv: data/da3/site01/alignment_manifest.csv
+  da3_fusion_plan_json: data/da3/site01/fusion_plan.json
+  da3_assisted_ply: data/da3/site01/da3_assisted_points.ply
+  da3_report_json: runs/2026-04-30_site01_baseline/reports/da3_summary.json
+  clean_downsampled_cloud: data/clean/site01/downsampled_cloud.ply
+  clean_cloud: data/clean/site01/cleaned_cloud.ply
+  clean_mesh: data/clean/site01/mesh.ply
+  clean_planes_json: data/clean/site01/planes.json
+  clean_plane_clouds_dir: data/clean/site01/plane_clouds
+  cleanup_report_json: runs/2026-04-30_site01_baseline/reports/cleanup_summary.json
+video:
+  normalize_fps: 30
+  sample_fps_for_quality: 2
+  output_pix_fmt: yuv420p
+  codec: libx264
+  codec_fallback: libx264
+  crf: 18
+  preset: medium
+  overwrite: true
+  skip_reencode_if_compliant: false
+  force_constant_frame_rate: true
+  cfr_option: vsync
+  verify_cfr_after_normalization: true
+  cfr_tolerance_fps: 0.05
+  preserve_audio: false
+  clear_rotation_metadata: true
+  ffmpeg_loglevel: error
+video_quality:
+  min_blur_laplacian: 80.0
+  adaptive_blur_enabled: true
+  adaptive_blur_window: 25
+  adaptive_blur_multiplier: 0.6
+  adaptive_blur_floor: 25.0
+  adaptive_blur_update_min_ratio: 0.75
+  adaptive_blur_min_window_samples: 5
+  max_duplicate_similarity: 0.96
+  max_exposure_jump: 0.25
+  min_motion_score: 0.01
+  max_motion_score: 0.75
+  fast_seek: false
+  scoring_max_width: 1280
+  scoring_max_height: 720
+  use_histogram_similarity: true
+  histogram_bins: 32
+  use_feature_density: true
+  feature_detector: ORB
+  feature_max_keypoints: 1000
+  target_feature_count: 450
+  min_feature_density_score: 0.08
+  reject_low_feature_density: false
+  rolling_shutter_warning_threshold: 0.65
+  jitter_warning_threshold: 0.35
+  reject_rolling_shutter_warning: false
+  reject_jitter_warning: false
+  quality_weights:
+    sharpness: 0.25
+    exposure_stability: 0.2
+    motion: 0.2
+    novelty: 0.15
+    feature_density: 0.2
+keyframes:
+  min_time_gap_sec: 0.5
+  max_frames_first_run: 250
+  min_segment_duration_sec: 1.0
+  min_segment_frames: 3
+  max_segment_gap_sec: 2.0
+  contact_sheet_thumb_width: 240
+  contact_sheet_max_images: 80
+  jpeg_quality: 92
+  selection_quality_weight: 0.5
+  selection_novelty_weight: 0.3
+  selection_feature_weight: 0.2
+  dense_keep_ratio: 1.0
+  fallback_min_keyframes: 24
+  allow_relaxed_fallback: true
+  fallback_blur_ratio: 0.65
+  fallback_exposure_multiplier: 1.5
+  fallback_motion_multiplier: 1.15
+  random_seek_extraction: false
+  reject_stage1_warnings: false
+  reject_low_feature_density: false
+  verify_frame_index_bounds: true
+  verify_timestamp_frame_consistency: true
+  max_timestamp_frame_index_drift_sec: 0.1
+  emergency_fallback_if_no_keyframes: true
+colmap:
+  camera_model: SIMPLE_RADIAL
+  single_camera: true
+  feature_type: ALIKED_N16ROT
+  matcher_type: ALIKED_LIGHTGLUE
+  fallback_feature_type: SIFT
+  fallback_matcher_type: SIFT_LIGHTGLUE
+  executable: colmap
+  enable_fallback: true
+  allow_sift_bruteforce_emergency: false
+  emergency_matcher_type: SIFT_BRUTEFORCE
+  matching_strategy: sequential
+  sequential_overlap: 15
+  sequential_quadratic_overlap: true
+  sequential_loop_detection: false
+  sequential_vocab_tree_path: null
+  min_input_images: 2
+  stage_images_mode: copy
+  aliked_max_num_features: 2048
+  sift_max_num_features: 2048
+  mapper_min_num_matches: 15
+  mapper_multiple_models: true
+  mapper_extract_colors: false
+  qt_qpa_platform: offscreen
+  download_models: true
+  model_cache_dir: data/sfm/model_cache
+  model_download_timeout_sec: 1800
+  use_existing_masks: false
+  mask_path: data/masks/site01
+  require_masks: false
+refinement:
+  run_bundle_adjustment: true
+  pixsfm_enabled: false
+  enabled: true
+  method: colmap_bundle_adjustment
+  input_sparse_dir: data/sparse/site01/0
+  output_sparse_dir: data/sparse_refined/site01/0
+  work_dir: data/sparse_refined/site01/_work
+  report_json: runs/2026-04-30_site01_baseline/reports/refinement_stats.json
+  command_history_json: data/sparse_refined/site01/command_history.json
+  validate_binary_before_refinement: true
+  keep_work_dir: true
+  ba_max_num_iterations: 100
+  ba_max_linear_solver_iterations: 200
+  ba_function_tolerance: 1.0e-06
+  ba_gradient_tolerance: 1.0e-10
+  ba_parameter_tolerance: 1.0e-08
+  refine_focal_length: true
+  refine_principal_point: false
+  refine_extra_params: true
+  quality_gate_min_registered_images: 2
+  quality_gate_min_points: 1
+  quality_gate_max_point_loss_ratio: 0.4
+  quality_gate_fail_on_point_loss: true
+  quality_gate_max_reprojection_error_increase_ratio: 0.1
+  quality_gate_max_reprojection_error_increase_abs_px: 0.25
+  quality_gate_fail_on_reprojection_error_increase: true
+  ba_rounds: 1
+  ba_num_threads: -1
+  fail_on_quality_gate: true
+  pixsfm_allow_missing: true
+dense:
+  max_image_size: 1600
+  geom_consistency: true
+  patch_window_radius: 5
+  filter_min_ncc: 0.05
+  enabled: true
+  input_sparse_refined_dir: data/sparse_refined/site01/0
+  input_images_dir: data/sfm/site01/images
+  workspace_dir: data/dense/site01
+  fused_ply: data/dense/site01/fused.ply
+  workspace_format: COLMAP
+  output_type: COLMAP
+  report_json: runs/2026-04-30_site01_baseline/reports/dense_summary.json
+  command_history_json: data/dense/site01/command_history.json
+  min_input_images: 2
+  patch_match_max_image_size: 1600
+  patch_window_step: 1
+  patch_num_samples: 15
+  patch_num_iterations: 5
+  geom_consistency_regularizer: 0.3
+  geom_consistency_max_cost: 5.0
+  patch_filter: true
+  filter_min_triangulation_angle: 3.0
+  filter_min_num_consistent: 2
+  filter_geom_consistency_max_cost: 2.0
+  fusion_input_type: geometric
+  fusion_max_image_size: -1
+  fusion_min_num_pixels: 3
+  fusion_max_reproj_error: 2.0
+  fusion_max_depth_error: 0.02
+  quality_min_fused_points: 1000
+  quality_min_fused_points_per_image: 20.0
+  quality_min_depth_map_ratio_warning: 0.25
+  fail_on_quality_gate: true
+  use_existing_masks: false
+  mask_path: data/masks/site01
+  require_masks: false
+  fusion_bounding_box: null
+  keep_workspace: true
+  require_cuda: true
+  cuda_preflight: true
+  gpu_preflight: true
+  require_visible_gpu: false
+  adaptive_gpu_profile: true
+  adaptive_image_count_caps: true
+  patch_match_gpu_index: auto
+  patch_match_num_threads: -1
+  num_patch_match_src_images: 15
+  patch_match_cache_size: 32
+da3:
+  enabled: auto
+  model: DA3Metric-Large
+  activate_if_dense_coverage_below: 0.72
+  provider: precomputed
+  external_command: ''
+  external_command_shell: true
+  external_config_path: ''
+  depth_input_dir: data/da3/site01/raw_depth
+  depth_output_dir: data/da3/site01/raw_depth
+  aligned_depth_dir: data/da3/site01/aligned_depth
+  sparse_text_dir: data/da3/site01/sparse_txt
+  depth_file_extensions:
+  - .npy
+  - .npz
+  - .png
+  - .tif
+  - .tiff
+  - .pfm
+  activate_if_quality_gate_failed: true
+  activate_if_fused_vertices_below: 50000
+  activate_if_points_per_image_below: 100.0
+  activate_if_depth_map_ratio_below: 0.5
+  fail_if_required_but_unavailable: false
+  max_images: 80
+  min_alignment_anchors: 20
+  max_alignment_rmse_m: 2.0
+  min_alignment_inlier_ratio: 0.25
+  alignment_method: scale_only_ransac
+  alignment_ransac_iterations: 200
+  alignment_ransac_inlier_abs_m: 0.2
+  alignment_ransac_inlier_rel: 0.05
+  alignment_depth_bucket_count: 16
+  alignment_min_scale: 0.05
+  alignment_max_scale: 20.0
+  quality_min_aligned_depth_maps: 1
+  fuse_aligned_depth: true
+  fusion_stride: 8
+  fusion_min_depth_m: 0.1
+  fusion_max_depth_m: 80.0
+  fusion_max_points: 2000000
+  fusion_binary_ply: true
+  fusion_compressed_ply: false
+  fusion_edge_aware_filter: true
+  fusion_edge_threshold_m: 0.5
+  fusion_edge_relative_threshold: 0.08
+  fusion_bounding_box: null
+cleanup:
+  voxel_size_m: 0.025
+  statistical_nb_neighbors: 24
+  statistical_std_ratio: 2.0
+  enabled: true
+  input_candidates:
+  - data/da3/site01/da3_assisted_points.ply
+  - data/dense/site01/fused.ply
+  prefer_da3_assisted: true
+  fail_if_missing_input: true
+  output_dir: data/clean/site01
+  downsampled_cloud: data/clean/site01/downsampled_cloud.ply
+  cleaned_cloud: data/clean/site01/cleaned_cloud.ply
+  mesh_ply: data/clean/site01/mesh.ply
+  planes_json: data/clean/site01/planes.json
+  plane_clouds_dir: data/clean/site01/plane_clouds
+  report_json: runs/2026-04-30_site01_baseline/reports/cleanup_summary.json
+  max_input_points: 5000000
+  max_processing_points: 1500000
+  random_seed: 42
+  write_binary_ply: true
+  strict_quality_gate: false
+  dynamic_voxel_enabled: true
+  dynamic_voxel_max_iterations: 6
+  dynamic_voxel_growth_exponent: 0.5
+  dynamic_voxel_growth_margin: 1.05
+  statistical_enabled: true
+  radius_enabled: true
+  radius_nb_points: 8
+  radius_m: 0.5
+  remove_non_finite: true
+  remove_duplicated_points: true
+  preserve_colors: true
+  estimate_normals: true
+  normal_radius_m: 0.1
+  normal_max_nn: 40
+  normal_orientation_strategy: none
+  orient_normals_consistent_tangent_plane_k: 0
+  crop_bounding_box: null
+  crop_margin_m: 0.5
+  plane_extraction_enabled: true
+  normal_guided_plane_extraction: true
+  normal_guided_horizontal_dot_min: 0.85
+  normal_guided_wall_abs_dot_max: 0.35
+  normal_guided_max_horizontal_planes: 4
+  normal_guided_max_vertical_planes: 10
+  normal_guided_max_residual_planes: 2
+  normal_guided_allow_residual_planes: true
+  max_planes: 12
+  plane_distance_threshold_m: 0.035
+  plane_ransac_n: 3
+  plane_num_iterations: 1500
+  min_plane_points: 800
+  min_plane_ratio: 0.015
+  min_remaining_points: 2000
+  min_remaining_ratio: 0.15
+  plane_voxel_size_m: 0.035
+  classify_up_axis: z
+  floor_ceiling_normal_dot_min: 0.9
+  wall_vertical_abs_dot_max: 0.25
+  plane_merge_angle_deg: 7.5
+  plane_merge_distance_m: 0.08
+  mesh_enabled: true
+  mesh_method: ball_pivoting
+  poisson_depth: 9
+  poisson_scale: 1.1
+  poisson_linear_fit: false
+  poisson_trim_quantile: 0.02
+  ball_pivoting_radii_m:
+  - 0.04
+  - 0.08
+  - 0.16
+  mesh_min_vertices: 1000
+  fail_if_mesh_fails: false
+  mesh_plane_trim_enabled: false
+  mesh_plane_trim_distance_m: 0.12
+  mesh_plane_trim_min_planes: 2
+  mesh_plane_trim_min_keep_ratio: 0.25
+  quality_min_points: 10000
+  quality_max_removed_ratio: 0.85
+  quality_min_planes: 1
+  semantics_enabled: true
+  yolo_enabled: true
+  yolo_detections_jsonl: data/semantics/site01/yolo_detections.jsonl
+  yolo_summary_json: data/semantics/site01/yolo_summary.json
+  yolo_transient_classes:
+  - person
+  - worker
+  - car
+  - truck
+  - bus
+  - motorcycle
+  - bicycle
+  - excavator
+  - crane
+  - forklift
+  - loader
+  - machinery
+  semantic_color_filter_enabled: true
+  semantic_color_filter_activation: if_yolo_transients
+  semantic_color_filter_min_transient_frames: 1
+  semantic_color_filter_saturation_min: 0.45
+  semantic_color_filter_value_min: 0.35
+  semantic_color_filter_max_removed_ratio: 0.12
+  semantic_color_filter_hsv_ranges:
+  - - 18.0
+    - 48.0
+  - - 50.0
+    - 85.0
+  vlm_enabled: true
+  vlm_scene_report_json: data/semantics/site01/vlm_scene_report.json
+  vlm_summary_json: data/semantics/site01/vlm_summary.json
+  log_path: runs/2026-04-30_site01_baseline/logs/stage_07_cleanup.log
+  fail_on_quality_gate: false
+bim:
+  units: meters
+  icp_max_corr_distance_m: 0.08
+  enabled: true
+  scan_input_candidates:
+  - data/clean/site01/cleaned_cloud.ply
+  - data/clean/site01/clean.ply
+  - data/clean/site01/cleaned_cloud.pcd
+  - data/da3/site01/da3_assisted_points.ply
+  - data/dense/site01/fused.ply
+  bim_reference_ply: data/bim/aligned/site01/bim_reference.ply
+  bim_reference_mesh: data/bim/aligned/site01/bim_reference_mesh.ply
+  scan_aligned_ply: data/bim/aligned/site01/scan_aligned.ply
+  transform_json: data/bim/aligned/site01/transform_scan_to_bim.json
+  element_metadata_jsonl: data/bim/aligned/site01/bim_elements.jsonl
+  registration_report_json: runs/2026-04-30_site01_baseline/reports/registration_report.json
+  element_classes:
+  - IfcWall
+  - IfcSlab
+  - IfcColumn
+  - IfcBeam
+  - IfcDoor
+  - IfcWindow
+  - IfcStair
+  - IfcRailing
+  bim_sample_points: 200000
+  allow_synthetic_ifc_fallback_for_tests: false
+  initial_scale_strategy: fixed_1
+  known_initial_scale: 1.0
+  estimate_initial_scale_from_bbox: false
+  min_initial_scale: 0.01
+  max_initial_scale: 100.0
+  coarse_fpfh_enabled: true
+  coarse_voxel_size_m: 0.0
+  coarse_distance_multiplier: 2.5
+  coarse_min_fitness_accept: 0.05
+  visible_shell_filter_enabled: false
+  visible_shell_camera_radius_multiplier: 2.0
+  visible_shell_hpr_radius_multiplier: 20.0
+  visible_shell_min_keep_ratio: 0.2
+  visible_shell_max_removed_ratio: 0.8
+  schedule_filter_enabled: false
+  schedule_filter_csv: data/bim/design/schedule.csv
+  schedule_filter_keep_unmatched: true
+  current_project_day: null
+  schedule_filter_allowed_statuses:
+  - done
+  - complete
+  - completed
+  - in_progress
+  - started
+  - active
+  icp_enabled: true
+  icp_estimation: point_to_point_then_plane
+  icp_stages:
+  - point_to_point
+  - point_to_plane
+  icp_voxel_size_m: 0.0
+  icp_normal_radius_m: 0.08
+  icp_normal_max_nn: 40
+  icp_max_iteration: 80
+  icp_point_to_point_max_iteration: 80
+  icp_point_to_plane_max_iteration: 25
+  icp_relative_fitness: 1.0e-06
+  icp_relative_rmse: 1.0e-06
+  quality_min_icp_fitness: 0.05
+  quality_max_icp_rmse_m: 0.25
+  quality_scale_warning_ratio: 0.1
+  quality_nn_sample_limit: 200000
+  fail_on_low_registration_quality: false
+progress:
+  coverage_threshold: 0.65
+  deviation_threshold_m: 0.05
+  partial_observed_threshold: 0.2
+  registration_high_fitness_threshold: 0.5
+  registration_medium_fitness_threshold: 0.05
+  registration_high_confidence_score: 1.0
+  registration_medium_confidence_score: 0.65
+  registration_low_confidence_score: 0.25
+copilot:
+  enabled: true
+  default_view: front
+  low_confidence_threshold: 0.65
+  max_metric_rows: 20
+  paths:
+    evidence_dir: runs/2026-04-30_site01_baseline/copilot/evidence
+    render_dir: runs/2026-04-30_site01_baseline/copilot/renders
+    default_pointcloud: data/clean/site01/cleaned_cloud.ply
+    element_metrics_csv: data/bim/metrics/site01/element_metrics.csv
+    activity_progress_csv: data/bim/metrics/site01/activity_progress.csv
+    deviation_summary_json: data/bim/metrics/site01/deviation_summary.json
+    coverage_summary_json: data/bim/metrics/site01/coverage_summary.json
+    registration_quality_json: data/bim/metrics/site01/registration_quality.json
+    cleanup_summary_json: runs/2026-04-30_site01_baseline/reports/cleanup_summary.json
+    yolo_summary_json: data/semantics/site01/yolo_summary.json
+    vlm_summary_json: data/semantics/site01/vlm_summary.json
+  vlm:
+    provider: mock
+    endpoint: http://host.docker.internal:11434/api/chat
+    model: qwen3-vl:8b-thinking
+    offline_model: qwen3-vl:8b-thinking
+    hf_model: Qwen/Qwen3-VL-8B-Thinking
+    hf_offline_model: Qwen/Qwen3-VL-8B-Thinking
+    local_only: true
+    allow_private_lan: false
+    fallback_to_mock_when_unavailable: true
+    require_real_vlm: false
+    timeout_sec: 180
+    temperature: 0.1
+    max_tokens: 2048
+    max_images: 4
+    answer_policy: evidence_only
+    image_transport: base64
+    model_cache_dir: models/vlm
+    notes:
+    - Use ollama_local for simplest fully offline deployment.
+    - Use vllm_local/openai_compatible_local for higher-throughput local serving.
+    - Do not use cloud endpoints for project data unless explicitly approved.
+  yolo:
+    enabled: true
+    provider: ultralytics_optional
+    model_high: yolo11x-seg.pt
+    model_medium: yolo11m-seg.pt
+    model_light: yolo11s-seg.pt
+    default_model: yolo11x-seg.pt
+    confidence_threshold: 0.25
+    image_size: 1280
+    transient_classes:
+    - person
+    - car
+    - truck
+    - bus
+    - motorcycle
+    - bicycle
+    - excavator
+    - crane
+    - forklift
+    - construction vehicle
+    output_jsonl: data/semantics/site01/yolo_detections.jsonl
+    output_summary_json: data/semantics/site01/yolo_summary.json
+  server_profiles:
+    SVC1:
+      cpu: Intel Core i9 12900K
+      virtual_cores: 24
+      ram_gb: 58
+      gpu: Nvidia 3090 Ti 24GB
+      recommended_yolo: yolo11x-seg.pt
+      recommended_vlm_provider: ollama_local
+      recommended_vlm_live: qwen3-vl:8b
+      recommended_vlm_offline: qwen3-vl:30b
+      recommended_hf_live: Qwen/Qwen3-VL-8B-Instruct
+    SVC2:
+      cpu: Intel Core i9 12900K
+      virtual_cores: 24
+      ram_gb: 58
+      gpu: Nvidia 1080 GPU
+      recommended_yolo: yolo11m-seg.pt
+      recommended_vlm_provider: ollama_local
+      recommended_vlm_live: qwen3-vl:4b
+      recommended_vlm_offline: qwen3-vl:8b
+      recommended_hf_live: Qwen/Qwen3-VL-4B-Instruct
+    SVC3:
+      cpu: Intel Xeon 6530
+      virtual_cores: 48
+      ram_gb: 96
+      gpu: none
+      recommended_yolo: none_or_cpu_light
+      recommended_vlm_provider: mock
+      recommended_vlm_live: none
+      recommended_vlm_offline: none
+      recommended_hf_live: none
+    SVC4:
+      cpu: Intel Core i9 12900K
+      virtual_cores: 24
+      ram_gb: 90
+      gpu: Nvidia A5000 listed 32GB
+      recommended_yolo: yolo11x-seg.pt
+      recommended_vlm_provider: ollama_local
+      recommended_vlm_live: qwen3-vl:8b
+      recommended_vlm_offline: qwen3-vl:30b
+      recommended_hf_live: Qwen/Qwen3-VL-8B-Instruct
+vlm_qa:
+  enabled: true
+  provider: mock
+  output_dir: data/vlm_qa/site01
+  render_dir: data/vlm_qa/site01/renders
+  evidence_json: data/vlm_qa/site01/vlm_qa_evidence.json
+  summary_json: runs/2026-04-30_site01_baseline/reports/vlm_qa_summary.json
+  quality_min_points: 10000
+  quality_min_planes: 1
+  require_mesh: false
+  max_render_points: 50000
+  notes:
+  - Stage 7.5 is pre-BIM visual/geometric QA.
+  - It must not claim construction progress by itself.
+  - Real Qwen/Ollama VLM integration can be enabled after mock evidence contract is
+    stable.
+viewer_export:
+  enabled: true
+  output_dir: exports/viewer/site01
+  artifacts_dir: exports/viewer/site01/artifacts
+  manifest_json: exports/viewer/site01/viewer_manifest.json
+  index_html: exports/viewer/site01/index.html
+  fail_if_no_artifacts: false
+  max_copilot_renders: 12
+  potree_enabled: true
+  cesium_enabled: false
+  cams_gs_enabled: false
+cams_gs:
+  enabled: true
+  output_dir: data/cams_gs/site01
+  nerfstudio_dataset_dir: data/cams_gs/site01/nerfstudio_dataset
+  manifest_json: data/cams_gs/site01/train_manifest.json
+  training_status_json: data/cams_gs/site01/training_status.json
+  report_json: runs/2026-04-30_site01_baseline/reports/cams_gs_prepare_summary.json
+  source_images_dir: data/sfm/site01/images
+  source_sparse_model_dir: data/sparse_refined/site01/0
+  source_colmap_workspace: data/sfm/site01
+  execute_training: false
+  nerfstudio_method: splatfacto
+  max_training_images: 300
+  max_num_iterations: 7000
+  require_sparse_model: false
+  role: optional_visualization_only
+  is_metric_truth: false
+cams_gs_evidence:
+  enabled: true
+  output_dir: data/cams_gs/site01/evidence
+  evidence_json: data/cams_gs/site01/evidence/cams_gs_evidence.json
+  summary_json: runs/2026-04-30_site01_baseline/reports/cams_gs_evidence_summary.json
+  viewer_html: exports/cams_gs/site01/index.html
+  viewer_manifest_json: exports/cams_gs/site01/cams_gs_viewer_manifest.json
+  stage45_manifest_json: data/cams_gs/site01/train_manifest.json
+  stage45_training_status_json: data/cams_gs/site01/training_status.json
+  stage45_dataset_dir: data/cams_gs/site01/nerfstudio_dataset
+  viewer_export_manifest_json: exports/viewer/site01/viewer_manifest.json
+  role: optional_visualization_evidence_only
+  is_metric_truth: false
+model_cache:
+  enabled: true
+  local_only: true
+  download_on_server_only: true
+  root_dir: model_cache
+  ollama_models_dir: model_cache/ollama
+  hf_home: model_cache/huggingface
+  hf_hub_cache: model_cache/huggingface/hub
+  transformers_cache: model_cache/huggingface/transformers
+  nerfstudio_cache_dir: model_cache/nerfstudio
+  qwen_vlm:
+    selected: qwen3_vl_8b_thinking
+    ollama_model: qwen3-vl:8b-thinking
+    hf_model: Qwen/Qwen3-VL-8B-Thinking
+    provider_priority:
+    - ollama_local
+    - openai_compatible_local
+    - mock
+  ollama:
+    endpoint: http://host.docker.internal:11434
+    host_endpoint_for_server: http://127.0.0.1:11434
+    pull_stream: false
+    require_version_note: Qwen3-VL in Ollama may require a recent Ollama release;
+      verify before server run.
+  huggingface:
+    token_env: HF_TOKEN
+    allow_hf_download: true
+    allow_patterns:
+    - '*.json'
+    - '*.txt'
+    - '*.safetensors'
+    - '*.model'
+    - '*.tiktoken'
+    - '*.py'
+    - '*.md'
+    ignore_patterns:
+    - '*.msgpack'
+    - '*.h5'
+    - '*.ot'
+  vllm:
+    enabled_later: true
+    openai_compatible_endpoint: http://127.0.0.1:8000/v1
+    model: Qwen/Qwen3-VL-8B-Thinking
+    dtype: auto
+    trust_remote_code: true
+  cams_gs:
+    enabled_later: true
+    nerfstudio_method: splatfacto
+    execute_training: false
+    output_dir: data/cams_gs/site01
+metric_alignment:
+  enabled: true
+  metric_anchors_csv: data/bim/design/metric_anchors.csv
+  known_distances_csv: data/bim/design/known_distances.csv
+  transform_json: data/bim/aligned/site01/metric_transform_scan_to_bim.json
+  report_json: runs/2026-04-30_site01_baseline/reports/metric_alignment_report.json
+  metricized_scan_ply: data/bim/aligned/site01/metricized_scan.ply
+  min_registration_anchors: 3
+  residual_warn_m: 0.05
+  residual_fail_m: 0.15
+  transform_type: sim3_uniform_scale
+  allow_axis_wise_scale_diagnostic_only: true
+  allow_axis_wise_scale_as_truth: false
+  scale_sources:
+  - known_distances
+  - manual_anchors
+  - primitive_matching_later
+  stage8_prefer_metric_alignment: true
+  fail_stage8_if_metric_alignment_bad: false

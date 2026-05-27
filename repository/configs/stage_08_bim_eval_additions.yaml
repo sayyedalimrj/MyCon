@@ -1,0 +1,93 @@
+# Stage 8: BIM extraction and scan-to-BIM registration additions.
+paths:
+  bim_aligned_dir: data/bim/aligned/site01
+
+bim:
+  enabled: true
+  units: meters
+  scan_input_candidates:
+    - data/clean/site01/cleaned_cloud.ply
+    - data/clean/site01/clean.ply
+    - data/clean/site01/cleaned_cloud.pcd
+    - data/da3/site01/da3_assisted_points.ply
+    - data/dense/site01/fused.ply
+  bim_reference_ply: data/bim/aligned/site01/bim_reference.ply
+  bim_reference_mesh: data/bim/aligned/site01/bim_reference_mesh.ply
+  scan_aligned_ply: data/bim/aligned/site01/scan_aligned.ply
+  transform_json: data/bim/aligned/site01/transform_scan_to_bim.json
+  element_metadata_jsonl: data/bim/aligned/site01/bim_elements.jsonl
+  registration_report_json: runs/2026-04-30_site01_baseline/reports/registration_report.json
+  element_classes:
+    - IfcWall
+    - IfcSlab
+    - IfcColumn
+    - IfcBeam
+    - IfcDoor
+    - IfcWindow
+    - IfcStair
+    - IfcRailing
+  bim_sample_points: 200000
+  allow_synthetic_ifc_fallback_for_tests: false
+
+  # Scale and initialization.
+  # Safe default: never infer scale from global bounding boxes. A scan may cover
+  # only a room, facade, slab zone, or open area while the IFC covers a whole building.
+  initial_scale_strategy: fixed_1     # fixed_1 | known_scale | bbox_unsafe
+  known_initial_scale: 1.0
+  estimate_initial_scale_from_bbox: false
+  min_initial_scale: 0.01
+  max_initial_scale: 100.0
+  coarse_fpfh_enabled: true
+  coarse_voxel_size_m: 0.0
+  coarse_distance_multiplier: 2.5
+  coarse_min_fitness_accept: 0.05
+
+  # Optional BIM visible-shell filtering.
+  # Keep false by default because indoor scans may need inner faces. Enable for
+  # exterior/open-site scans when interior IFC surfaces attract ICP incorrectly.
+  visible_shell_filter_enabled: false
+  visible_shell_camera_radius_multiplier: 2.0
+  visible_shell_hpr_radius_multiplier: 20.0
+  visible_shell_min_keep_ratio: 0.20
+  visible_shell_max_removed_ratio: 0.80
+
+  # Optional 4D/as-planned filtering. If enabled, schedule.csv may contain
+  # global_id/ifc_global_id + status or planned_start_day columns. Missing mappings
+  # are kept by default so partial schedules do not break registration.
+  schedule_filter_enabled: false
+  schedule_filter_csv: data/bim/design/schedule.csv
+  schedule_filter_keep_unmatched: true
+  current_project_day: null
+  schedule_filter_allowed_statuses:
+    - done
+    - complete
+    - completed
+    - in_progress
+    - started
+    - active
+
+  # ICP refinement.
+  # Robust staged default: point-to-point first, then point-to-plane only after
+  # the transform is close enough for normals to be useful.
+  icp_enabled: true
+  icp_estimation: point_to_point_then_plane
+  icp_stages:
+    - point_to_point
+    - point_to_plane
+  icp_voxel_size_m: 0.0
+  icp_max_corr_distance_m: 0.08
+  icp_normal_radius_m: 0.08
+  icp_normal_max_nn: 40
+  icp_max_iteration: 80
+  icp_point_to_point_max_iteration: 80
+  icp_point_to_plane_max_iteration: 25
+  icp_relative_fitness: 1.0e-6
+  icp_relative_rmse: 1.0e-6
+
+  # Quality gates are warnings by default. We do not block Stage 9 unless the
+  # user explicitly sets fail_on_low_registration_quality=true.
+  quality_min_icp_fitness: 0.05
+  quality_max_icp_rmse_m: 0.25
+  quality_scale_warning_ratio: 0.10
+  quality_nn_sample_limit: 200000
+  fail_on_low_registration_quality: false

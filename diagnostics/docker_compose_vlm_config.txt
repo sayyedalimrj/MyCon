@@ -1,0 +1,31 @@
+### command
+docker compose -f docker/docker-compose.vlm.yml config 2>/dev/null || true
+
+name: docker
+services:
+  ollama:
+    container_name: construction-ollama
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+    gpus:
+      - count: -1
+    image: ollama/ollama:latest
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 11434
+        published: "11434"
+        protocol: tcp
+    restart: unless-stopped
+    volumes:
+      - type: volume
+        source: ollama_models
+        target: /root/.ollama
+        volume: {}
+networks:
+  default:
+    name: docker_default
+volumes:
+  ollama_models:
+    name: docker_ollama_models

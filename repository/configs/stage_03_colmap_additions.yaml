@@ -1,0 +1,39 @@
+# Merge these keys into configs/site01.yaml, or run:
+# docker compose -f docker\docker-compose.yml run --rm core python3 scripts/apply_stage_03_config.py --config configs/site01.yaml --force-update-report-path
+paths:
+  sfm_dir: data/sfm/site01
+  colmap_db: data/sfm/site01/database.db
+  sparse_dir: data/sparse/site01
+  sparse_report_json: runs/2026-04-30_site01_baseline/reports/sparse_stats.json
+  sparse_mask_dir: data/masks/site01
+
+colmap:
+  executable: colmap
+  camera_model: SIMPLE_RADIAL
+  single_camera: true
+  feature_type: ALIKED_N16ROT
+  matcher_type: ALIKED_LIGHTGLUE
+  fallback_feature_type: SIFT
+  fallback_matcher_type: SIFT_LIGHTGLUE
+  enable_fallback: true
+  allow_sift_bruteforce_emergency: false
+  emergency_matcher_type: SIFT_BRUTEFORCE
+  matching_strategy: sequential
+  sequential_overlap: 15
+  sequential_quadratic_overlap: true
+  sequential_loop_detection: false
+  sequential_vocab_tree_path: null
+  min_input_images: 2
+  stage_images_mode: copy
+  aliked_max_num_features: 2048
+  sift_max_num_features: 2048
+  mapper_min_num_matches: 15
+  mapper_multiple_models: true
+  mapper_extract_colors: false
+  qt_qpa_platform: offscreen
+  download_models: true
+  model_cache_dir: data/sfm/model_cache
+  model_download_timeout_sec: 1800
+  use_existing_masks: false
+  mask_path: data/masks/site01
+  require_masks: false

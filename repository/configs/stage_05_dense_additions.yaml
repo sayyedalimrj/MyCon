@@ -1,0 +1,63 @@
+# Stage 5 dense stereo additions for configs/site01.yaml.
+paths:
+  dense_workspace: data/dense/site01
+  fused_ply: data/dense/site01/fused.ply
+
+dense:
+  enabled: true
+  input_sparse_refined_dir: data/sparse_refined/site01/0
+  input_images_dir: data/sfm/site01/images
+  workspace_dir: data/dense/site01
+  fused_ply: data/dense/site01/fused.ply
+  workspace_format: COLMAP
+  output_type: COLMAP
+  report_json: runs/2026-04-30_site01_baseline/reports/dense_summary.json
+  command_history_json: data/dense/site01/command_history.json
+  min_input_images: 2
+
+  # CUDA / GPU runtime policy. Dense COLMAP PatchMatch requires CUDA.
+  require_cuda: true
+  cuda_preflight: true
+  gpu_preflight: true
+  require_visible_gpu: false
+  adaptive_gpu_profile: true
+  # Large image sets cap high-VRAM profiles to avoid PatchMatch OOM.
+  adaptive_image_count_caps: true
+  patch_match_gpu_index: auto
+  patch_match_num_threads: -1
+  num_patch_match_src_images: 15
+
+  # Weak-texture construction-site baseline. With adaptive_gpu_profile=true,
+  # these are safe fallback values and may be raised at runtime on 16/24GB GPUs.
+  max_image_size: 1600
+  patch_match_max_image_size: 1600
+  patch_window_radius: 5
+  patch_window_step: 1
+  patch_num_samples: 15
+  patch_num_iterations: 5
+  patch_match_cache_size: 32
+  geom_consistency: true
+  geom_consistency_regularizer: 0.3
+  geom_consistency_max_cost: 5.0
+  patch_filter: true
+  filter_min_ncc: 0.05
+  filter_min_triangulation_angle: 3.0
+  filter_min_num_consistent: 2
+  filter_geom_consistency_max_cost: 2.0
+
+  fusion_input_type: geometric
+  fusion_max_image_size: -1
+  fusion_min_num_pixels: 3
+  fusion_max_reproj_error: 2.0
+  fusion_max_depth_error: 0.02
+  fusion_bounding_box: null
+
+  use_existing_masks: false
+  mask_path: data/masks/site01
+  require_masks: false
+
+  quality_min_fused_points: 1000
+  quality_min_fused_points_per_image: 20.0
+  quality_min_depth_map_ratio_warning: 0.25
+  fail_on_quality_gate: true
+  keep_workspace: true

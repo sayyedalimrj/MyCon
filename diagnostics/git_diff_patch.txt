@@ -1,0 +1,655 @@
+### command
+git diff 
+
+diff --git a/configs/site01.yaml b/configs/site01.yaml
+index 772c8f2..58da3aa 100644
+--- a/configs/site01.yaml
++++ b/configs/site01.yaml
+@@ -457,6 +457,12 @@ bim:
+ progress:
+   coverage_threshold: 0.65
+   deviation_threshold_m: 0.05
++  partial_observed_threshold: 0.2
++  registration_high_fitness_threshold: 0.5
++  registration_medium_fitness_threshold: 0.05
++  registration_high_confidence_score: 1.0
++  registration_medium_confidence_score: 0.65
++  registration_low_confidence_score: 0.25
+ copilot:
+   enabled: true
+   default_view: front
+diff --git a/pipeline/stage_06_da3_assist/colmap_model.py b/pipeline/stage_06_da3_assist/colmap_model.py
+index 1227ce8..1d7841d 100644
+--- a/pipeline/stage_06_da3_assist/colmap_model.py
++++ b/pipeline/stage_06_da3_assist/colmap_model.py
+@@ -178,3 +178,11 @@ def _read_images(path: Path) -> dict[int, ImagePose]:
+ def camera_depth_for_point(image: ImagePose, point_world: np.ndarray) -> float:
+     cam = image.rotation @ point_world.reshape(3) + image.tvec
+     return float(cam[2])
++
++
++def image_by_name(model: ColmapTextModel) -> dict[str, ImagePose]:
++    """Return COLMAP image poses keyed by image filename.
++
++    Shared helper used by Stage 6 depth alignment/fusion.
++    """
++    return {image.name: image for image in model.images.values()}
+diff --git a/pipeline/stage_06_da3_assist/depth_alignment.py b/pipeline/stage_06_da3_assist/depth_alignment.py
+index 14d9ea2..6a59aa5 100644
+--- a/pipeline/stage_06_da3_assist/depth_alignment.py
++++ b/pipeline/stage_06_da3_assist/depth_alignment.py
+@@ -9,7 +9,7 @@ from typing import Any
+ import cv2
+ import numpy as np
+ 
+-from .colmap_model import ColmapTextModel, camera_depth_for_point
++from .colmap_model import ColmapTextModel, image_by_name, camera_depth_for_point
+ from .config_access import cfg_get
+ from .depth_provider import DepthMapRecord
+ from .io_utils import ensure_dir
+@@ -200,9 +200,6 @@ def _sample_depth(depth: np.ndarray, xy: np.ndarray) -> np.ndarray:
+     return depth[ys, xs].astype(np.float64)
+ 
+ 
+-def _image_by_name(model: ColmapTextModel) -> dict[str, Any]:
+-    return {image.name: image for image in model.images.values()}
+-
+ 
+ def align_depth_maps(
+     cfg: Any,
+@@ -220,7 +217,7 @@ def align_depth_maps(
+     max_scale = float(cfg_get(cfg, "da3.alignment_max_scale", 20.0))
+     bucket_count = int(cfg_get(cfg, "da3.alignment_depth_bucket_count", 16))
+     seed = int(cfg_get(cfg, "project.random_seed", 42))
+-    by_name = _image_by_name(model)
++    by_name = image_by_name(model)
+     results: list[AlignmentResult] = []
+     ensure_dir(aligned_dir)
+ 
+diff --git a/pipeline/stage_06_da3_assist/depth_fusion.py b/pipeline/stage_06_da3_assist/depth_fusion.py
+index 1704b09..5b679ff 100644
+--- a/pipeline/stage_06_da3_assist/depth_fusion.py
++++ b/pipeline/stage_06_da3_assist/depth_fusion.py
+@@ -8,15 +8,12 @@ from typing import Any
+ import cv2
+ import numpy as np
+ 
+-from .colmap_model import ColmapTextModel
++from .colmap_model import ColmapTextModel, image_by_name
+ from .config_access import bool_value, cfg_get
+ from .depth_alignment import AlignmentResult, load_depth_map
+ from .io_utils import ensure_dir, write_json_atomic
+ 
+ 
+-def _image_by_name(model: ColmapTextModel) -> dict[str, Any]:
+-    return {image.name: image for image in model.images.values()}
+-
+ 
+ def _parse_bbox(value: Any) -> tuple[np.ndarray, np.ndarray] | None:
+     if value is None:
+@@ -190,7 +187,7 @@ def fuse_aligned_depths(
+     edge_threshold_m = float(cfg_get(cfg, "da3.fusion_edge_threshold_m", 0.5))
+     edge_relative_threshold = float(cfg_get(cfg, "da3.fusion_edge_relative_threshold", 0.08))
+     bbox = _parse_bbox(cfg_get(cfg, "da3.fusion_bounding_box", None))
+-    by_name = _image_by_name(model)
++    by_name = image_by_name(model)
+     rng = np.random.default_rng(int(cfg_get(cfg, "project.random_seed", 42)))
+ 
+     pts = np.zeros((0, 3), dtype=np.float64)
+diff --git a/pipeline/stage_07_cleanup/run_cleanup.py b/pipeline/stage_07_cleanup/run_cleanup.py
+index 63a2ae7..ffe8409 100644
+--- a/pipeline/stage_07_cleanup/run_cleanup.py
++++ b/pipeline/stage_07_cleanup/run_cleanup.py
+@@ -36,7 +36,9 @@ def _configure_logger(cfg: Any, log_level: str) -> logging.Logger:
+             configure_logging(log_level)
+         except TypeError:
+             pass
+-    logging.basicConfig(level=getattr(logging, log_level.upper(), logging.INFO), format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
++    root = logging.getLogger()
++    if not root.handlers:
++        logging.basicConfig(level=getattr(logging, log_level.upper(), logging.INFO), format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+     logger = logging.getLogger("pipeline.stage_07_cleanup")
+     log_path_value = cfg_get(cfg, "cleanup.log_path", None)
+     if log_path_value:
+diff --git a/pipeline/stage_08_bim_eval/run_registration.py b/pipeline/stage_08_bim_eval/run_registration.py
+index d03c721..bd5648f 100644
+--- a/pipeline/stage_08_bim_eval/run_registration.py
++++ b/pipeline/stage_08_bim_eval/run_registration.py
+@@ -116,6 +116,8 @@ def run_registration(cfg: Any, *, force: bool = False, log_level: str = "INFO")
+         "outputs": {key: value for key, value in paths.items()},
+         "ifc": {
+             "source": extraction.source,
++            "synthetic_bim_fallback_used": extraction.source == "synthetic_test_fallback",
++            "real_progress_evidence_allowed": extraction.source != "synthetic_test_fallback",
+             "units": extraction.units,
+             "element_count": len(extraction.elements),
+             "warnings": extraction.warnings,
+diff --git a/pipeline/stage_09_progress/run_progress.py b/pipeline/stage_09_progress/run_progress.py
+index e54f9e5..19e3f06 100644
+--- a/pipeline/stage_09_progress/run_progress.py
++++ b/pipeline/stage_09_progress/run_progress.py
+@@ -1,6 +1,7 @@
+ from __future__ import annotations
+ 
+ import argparse
++import html
+ import math
+ import time
+ from pathlib import Path
+@@ -36,29 +37,56 @@ def _points(cloud: Any) -> np.ndarray:
+     return np.asarray(cloud.points, dtype=np.float64)
+ 
+ 
+-def _registration_confidence(report: dict[str, Any]) -> dict[str, Any]:
++def _registration_confidence(report: dict[str, Any], cfg: Any | None = None) -> dict[str, Any]:
+     icp = report.get("icp", {}) or {}
+     qg = report.get("quality_gate", {}) or {}
++    ifc = report.get("ifc", {}) or {}
++
+     fitness = float(icp.get("fitness", 0.0) or 0.0)
+     rmse = float(icp.get("inlier_rmse", math.inf) or math.inf)
+ 
+-    if fitness >= 0.50:
+-        label, score = "high", 1.0
+-    elif fitness >= 0.05:
+-        label, score = "medium", 0.65
+-    else:
+-        label, score = "low", 0.25
++    high_threshold = cfg_float(cfg, "progress.registration_high_fitness_threshold", 0.50) if cfg is not None else 0.50
++    medium_threshold = cfg_float(cfg, "progress.registration_medium_fitness_threshold", 0.05) if cfg is not None else 0.05
++    high_score = cfg_float(cfg, "progress.registration_high_confidence_score", 1.0) if cfg is not None else 1.0
++    medium_score = cfg_float(cfg, "progress.registration_medium_confidence_score", 0.65) if cfg is not None else 0.65
++    low_score = cfg_float(cfg, "progress.registration_low_confidence_score", 0.25) if cfg is not None else 0.25
+ 
+     warnings = list(qg.get("warnings", []) or [])
++    if high_threshold < medium_threshold:
++        warnings.append(f"registration_thresholds_reordered:high={high_threshold:.6f}<medium={medium_threshold:.6f}")
++        high_threshold, medium_threshold = medium_threshold, high_threshold
++
++    if fitness >= high_threshold:
++        label, score = "high", high_score
++    elif fitness >= medium_threshold:
++        label, score = "medium", medium_score
++    else:
++        label, score = "low", low_score
++
++    synthetic_used = bool(ifc.get("synthetic_bim_fallback_used")) or str(ifc.get("source", "")).strip().lower() == "synthetic_test_fallback"
++    if synthetic_used:
++        label = "low"
++        score = min(score, low_score)
++        warnings.append("synthetic_bim_fallback_used_metrics_are_not_real_progress_evidence")
++
+     if label == "low":
+         warnings.append("registration_confidence_low_metrics_are_for_pipeline_validation")
++
+     return {
+         "fitness": fitness,
+         "rmse_m": rmse,
+         "confidence_label": label,
+         "confidence_score": score,
+         "quality_gate": qg,
+-        "warnings": warnings,
++        "warnings": sorted(set(warnings)),
++        "synthetic_bim_fallback_used": synthetic_used,
++        "thresholds": {
++            "registration_high_fitness_threshold": high_threshold,
++            "registration_medium_fitness_threshold": medium_threshold,
++            "registration_high_confidence_score": high_score,
++            "registration_medium_confidence_score": medium_score,
++            "registration_low_confidence_score": low_score,
++        },
+     }
+ 
+ 
+@@ -74,8 +102,8 @@ def _nearest_distances_with_indices(
+ ) -> tuple[np.ndarray, np.ndarray]:
+     """Return sampled query indices and nearest-neighbor distances.
+ 
+-    This avoids assigning distances from a random sample to the first N points
+-    when writing deviation maps.
++    Uses scipy.spatial.cKDTree for batched queries when SciPy is available;
++    falls back to Open3D KDTreeFlann one-by-one queries otherwise.
+     """
+     if len(query_points) == 0 or len(target_cloud.points) == 0:
+         return np.asarray([], dtype=np.int64), np.asarray([], dtype=np.float64)
+@@ -87,17 +115,25 @@ def _nearest_distances_with_indices(
+     else:
+         sampled_indices = all_indices
+ 
+-    sampled_points = query_points[sampled_indices]
+-    tree = _build_kdtree(target_cloud)
+-    kept_indices: list[int] = []
+-    distances: list[float] = []
+-    for original_index, p in zip(sampled_indices, sampled_points):
+-        _k, _idx, d2 = tree.search_knn_vector_3d(p.astype(float), 1)
+-        if d2:
+-            kept_indices.append(int(original_index))
+-            distances.append(math.sqrt(float(d2[0])))
++    sampled_points = np.asarray(query_points[sampled_indices], dtype=np.float64)
++    target_points = np.asarray(target_cloud.points, dtype=np.float64)
+ 
+-    return np.asarray(kept_indices, dtype=np.int64), np.asarray(distances, dtype=np.float64)
++    try:
++        from scipy.spatial import cKDTree
++
++        distances, _nearest = cKDTree(target_points).query(sampled_points, k=1, workers=-1)
++        finite = np.isfinite(distances)
++        return sampled_indices[finite].astype(np.int64), distances[finite].astype(np.float64)
++    except Exception:
++        tree = _build_kdtree(target_cloud)
++        kept_indices: list[int] = []
++        distances: list[float] = []
++        for original_index, p in zip(sampled_indices, sampled_points):
++            _k, _idx, d2 = tree.search_knn_vector_3d(p.astype(float), 1)
++            if d2:
++                kept_indices.append(int(original_index))
++                distances.append(math.sqrt(float(d2[0])))
++        return np.asarray(kept_indices, dtype=np.int64), np.asarray(distances, dtype=np.float64)
+ 
+ 
+ def _nearest_distances(query_points: np.ndarray, target_cloud: Any, limit: int = 200000) -> np.ndarray:
+@@ -127,12 +163,18 @@ def _schedule_map(rows: list[dict[str, str]]) -> dict[str, dict[str, str]]:
+     return {row.get("activity_id", ""): row for row in rows if row.get("activity_id")}
+ 
+ 
+-def _status_from_metrics(coverage: float, confidence_label: str, threshold: float) -> str:
++def _status_from_metrics(
++    coverage: float,
++    confidence_label: str,
++    threshold: float,
++    *,
++    partial_threshold: float = 0.20,
++) -> str:
+     if confidence_label == "low":
+         return "uncertain_low_registration"
+     if coverage >= threshold:
+         return "likely_completed"
+-    if coverage >= 0.20:
++    if coverage >= partial_threshold:
+         return "partially_observed"
+     return "not_evidenced"
+ 
+@@ -177,15 +219,39 @@ def _write_deviation_map(path: Path, scan_cloud: Any, bim_cloud: Any, threshold:
+     o3d.io.write_point_cloud(str(path), out, write_ascii=False)
+ 
+ 
++def _html_value(value: Any) -> str:
++    return html.escape(str(value), quote=True)
++
++
++def _html_value(value: Any) -> str:
++    return html.escape(str(value), quote=True)
++
++
+ def _dashboard_html(summary: dict[str, Any], element_rows: list[dict[str, Any]], activity_rows: list[dict[str, Any]]) -> str:
+     rows_html = "\n".join(
+-        f"<tr><td>{r['name']}</td><td>{r['ifc_class']}</td><td>{r['coverage']}</td><td>{r['status']}</td><td>{r['confidence']}</td></tr>"
++        "<tr>"
++        f"<td>{_html_value(r.get('name', ''))}</td>"
++        f"<td>{_html_value(r.get('ifc_class', ''))}</td>"
++        f"<td>{_html_value(r.get('coverage', ''))}</td>"
++        f"<td>{_html_value(r.get('status', ''))}</td>"
++        f"<td>{_html_value(r.get('confidence', ''))}</td>"
++        "</tr>"
+         for r in element_rows
+     )
+     act_html = "\n".join(
+-        f"<tr><td>{r['activity_id']}</td><td>{r['activity_name']}</td><td>{r['observed_percent']}</td><td>{r['confidence']}</td><td>{r['status']}</td></tr>"
++        "<tr>"
++        f"<td>{_html_value(r.get('activity_id', ''))}</td>"
++        f"<td>{_html_value(r.get('activity_name', ''))}</td>"
++        f"<td>{_html_value(r.get('observed_percent', ''))}</td>"
++        f"<td>{_html_value(r.get('confidence', ''))}</td>"
++        f"<td>{_html_value(r.get('status', ''))}</td>"
++        "</tr>"
+         for r in activity_rows
+     )
++
++    project = summary.get("project", {}) or {}
++    registration = summary.get("registration_quality", {}) or {}
++
+     return f"""<!doctype html>
+ <html>
+ <head>
+@@ -202,12 +268,12 @@ th {{ background: #f2f2f2; }}
+ </head>
+ <body>
+ <h1>Stage 9 Progress Dashboard</h1>
+-<p><span class="badge">Project: {summary['project']['name']}</span>
+-<span class="badge">Run: {summary['project']['run_id']}</span></p>
+-<p><strong>Status:</strong> {summary['status']}</p>
+-<p><strong>Registration confidence:</strong> {summary['registration_quality']['confidence_label']}
+-(fitness={summary['registration_quality']['fitness']:.6f}, rmse={summary['registration_quality']['rmse_m']:.6f})</p>
+-<p class="warning">Mode note: {summary['mode_note']}</p>
++<p><span class="badge">Project: {_html_value(project.get('name', ''))}</span>
++<span class="badge">Run: {_html_value(project.get('run_id', ''))}</span></p>
++<p><strong>Status:</strong> {_html_value(summary.get('status', ''))}</p>
++<p><strong>Registration confidence:</strong> {_html_value(registration.get('confidence_label', ''))}
++(fitness={float(registration.get('fitness', 0.0) or 0.0):.6f}, rmse={float(registration.get('rmse_m', 0.0) or 0.0):.6f})</p>
++<p class="warning">Mode note: {_html_value(summary.get('mode_note', ''))}</p>
+ <h2>Element Metrics</h2>
+ <table>
+ <tr><th>Name</th><th>IFC Class</th><th>Coverage</th><th>Status</th><th>Confidence</th></tr>
+@@ -244,8 +310,9 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str =
+ 
+     threshold = cfg_float(cfg, "progress.deviation_threshold_m", 0.05)
+     coverage_threshold = cfg_float(cfg, "progress.coverage_threshold", 0.65)
++    partial_observed_threshold = cfg_float(cfg, "progress.partial_observed_threshold", 0.20)
+     bbox_margin = cfg_float(cfg, "progress.element_bbox_margin_m", max(0.05, threshold * 2.0))
+-    reg_quality = _registration_confidence(reg_report)
++    reg_quality = _registration_confidence(reg_report, cfg)
+ 
+     element_rows: list[dict[str, Any]] = []
+     all_deviation_values: list[float] = []
+@@ -276,7 +343,12 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str =
+             p95_dev = float(np.percentile(distances, 95))
+ 
+         confidence = float(max(0.0, min(1.0, coverage * reg_quality["confidence_score"])))
+-        status = _status_from_metrics(coverage, reg_quality["confidence_label"], coverage_threshold)
++        status = _status_from_metrics(
++            coverage,
++            reg_quality["confidence_label"],
++            coverage_threshold,
++            partial_threshold=partial_observed_threshold,
++        )
+         if coverage < coverage_threshold:
+             undercovered.append({"global_id": gid, "name": element.get("name", ""), "coverage": coverage, "status": status})
+ 
+@@ -335,6 +407,7 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str =
+ 
+     coverage_summary = {
+         "coverage_threshold": coverage_threshold,
++        "partial_observed_threshold": partial_observed_threshold,
+         "element_count": len(element_rows),
+         "undercovered_count": len(undercovered),
+         "undercovered_regions": undercovered,
+diff --git a/pipeline/stage_09_progress/visibility_policy.py b/pipeline/stage_09_progress/visibility_policy.py
+index d20c3ee..452dc6c 100644
+--- a/pipeline/stage_09_progress/visibility_policy.py
++++ b/pipeline/stage_09_progress/visibility_policy.py
+@@ -90,10 +90,17 @@ def interpret_element_visibility(
+         visibility_evidence_status = "blocked_by_registration"
+ 
+     elif acceptable:
+-        construction_state = "completed"
+-        visibility_evidence_status = "metric_evidence_sufficient"
+         if visibility_status == "not_evaluated":
++            construction_state = "completed_pending_visibility_check"
++            visibility_evidence_status = "metric_evidence_sufficient_visibility_missing"
+             risks.append("visibility_not_evaluated_for_completed_element")
++        elif visibility_status == "low_visibility":
++            construction_state = "completed_metric_candidate_low_visibility"
++            visibility_evidence_status = "metric_evidence_sufficient_low_visibility"
++            risks.append("visibility_low_for_completed_metric_candidate")
++        else:
++            construction_state = "completed"
++            visibility_evidence_status = "metric_evidence_sufficient"
+ 
+     elif coverage is None:
+         construction_state = "not_evidenced"
+diff --git a/pipeline/stage_10_copilot/answer_validator.py b/pipeline/stage_10_copilot/answer_validator.py
+index 7508e14..2169942 100644
+--- a/pipeline/stage_10_copilot/answer_validator.py
++++ b/pipeline/stage_10_copilot/answer_validator.py
+@@ -48,6 +48,15 @@ def _lower_text(value: Any) -> str:
+     return str(value).lower()
+ 
+ 
++def _normalize_confidence(value: Any) -> str:
++    raw = _lower_text(value).strip()
++    if raw in {"high", "medium", "low", "low_to_medium"}:
++        return raw
++    if raw in {"model_reported", "unknown", "", "n/a", "none"}:
++        return "unverified"
++    return raw
++
++
+ def _has_low_quality_risk(risks: list[str]) -> bool:
+     risk_text = " ".join(_lower_text(item) for item in risks)
+     return any(token in risk_text for token in LOW_QUALITY_RISK_TOKENS)
+@@ -72,7 +81,7 @@ def validate_copilot_answer_payload(payload: dict[str, Any]) -> CopilotAnswerVal
+     warnings: list[str] = []
+ 
+     answer = _lower_text(payload.get("answer"))
+-    confidence = _lower_text(payload.get("confidence"))
++    confidence = _normalize_confidence(payload.get("confidence"))
+     provider = _lower_text(payload.get("provider"))
+     evidence = payload.get("evidence_used") or []
+     risks = combine_decision_risks(payload.get("risks_or_uncertainty"))
+@@ -86,6 +95,12 @@ def validate_copilot_answer_payload(payload: dict[str, Any]) -> CopilotAnswerVal
+ 
+     if confidence == "high" and has_low_risk:
+         failures.append("high_confidence_with_low_quality_risks")
++    elif confidence not in {"low", "low_to_medium", "medium"} and has_low_risk:
++        failures.append("unverified_confidence_with_low_quality_risks")
++    elif confidence not in {"low", "low_to_medium", "medium"} and has_low_risk:
++        failures.append("unverified_confidence_with_low_quality_risks")
++    elif confidence not in {"low", "low_to_medium", "medium"} and has_low_risk:
++        failures.append("unverified_confidence_with_low_quality_risks")
+ 
+     if claims_acceptance and has_low_risk and not is_refusal:
+         failures.append("acceptance_claim_with_low_quality_risks")
+diff --git a/pipeline/stage_10_copilot/vlm_answer.py b/pipeline/stage_10_copilot/vlm_answer.py
+index 600a418..2aae2da 100644
+--- a/pipeline/stage_10_copilot/vlm_answer.py
++++ b/pipeline/stage_10_copilot/vlm_answer.py
+@@ -161,6 +161,18 @@ def _metric_risks(package: EvidencePackage) -> tuple[list[str], str, str]:
+ 
+     return risks, confidence, recommendation
+ 
++def _merge_metric_risks_for_model_answer(
++    package: EvidencePackage,
++    provided_risks: list[Any] | None = None,
++) -> tuple[list[str], str, str]:
++    metric_risks, calibrated_confidence, calibrated_action = _metric_risks(package)
++    normalized_extra = [str(item) for item in (provided_risks or []) if str(item).strip()]
++    risks = sorted(set(metric_risks + normalized_extra))
++    if risks and calibrated_confidence == "high":
++        calibrated_confidence = "medium"
++    return risks, calibrated_confidence, calibrated_action
++
++
+ def _mock_answer(package: EvidencePackage) -> CopilotAnswer:
+     facts = _metric_facts(package)
+     risks, confidence, calibrated_action = _metric_risks(package)
+@@ -232,22 +244,36 @@ def _call_http_provider(cfg: Any, package: EvidencePackage) -> CopilotAnswer:
+             raw_response={"error": str(exc)},
+         )
+     text = str(payload.get("answer") or payload.get("response") or payload.get("text") or payload)
++    provided_risks_raw = payload.get("risks_or_uncertainty", [])
++    provided_risks = provided_risks_raw if isinstance(provided_risks_raw, list) else [provided_risks_raw]
++    risks, confidence, action = _merge_metric_risks_for_model_answer(package, provided_risks)
++
++    model_confidence = str(payload.get("confidence", "")).strip().lower()
++    if confidence == "high" and model_confidence in {"low", "medium", "high"}:
++        confidence = model_confidence
++
+     return CopilotAnswer(
+         answer=text,
+         evidence_used=list(package.image_paths.values()) + [package.evidence_path],
+-        confidence=str(payload.get("confidence", "model_reported")),
+-        recommended_action=str(payload.get("recommended_action", "Review answer against metric evidence.")),
+-        risks_or_uncertainty=list(payload.get("risks_or_uncertainty", [])) if isinstance(payload.get("risks_or_uncertainty", []), list) else [],
++        confidence=confidence,
++        recommended_action=str(payload.get("recommended_action") or action),
++        risks_or_uncertainty=risks,
+         provider="http",
+         raw_response=payload,
+     )
+ 
+ 
++
+ def _local_result_to_answer(package: EvidencePackage, provider: str, text: str, raw_response: dict[str, Any]) -> CopilotAnswer:
+     evidence_used = list(package.image_paths.values()) + [package.evidence_path]
+-    risks = list(package.limitations)
+-    confidence = "model_reported" if not package.limitations else "low_to_medium"
+-    action = "Verify the answer against deterministic metric artifacts before making an acceptance decision."
++    raw_risks = raw_response.get("risks_or_uncertainty", []) if isinstance(raw_response, dict) else []
++    provided_risks = raw_risks if isinstance(raw_risks, list) else [raw_risks]
++    risks, confidence, action = _merge_metric_risks_for_model_answer(package, provided_risks)
++
++    raw_confidence = str(raw_response.get("confidence", "")).strip().lower() if isinstance(raw_response, dict) else ""
++    if confidence == "high" and raw_confidence in {"low", "medium", "high"}:
++        confidence = raw_confidence
++
+     return CopilotAnswer(
+         answer=text,
+         evidence_used=evidence_used,
+@@ -259,6 +285,7 @@ def _local_result_to_answer(package: EvidencePackage, provider: str, text: str,
+     )
+ 
+ 
++
+ def _fallback_or_raise(cfg: Any, package: EvidencePackage, provider: str, exc: Exception) -> CopilotAnswer:
+     fallback_allowed = bool(cfg_get(cfg, "copilot.vlm.fallback_to_mock_when_unavailable", True))
+     require_real = bool(cfg_get(cfg, "copilot.vlm.require_real_vlm", False))
+diff --git a/tests/test_stage_08_bim_eval.py b/tests/test_stage_08_bim_eval.py
+index 876fcfd..da8eefd 100644
+--- a/tests/test_stage_08_bim_eval.py
++++ b/tests/test_stage_08_bim_eval.py
+@@ -125,6 +125,8 @@ def test_run_registration_smoke(tmp_path: Path) -> None:
+     assert Path(report["outputs"]["scan_aligned_ply"]).exists()
+     assert Path(report["outputs"]["bim_reference_ply"]).exists()
+     assert report["ifc"]["source"] == "synthetic_test_fallback"
++    assert report["ifc"]["synthetic_bim_fallback_used"] is True
++    assert report["ifc"]["real_progress_evidence_allowed"] is False
+ 
+ 
+ def test_legacy_bbox_scale_flag_is_ignored_by_default(tmp_path: Path) -> None:
+diff --git a/tests/test_stage_08_metric_alignment.py b/tests/test_stage_08_metric_alignment.py
+index 33f8531..21adaf0 100644
+--- a/tests/test_stage_08_metric_alignment.py
++++ b/tests/test_stage_08_metric_alignment.py
+@@ -1,12 +1,14 @@
+ from __future__ import annotations
+ 
+ import csv
++import json
+ from pathlib import Path
+ 
+ import numpy as np
+ 
+ from pipeline.stage_08_bim_eval.metric_alignment import (
+     build_metric_alignment_report,
++    estimate_sim3_umeyama,
+     estimate_scale_from_known_distances,
+     read_known_distances_csv,
+     read_metric_anchors_csv,
+@@ -107,3 +109,25 @@ def test_build_metric_alignment_report_estimates_sim3(tmp_path: Path) -> None:
+     assert report["can_feed_stage8"] is True
+     assert abs(report["transform"]["scale"] - 2.0) < 1.0e-9
+     assert report["residuals"]["rmse_m"] < 1.0e-9
++
++
++def test_build_metric_alignment_report_attaches_selection_and_persists(tmp_path: Path) -> None:
++    anchors_path = tmp_path / "metric_anchors.csv"
++    distances_path = tmp_path / "known_distances.csv"
++    report_path = tmp_path / "metric_alignment_report.json"
++    _write_anchor_csv(anchors_path)
++    _write_distances_csv(distances_path)
++
++    report = build_metric_alignment_report(
++        anchors_csv=anchors_path,
++        known_distances_csv=distances_path,
++        output_json=report_path,
++    )
++
++    assert "metric_alignment_selection" in report
++    assert report["metric_alignment_selection"]["input_anchor_count"] == 4
++    assert report_path.exists()
++
++    saved = json.loads(report_path.read_text(encoding="utf-8"))
++    assert "metric_alignment_selection" in saved
++    assert saved["metric_alignment_selection"]["input_anchor_count"] == 4
+diff --git a/tests/test_stage_09_progress.py b/tests/test_stage_09_progress.py
+index 7356778..e862608 100644
+--- a/tests/test_stage_09_progress.py
++++ b/tests/test_stage_09_progress.py
+@@ -9,7 +9,7 @@ import numpy as np
+ o3d = pytest.importorskip("open3d")
+ 
+ from pipeline.stage_09_progress.config_access import cfg_get
+-from pipeline.stage_09_progress.run_progress import run_progress
++from pipeline.stage_09_progress.run_progress import _dashboard_html, _status_from_metrics, run_progress
+ 
+ 
+ def _write_cloud(path: Path, offset=(0.0, 0.0, 0.0)) -> None:
+@@ -92,3 +92,32 @@ def test_low_registration_confidence_is_reported(tmp_path: Path) -> None:
+     assert rows[0]["status"] == "uncertain_low_registration"
+ 
+ pytestmark = pytest.mark.geometry
++
++
++def test_status_from_metrics_uses_configurable_partial_threshold() -> None:
++    assert _status_from_metrics(0.30, "high", 0.65, partial_threshold=0.20) == "partially_observed"
++    assert _status_from_metrics(0.30, "high", 0.65, partial_threshold=0.50) == "not_evidenced"
++
++
++def test_dashboard_html_escapes_ifc_strings() -> None:
++    html_text = _dashboard_html(
++        {
++            "project": {"name": "site01", "run_id": "test"},
++            "status": "complete",
++            "registration_quality": {"confidence_label": "high", "fitness": 1.0, "rmse_m": 0.01},
++            "mode_note": "safe",
++        },
++        [
++            {
++                "name": "Wall <A> & Beam",
++                "ifc_class": "IfcWall",
++                "coverage": "1.0",
++                "status": "likely_completed",
++                "confidence": "1.0",
++            }
++        ],
++        [],
++    )
++
++    assert "Wall &lt;A&gt; &amp; Beam" in html_text
++    assert "Wall <A> & Beam" not in html_text
+diff --git a/tests/test_stage_09_visibility_policy.py b/tests/test_stage_09_visibility_policy.py
+index 8dcf6af..139d281 100644
+--- a/tests/test_stage_09_visibility_policy.py
++++ b/tests/test_stage_09_visibility_policy.py
+@@ -72,3 +72,18 @@ def test_visible_partial_coverage_is_partial_or_deviated() -> None:
+ 
+     assert result["construction_state_interpretation"] == "partial_or_deviated"
+     assert result["visibility_evidence_status"] == "visible_area_partial_metric_evidence"
++
++
++def test_acceptable_without_visibility_stays_pending_visibility_check() -> None:
++    result = interpret_element_visibility(
++        {
++            "completion_state": "complete_candidate",
++            "evidence_status": "metric_evidence_sufficient",
++            "acceptable": "true",
++            "coverage": "0.95",
++        }
++    )
++
++    assert result["construction_state_interpretation"] == "completed_pending_visibility_check"
++    assert result["visibility_evidence_status"] == "metric_evidence_sufficient_visibility_missing"
++    assert "visibility_not_evaluated_for_completed_element" in result["visibility_decision_risks"]
+diff --git a/tests/test_stage_10_answer_validator.py b/tests/test_stage_10_answer_validator.py
+index 5c14c95..e3dbc57 100644
+--- a/tests/test_stage_10_answer_validator.py
++++ b/tests/test_stage_10_answer_validator.py
+@@ -45,3 +45,18 @@ def test_validator_rejects_missing_evidence() -> None:
+ 
+     assert result.passed is False
+     assert "missing_evidence_used" in result.failures
++
++
++def test_validator_rejects_model_reported_confidence_with_low_quality_risk() -> None:
++    result = validate_copilot_answer_payload(
++        {
++            "answer": "Direct answer: The element can be accepted as complete.",
++            "confidence": "model_reported",
++            "provider": "ollama_local",
++            "evidence_used": ["evidence.json"],
++            "risks_or_uncertainty": ["registration_confidence_low"],
++        }
++    )
++
++    assert result.passed is False
++    assert "unverified_confidence_with_low_quality_risks" in result.failures

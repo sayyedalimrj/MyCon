@@ -1,0 +1,8 @@
+### command
+docker network ls 
+
+NETWORK ID     NAME             DRIVER    SCOPE
+cc51daf1dbe9   bridge           bridge    local
+31d3238eab85   docker_default   bridge    local
+1bc07d00b678   host             host      local
+740abd116b1e   none             null      local

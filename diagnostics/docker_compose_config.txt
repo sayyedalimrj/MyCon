@@ -1,0 +1,49 @@
+### command
+docker compose -f docker/docker-compose.yml config
+
+name: docker
+services:
+  core:
+    build:
+      context: /home/ali/projects/construction-progress-ai-bim
+      dockerfile: docker/Dockerfile.core-dev
+    command:
+      - bash
+    image: construction-core-dev:latest
+    networks:
+      default: null
+    volumes:
+      - type: bind
+        source: /home/ali/projects/construction-progress-ai-bim
+        target: /workspace
+        bind: {}
+    working_dir: /workspace
+  da3:
+    build:
+      context: /home/ali/projects/construction-progress-ai-bim
+      dockerfile: docker/Dockerfile.da3-dev
+    command:
+      - bash
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities:
+                - gpu
+              count: -1
+    image: construction-da3-dev:latest
+    networks:
+      default: null
+    volumes:
+      - type: bind
+        source: /home/ali/projects/construction-progress-ai-bim
+        target: /workspace
+        bind: {}
+      - type: bind
+        source: /home/ali/.cache/huggingface
+        target: /root/.cache/huggingface
+        bind: {}
+    working_dir: /workspace
+networks:
+  default:
+    name: docker_default

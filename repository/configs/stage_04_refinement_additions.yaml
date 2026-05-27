@@ -1,0 +1,35 @@
+# Stage 4 sparse refinement additions for configs/site01.yaml.
+# Prefer scripts/apply_stage_04_config.py to merge these values safely.
+paths:
+  sparse_refined_dir: data/sparse_refined/site01
+
+refinement:
+  enabled: true
+  method: colmap_bundle_adjustment
+  input_sparse_dir: data/sparse/site01/0
+  output_sparse_dir: data/sparse_refined/site01/0
+  work_dir: data/sparse_refined/site01/_work
+  report_json: runs/2026-04-30_site01_baseline/reports/refinement_stats.json
+  command_history_json: data/sparse_refined/site01/command_history.json
+  validate_binary_before_refinement: true
+  keep_work_dir: true
+  ba_rounds: 1
+  ba_num_threads: -1
+  ba_max_num_iterations: 100
+  ba_max_linear_solver_iterations: 200
+  ba_function_tolerance: 1.0e-6
+  ba_gradient_tolerance: 1.0e-10
+  ba_parameter_tolerance: 1.0e-8
+  refine_focal_length: true
+  refine_principal_point: false
+  refine_extra_params: true
+  quality_gate_min_registered_images: 2
+  quality_gate_min_points: 1
+  quality_gate_max_point_loss_ratio: 0.40
+  quality_gate_fail_on_point_loss: true
+  quality_gate_max_reprojection_error_increase_ratio: 0.10
+  quality_gate_max_reprojection_error_increase_abs_px: 0.25
+  quality_gate_fail_on_reprojection_error_increase: true
+  fail_on_quality_gate: true
+  pixsfm_enabled: false
+  pixsfm_allow_missing: true

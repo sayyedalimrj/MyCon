@@ -1,0 +1,34 @@
+project:
+  name: construction_progress_ai_bim
+  mode: windows_wsl_dev
+
+paths:
+  raw_video_dir: data/raw
+  normalized_dir: data/normalized
+  keyframe_dir: data/frames/key
+  sfm_dir: data/sfm
+  dense_dir: data/dense
+  clean_dir: data/clean
+  bim_design_dir: data/bim/design
+  metrics_dir: data/bim/metrics
+  runs_dir: runs
+
+video:
+  max_width: 1280
+  target_fps: 2
+  blur_threshold: 80
+  duplicate_threshold: 0.96
+
+colmap:
+  camera_model: SIMPLE_RADIAL
+  single_camera: true
+  matcher: sequential
+  feature_type: ALIKED
+  matcher_type: ALIKED_LIGHTGLUE
+  fallback_feature_type: SIFT
+  fallback_matcher_type: SIFT_LIGHTGLUE
+
+resources:
+  local_dev: true
+  run_dense_locally: false
+  run_da3_locally: false

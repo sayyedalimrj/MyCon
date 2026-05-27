@@ -1,0 +1,11 @@
+### command
+docker ps -a 
+
+CONTAINER ID   IMAGE                                 COMMAND                  CREATED       STATUS                   PORTS     NAMES
+b099c2b62560   ubuntu:22.04                          "/bin/bash"              11 days ago   Exited (0) 11 days ago             silly_hugle
+4a704283ceb2   colmap/colmap:latest                  "/opt/nvidia/nvidia_…"   11 days ago   Exited (0) 11 days ago             elated_fermat
+956e262dded2   construction-core-dev:latest          "bash"                   11 days ago   Exited (0) 11 days ago             fervent_lovelace
+3b4e6e34222f   colmap/colmap:latest                  "/opt/nvidia/nvidia_…"   12 days ago   Exited (0) 11 days ago             heuristic_pare
+ae38b8352f2d   nvidia/cuda:12.4.1-base-ubuntu22.04   "/bin/bash"              2 weeks ago   Exited (0) 11 days ago             compassionate_elbakyan
+02fc4ffcff83   ubuntu:22.04                          "/bin/bash"              2 weeks ago   Exited (0) 12 days ago             eloquent_sutherland
+f3abee69e115   construction-core-dev:latest          "bash"                   2 weeks ago   Exited (0) 2 weeks ago             optimistic_black

@@ -1,0 +1,9 @@
+### command
+docker images 
+
+WARNING: This output is designed for human readability. For machine-readable output, please use --format.
+IMAGE                                 ID             DISK USAGE   CONTENT SIZE   EXTRA
+colmap/colmap:latest                  187ca5ec98e5       8.64GB         3.13GB   U    
+construction-core-dev:latest          4412f54c0c77       7.81GB         1.86GB   U    
+nvidia/cuda:12.4.1-base-ubuntu22.04   0f6bfcbf267e        348MB         91.8MB   U    
+ubuntu:22.04                          962f6cadeae0        119MB         31.7MB   U    

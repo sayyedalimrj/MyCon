@@ -1,0 +1,103 @@
+copilot:
+  enabled: true
+  default_view: front
+  low_confidence_threshold: 0.65
+  max_metric_rows: 20
+  paths:
+    evidence_dir: runs/2026-04-30_site01_baseline/copilot/evidence
+    render_dir: runs/2026-04-30_site01_baseline/copilot/renders
+    default_pointcloud: data/clean/site01/cleaned_cloud.ply
+    element_metrics_csv: data/bim/metrics/site01/element_metrics.csv
+    activity_progress_csv: data/bim/metrics/site01/activity_progress.csv
+    deviation_summary_json: data/bim/metrics/site01/deviation_summary.json
+    coverage_summary_json: data/bim/metrics/site01/coverage_summary.json
+    registration_quality_json: data/bim/metrics/site01/registration_quality.json
+    cleanup_summary_json: runs/2026-04-30_site01_baseline/reports/cleanup_summary.json
+    yolo_summary_json: data/semantics/site01/yolo_summary.json
+    vlm_summary_json: data/semantics/site01/vlm_summary.json
+  vlm:
+    # Local/offline by design. For smoke tests set provider=mock.
+    provider: ollama_local
+    endpoint: http://host.docker.internal:11434/api/chat
+    model: qwen3-vl:8b
+    offline_model: qwen3-vl:30b
+    hf_model: Qwen/Qwen3-VL-8B-Instruct
+    hf_offline_model: Qwen/Qwen3-VL-30B-A3B-Thinking
+    local_only: true
+    allow_private_lan: false
+    fallback_to_mock_when_unavailable: true
+    require_real_vlm: false
+    timeout_sec: 180
+    temperature: 0.1
+    max_tokens: 2048
+    max_images: 4
+    answer_policy: evidence_only
+    image_transport: base64
+    model_cache_dir: models/vlm
+    notes:
+      - Use ollama_local for simplest fully offline deployment.
+      - Use vllm_local/openai_compatible_local for higher-throughput local serving.
+      - Do not use cloud endpoints for project data unless explicitly approved.
+  yolo:
+    enabled: true
+    provider: ultralytics_optional
+    model_high: yolo11x-seg.pt
+    model_medium: yolo11m-seg.pt
+    model_light: yolo11s-seg.pt
+    default_model: yolo11x-seg.pt
+    confidence_threshold: 0.25
+    image_size: 1280
+    transient_classes:
+      - person
+      - car
+      - truck
+      - bus
+      - motorcycle
+      - bicycle
+      - excavator
+      - crane
+      - forklift
+      - construction vehicle
+    output_jsonl: data/semantics/site01/yolo_detections.jsonl
+    output_summary_json: data/semantics/site01/yolo_summary.json
+  server_profiles:
+    SVC1:
+      cpu: Intel Core i9 12900K
+      virtual_cores: 24
+      ram_gb: 58
+      gpu: Nvidia 3090 Ti 24GB
+      recommended_yolo: yolo11x-seg.pt
+      recommended_vlm_provider: ollama_local
+      recommended_vlm_live: qwen3-vl:8b
+      recommended_vlm_offline: qwen3-vl:30b
+      recommended_hf_live: Qwen/Qwen3-VL-8B-Instruct
+    SVC2:
+      cpu: Intel Core i9 12900K
+      virtual_cores: 24
+      ram_gb: 58
+      gpu: Nvidia 1080 GPU
+      recommended_yolo: yolo11m-seg.pt
+      recommended_vlm_provider: ollama_local
+      recommended_vlm_live: qwen3-vl:4b
+      recommended_vlm_offline: qwen3-vl:8b
+      recommended_hf_live: Qwen/Qwen3-VL-4B-Instruct
+    SVC3:
+      cpu: Intel Xeon 6530
+      virtual_cores: 48
+      ram_gb: 96
+      gpu: none
+      recommended_yolo: none_or_cpu_light
+      recommended_vlm_provider: mock
+      recommended_vlm_live: none
+      recommended_vlm_offline: none
+      recommended_hf_live: none
+    SVC4:
+      cpu: Intel Core i9 12900K
+      virtual_cores: 24
+      ram_gb: 90
+      gpu: Nvidia A5000 listed 32GB
+      recommended_yolo: yolo11x-seg.pt
+      recommended_vlm_provider: ollama_local
+      recommended_vlm_live: qwen3-vl:8b
+      recommended_vlm_offline: qwen3-vl:30b
+      recommended_hf_live: Qwen/Qwen3-VL-8B-Instruct

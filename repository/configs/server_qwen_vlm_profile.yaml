@@ -1,0 +1,27 @@
+# Server profile: stricter than laptop profile.
+# Use after server model cache is prepared and Ollama is reachable.
+
+copilot:
+  vlm:
+    provider: ollama_local
+    endpoint: http://host.docker.internal:11434/api/chat
+    model: qwen3-vl:8b-thinking
+    hf_model: Qwen/Qwen3-VL-8B-Thinking
+    local_only: true
+    fallback_to_mock_when_unavailable: false
+    require_real_vlm: true
+    timeout_sec: 240
+    temperature: 0.1
+    max_tokens: 2048
+    max_images: 4
+    answer_policy: evidence_only
+    image_transport: base64
+
+vlm_qa:
+  provider: ollama_local
+  endpoint: http://host.docker.internal:11434/api/chat
+  model: qwen3-vl:8b-thinking
+  hf_model: Qwen/Qwen3-VL-8B-Thinking
+  fallback_to_mock_when_unavailable: false
+  require_real_vlm: true
+  answer_policy: evidence_only

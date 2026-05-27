@@ -1,0 +1,21 @@
+### command
+git status --short 
+
+ M configs/site01.yaml
+ M pipeline/stage_06_da3_assist/colmap_model.py
+ M pipeline/stage_06_da3_assist/depth_alignment.py
+ M pipeline/stage_06_da3_assist/depth_fusion.py
+ M pipeline/stage_07_cleanup/run_cleanup.py
+ M pipeline/stage_08_bim_eval/run_registration.py
+ M pipeline/stage_09_progress/run_progress.py
+ M pipeline/stage_09_progress/visibility_policy.py
+ M pipeline/stage_10_copilot/answer_validator.py
+ M pipeline/stage_10_copilot/vlm_answer.py
+ M tests/test_stage_08_bim_eval.py
+ M tests/test_stage_08_metric_alignment.py
+ M tests/test_stage_09_progress.py
+ M tests/test_stage_09_visibility_policy.py
+ M tests/test_stage_10_answer_validator.py
+?? bash
+?? dist/
+?? tests/test_stage_06_da3_colmap_image_lookup.py

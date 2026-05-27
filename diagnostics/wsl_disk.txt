@@ -1,0 +1,25 @@
+### command
+df -h 
+
+Filesystem                                Size  Used Avail Use% Mounted on
+/dev/sdd                                 1007G  5.7G  951G   1% /
+rootfs                                    4.9G  2.7M  4.9G   1% /init
+none                                      4.9G     0  4.9G   0% /dev/shm
+none                                      4.9G  568K  4.9G   1% /run
+none                                      4.9G     0  4.9G   0% /run/lock
+none                                      4.9G   76K  4.9G   1% /run/user
+tmpfs                                     995M  8.0K  995M   1% /run/user/1000
+tmpfs                                     995M  8.0K  995M   1% /run/user/0
+drivers                                   252G  247G  5.0G  99% /usr/lib/wsl/drivers
+none                                      4.9G     0  4.9G   0% /usr/lib/wsl/lib
+none                                      4.9G  4.0K  4.9G   1% /mnt/wsl
+none                                      4.9G  636K  4.9G   1% /mnt/wsl/docker-desktop/shared-sockets/host-services
+/dev/sdf                                  137M   71M   55M  57% /mnt/wsl/docker-desktop/docker-desktop-user-distro
+/dev/loop0                                817M  817M     0 100% /mnt/wsl/docker-desktop/cli-tools
+none                                      4.9G   76K  4.9G   1% /mnt/wslg/versions.txt
+none                                      4.9G   76K  4.9G   1% /mnt/wslg/doc
+none                                      4.9G     0  4.9G   0% /usr/lib/modules/6.6.87.2-microsoft-standard-WSL2
+C:\Program Files\Docker\Docker\resources  252G  247G  5.0G  99% /Docker/host
+C:\                                       252G  247G  5.0G  99% /mnt/c
+D:\                                       380G  362G   19G  96% /mnt/d
+E:\                                       300G  282G   19G  94% /mnt/e

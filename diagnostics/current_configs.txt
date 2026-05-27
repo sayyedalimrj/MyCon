@@ -1,0 +1,21 @@
+### command
+find configs -type f | sort
+
+configs/default_server_svc4.yaml
+configs/default_windows_dev.yaml
+configs/local_qwen_vlm_profile.yaml
+configs/server_model_cache_additions.yaml
+configs/server_qwen_vlm_profile.yaml
+configs/site01.yaml
+configs/stage_03_colmap_additions.yaml
+configs/stage_04_5_cams_gs_additions.yaml
+configs/stage_04_refinement_additions.yaml
+configs/stage_05_dense_additions.yaml
+configs/stage_06_da3_additions.yaml
+configs/stage_07_5_vlm_qa_additions.yaml
+configs/stage_07_6_viewer_export_additions.yaml
+configs/stage_07_7_cams_gs_evidence_additions.yaml
+configs/stage_07_cleanup_additions.yaml
+configs/stage_08_bim_eval_additions.yaml
+configs/stage_08_metric_alignment_additions.yaml
+configs/stage_10_copilot_additions.yaml

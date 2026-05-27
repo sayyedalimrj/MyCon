@@ -1,0 +1,11 @@
+viewer_export:
+  enabled: true
+  output_dir: exports/viewer/site01
+  artifacts_dir: exports/viewer/site01/artifacts
+  manifest_json: exports/viewer/site01/viewer_manifest.json
+  index_html: exports/viewer/site01/index.html
+  fail_if_no_artifacts: false
+  max_copilot_renders: 12
+  potree_enabled: true
+  cesium_enabled: false
+  cams_gs_enabled: false

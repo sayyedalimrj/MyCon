@@ -1,0 +1,33 @@
+### command
+git log --oneline -30 
+
+e80e2ff Fix reviewed pipeline correctness test regressions
+bb094be Add visual anchor triangulation quality gate
+b5794eb Add server handoff ZIP verifier
+9d79328 Add server handoff ZIP verifier
+78bd25b Make geometry smoke scripts dependency-aware
+25d99f2 Add verified server handoff ZIP exporter
+b7e246c Harden Stage 9 interpretation and Stage 10 audit logging
+e0cb3b0 Sync final readiness docs and server gate fallback
+95c6833 Add strict server readiness gate
+1e534e6 Harden Stage 8 metric alignment quality gates
+0f234b7 Add conservative Stage 8-10 decision gates
+c3d4ce0 Harden server handoff and copilot validation contracts
+5665fb3 Add test markers and VLM answer validation safeguards
+5e998ec Fix server build and readiness review blockers
+561fb60 Merge
+959a28d Add server handoff checklist
+d6b1d88 Add server readiness and pipeline plan checks
+32de6a4 Add visual anchor picking packet helper
+154f147 Add visual anchor observation workflow
+a570a89 Add metric anchor validation workflow
+2ceacd2 Add pytest wrapper for lightweight smoke scripts
+f492d5e Connect metric alignment to Stage 8 coarse registration
+045b2e9 Add Stage 8 metric alignment skeleton
+c1f0eae Add Qwen VLM profile and connectivity scripts
+d69d47c Add server model cache preparation scripts
+8fa509d Fix Stage 10 local VLM preflight package signature
+d5167cb Add Stage 7.7 CAMS-GS evidence package
+43efdfd Add Stage 4.5 CAMS-GS preparation skeleton
+06095c5 Add Stage 7.6 viewer export package
+5136fc7 Add Stage 7.5 VLM reconstruction QA

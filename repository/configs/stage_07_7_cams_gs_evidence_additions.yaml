@@ -1,0 +1,13 @@
+cams_gs_evidence:
+  enabled: true
+  output_dir: data/cams_gs/site01/evidence
+  evidence_json: data/cams_gs/site01/evidence/cams_gs_evidence.json
+  summary_json: runs/2026-04-30_site01_baseline/reports/cams_gs_evidence_summary.json
+  viewer_html: exports/cams_gs/site01/index.html
+  viewer_manifest_json: exports/cams_gs/site01/cams_gs_viewer_manifest.json
+  stage45_manifest_json: data/cams_gs/site01/train_manifest.json
+  stage45_training_status_json: data/cams_gs/site01/training_status.json
+  stage45_dataset_dir: data/cams_gs/site01/nerfstudio_dataset
+  viewer_export_manifest_json: exports/viewer/site01/viewer_manifest.json
+  role: optional_visualization_evidence_only
+  is_metric_truth: false

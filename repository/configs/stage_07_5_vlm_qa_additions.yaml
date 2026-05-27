@@ -1,0 +1,15 @@
+vlm_qa:
+  enabled: true
+  provider: mock
+  output_dir: data/vlm_qa/site01
+  render_dir: data/vlm_qa/site01/renders
+  evidence_json: data/vlm_qa/site01/vlm_qa_evidence.json
+  summary_json: runs/2026-04-30_site01_baseline/reports/vlm_qa_summary.json
+  quality_min_points: 10000
+  quality_min_planes: 1
+  require_mesh: false
+  max_render_points: 50000
+  notes:
+    - "Stage 7.5 is pre-BIM visual/geometric QA."
+    - "It must not claim construction progress by itself."
+    - "Real Qwen/Ollama VLM integration can be enabled after mock evidence contract is stable."

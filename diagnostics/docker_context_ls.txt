@@ -1,0 +1,6 @@
+### command
+docker context ls 
+
+NAME            DESCRIPTION                               DOCKER ENDPOINT                             ERROR
+default *       Current DOCKER_HOST based configuration   unix:///var/run/docker.sock                 
+desktop-linux   Docker Desktop                            npipe:////./pipe/dockerDesktopLinuxEngine   

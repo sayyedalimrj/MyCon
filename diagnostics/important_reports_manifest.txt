@@ -1,0 +1,22 @@
+### command
+find runs -path "*reports*" -type f 2>/dev/null | sort || true
+
+runs/2026-04-30_site01_baseline/reports/cams_gs_evidence_summary.json
+runs/2026-04-30_site01_baseline/reports/cams_gs_prepare_summary.json
+runs/2026-04-30_site01_baseline/reports/cleanup_summary.json
+runs/2026-04-30_site01_baseline/reports/da3_summary.json
+runs/2026-04-30_site01_baseline/reports/dense_summary.json
+runs/2026-04-30_site01_baseline/reports/keyframe_summary.json
+runs/2026-04-30_site01_baseline/reports/metric_alignment_report.json
+runs/2026-04-30_site01_baseline/reports/metric_anchor_validation.json
+runs/2026-04-30_site01_baseline/reports/pipeline_plan.json
+runs/2026-04-30_site01_baseline/reports/progress_dashboard.html
+runs/2026-04-30_site01_baseline/reports/progress_summary.json
+runs/2026-04-30_site01_baseline/reports/refinement_stats.json
+runs/2026-04-30_site01_baseline/reports/registration_report.json
+runs/2026-04-30_site01_baseline/reports/server_readiness_report.json
+runs/2026-04-30_site01_baseline/reports/server_readiness_strict_gate.json
+runs/2026-04-30_site01_baseline/reports/sparse_stats.json
+runs/2026-04-30_site01_baseline/reports/stage_01_ingest_report.json
+runs/2026-04-30_site01_baseline/reports/visual_anchor_observation_validation.json
+runs/2026-04-30_site01_baseline/reports/vlm_qa_summary.json

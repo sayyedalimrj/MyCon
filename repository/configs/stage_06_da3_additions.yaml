@@ -1,0 +1,60 @@
+paths:
+  da3_dir: data/da3/site01
+  da3_decision_json: data/da3/site01/decision.json
+  da3_depth_manifest_csv: data/da3/site01/depth_manifest.csv
+  da3_alignment_manifest_csv: data/da3/site01/alignment_manifest.csv
+  da3_fusion_plan_json: data/da3/site01/fusion_plan.json
+  da3_assisted_ply: data/da3/site01/da3_assisted_points.ply
+  da3_report_json: runs/2026-04-30_site01_baseline/reports/da3_summary.json
+
+da3:
+  enabled: auto
+  model: DA3Metric-Large
+  provider: precomputed
+  external_command: ''
+  external_command_shell: true
+  external_config_path: ''
+  depth_input_dir: data/da3/site01/raw_depth
+  depth_output_dir: data/da3/site01/raw_depth
+  aligned_depth_dir: data/da3/site01/aligned_depth
+  sparse_text_dir: data/da3/site01/sparse_txt
+  depth_file_extensions:
+    - .npy
+    - .npz
+    - .png
+    - .tif
+    - .tiff
+    - .pfm
+  activate_if_quality_gate_failed: true
+  activate_if_fused_vertices_below: 50000
+  activate_if_points_per_image_below: 100.0
+  activate_if_depth_map_ratio_below: 0.5
+  fail_if_required_but_unavailable: false
+  max_images: 80
+
+  # Scale-only robust DA3-to-COLMAP depth alignment.
+  # A shift term is intentionally forbidden because it creates pixel-dependent
+  # backprojection distortion in a pinhole camera model.
+  min_alignment_anchors: 20
+  max_alignment_rmse_m: 2.0
+  min_alignment_inlier_ratio: 0.25
+  alignment_method: scale_only_ransac
+  alignment_ransac_iterations: 200
+  alignment_ransac_inlier_abs_m: 0.20
+  alignment_ransac_inlier_rel: 0.05
+  alignment_depth_bucket_count: 16
+  alignment_min_scale: 0.05
+  alignment_max_scale: 20.0
+
+  quality_min_aligned_depth_maps: 1
+  fuse_aligned_depth: true
+  fusion_stride: 8
+  fusion_min_depth_m: 0.1
+  fusion_max_depth_m: 80.0
+  fusion_max_points: 2000000
+  fusion_binary_ply: true
+  fusion_compressed_ply: false
+  fusion_edge_aware_filter: true
+  fusion_edge_threshold_m: 0.5
+  fusion_edge_relative_threshold: 0.08
+  fusion_bounding_box: null

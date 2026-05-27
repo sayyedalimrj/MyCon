@@ -1,0 +1,56 @@
+model_cache:
+  enabled: true
+  local_only: true
+  download_on_server_only: true
+
+  # Stable cache roots. Keep these on a persistent server disk/volume.
+  root_dir: model_cache
+  ollama_models_dir: model_cache/ollama
+  hf_home: model_cache/huggingface
+  hf_hub_cache: model_cache/huggingface/hub
+  transformers_cache: model_cache/huggingface/transformers
+  nerfstudio_cache_dir: model_cache/nerfstudio
+
+  qwen_vlm:
+    selected: qwen3_vl_8b_thinking
+    ollama_model: qwen3-vl:8b-thinking
+    hf_model: Qwen/Qwen3-VL-8B-Thinking
+    provider_priority:
+      - ollama_local
+      - openai_compatible_local
+      - mock
+
+  ollama:
+    endpoint: http://host.docker.internal:11434
+    host_endpoint_for_server: http://127.0.0.1:11434
+    pull_stream: false
+    require_version_note: "Qwen3-VL in Ollama may require a recent Ollama release; verify before server run."
+
+  huggingface:
+    token_env: HF_TOKEN
+    allow_hf_download: true
+    allow_patterns:
+      - "*.json"
+      - "*.txt"
+      - "*.safetensors"
+      - "*.model"
+      - "*.tiktoken"
+      - "*.py"
+      - "*.md"
+    ignore_patterns:
+      - "*.msgpack"
+      - "*.h5"
+      - "*.ot"
+
+  vllm:
+    enabled_later: true
+    openai_compatible_endpoint: http://127.0.0.1:8000/v1
+    model: Qwen/Qwen3-VL-8B-Thinking
+    dtype: auto
+    trust_remote_code: true
+
+  cams_gs:
+    enabled_later: true
+    nerfstudio_method: splatfacto
+    execute_training: false
+    output_dir: data/cams_gs/site01

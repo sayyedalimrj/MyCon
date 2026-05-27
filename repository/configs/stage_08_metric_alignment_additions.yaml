@@ -1,0 +1,23 @@
+metric_alignment:
+  enabled: true
+  metric_anchors_csv: data/bim/design/metric_anchors.csv
+  known_distances_csv: data/bim/design/known_distances.csv
+  transform_json: data/bim/aligned/site01/metric_transform_scan_to_bim.json
+  report_json: runs/2026-04-30_site01_baseline/reports/metric_alignment_report.json
+  metricized_scan_ply: data/bim/aligned/site01/metricized_scan.ply
+
+  min_registration_anchors: 3
+  residual_warn_m: 0.05
+  residual_fail_m: 0.15
+
+  transform_type: sim3_uniform_scale
+  allow_axis_wise_scale_diagnostic_only: true
+  allow_axis_wise_scale_as_truth: false
+
+  scale_sources:
+    - known_distances
+    - manual_anchors
+    - primitive_matching_later
+
+  stage8_prefer_metric_alignment: true
+  fail_stage8_if_metric_alignment_bad: false

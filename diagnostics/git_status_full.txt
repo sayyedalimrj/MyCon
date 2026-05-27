@@ -1,0 +1,30 @@
+### command
+git status 
+
+On branch master
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   configs/site01.yaml
+	modified:   pipeline/stage_06_da3_assist/colmap_model.py
+	modified:   pipeline/stage_06_da3_assist/depth_alignment.py
+	modified:   pipeline/stage_06_da3_assist/depth_fusion.py
+	modified:   pipeline/stage_07_cleanup/run_cleanup.py
+	modified:   pipeline/stage_08_bim_eval/run_registration.py
+	modified:   pipeline/stage_09_progress/run_progress.py
+	modified:   pipeline/stage_09_progress/visibility_policy.py
+	modified:   pipeline/stage_10_copilot/answer_validator.py
+	modified:   pipeline/stage_10_copilot/vlm_answer.py
+	modified:   tests/test_stage_08_bim_eval.py
+	modified:   tests/test_stage_08_metric_alignment.py
+	modified:   tests/test_stage_09_progress.py
+	modified:   tests/test_stage_09_visibility_policy.py
+	modified:   tests/test_stage_10_answer_validator.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	bash
+	dist/
+	tests/test_stage_06_da3_colmap_image_lookup.py
+
+no changes added to commit (use "git add" and/or "git commit -a")

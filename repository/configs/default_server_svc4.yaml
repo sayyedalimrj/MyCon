@@ -1,0 +1,37 @@
+project:
+  name: construction_progress_ai_bim
+  mode: server_svc4_production
+
+video:
+  max_width: 1920
+  target_fps: 2
+  blur_threshold: 80
+  duplicate_threshold: 0.96
+
+colmap:
+  camera_model: SIMPLE_RADIAL
+  single_camera: true
+  matcher: sequential
+  feature_type: ALIKED
+  matcher_type: ALIKED_LIGHTGLUE
+  fallback_feature_type: SIFT
+  fallback_matcher_type: SIFT_LIGHTGLUE
+
+dense:
+  use_geometric_consistency: true
+  max_image_size: 2000
+  patch_window_radius: 7
+  filter_min_ncc: 0.05
+  fusion_min_num_pixels: 3
+
+da3:
+  enabled: conditional
+  model: DA3Metric-Large
+  run_only_on_undercovered_regions: true
+  align_depth_to_colmap_frame: true
+
+bim:
+  registration_method: coarse_plus_icp
+  report_elementwise_metrics: true
+  compute_coverage: true
+  compute_uncertainty: true

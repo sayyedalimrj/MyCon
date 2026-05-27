@@ -1,0 +1,27 @@
+### command
+find docs -type f | sort
+
+docs/current_project_status.md
+docs/data_contracts.md
+docs/operational_readiness_matrix.md
+docs/qwen_vlm_laptop_to_server_plan.md
+docs/runbook_stage_05_to_10.md
+docs/server_env_example.sh
+docs/server_handoff_checklist.md
+docs/server_model_cache_and_vlm_setup.md
+docs/stage_03_colmap.md
+docs/stage_04_5_cams_gs.md
+docs/stage_04_refinement.md
+docs/stage_05_dense.md
+docs/stage_06_da3_assist.md
+docs/stage_07_5_vlm_qa.md
+docs/stage_07_6_viewer_export.md
+docs/stage_07_7_cams_gs_evidence.md
+docs/stage_07_cleanup.md
+docs/stage_08_bim_eval.md
+docs/stage_08_metric_alignment.md
+docs/stage_08_metric_anchor_workflow.md
+docs/stage_08_visual_anchor_workflow.md
+docs/stage_09_progress.md
+docs/stage_09_scientific_metrics.md
+docs/stage_10_copilot.md

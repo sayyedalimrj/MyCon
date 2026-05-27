@@ -1,0 +1,143 @@
+# Stage 7 Open3D cleanup, meshing, and plane extraction additions.
+paths:
+  clean_dir: data/clean/site01
+  clean_downsampled_cloud: data/clean/site01/downsampled_cloud.ply
+  clean_cloud: data/clean/site01/cleaned_cloud.ply
+  clean_mesh: data/clean/site01/mesh.ply
+  clean_planes_json: data/clean/site01/planes.json
+  clean_plane_clouds_dir: data/clean/site01/plane_clouds
+  cleanup_report_json: runs/2026-04-30_site01_baseline/reports/cleanup_summary.json
+
+cleanup:
+  enabled: true
+
+  # Stage 7 chooses the first existing valid point cloud from this list.
+  input_candidates:
+    - data/da3/site01/da3_assisted_points.ply
+    - data/dense/site01/fused.ply
+  prefer_da3_assisted: true
+  fail_if_missing_input: true
+
+  output_dir: data/clean/site01
+  downsampled_cloud: data/clean/site01/downsampled_cloud.ply
+  cleaned_cloud: data/clean/site01/cleaned_cloud.ply
+  mesh_ply: data/clean/site01/mesh.ply
+  planes_json: data/clean/site01/planes.json
+  plane_clouds_dir: data/clean/site01/plane_clouds
+  report_json: runs/2026-04-30_site01_baseline/reports/cleanup_summary.json
+
+  # Guard rails. Random subsampling is a last resort after voxelization has made density uniform.
+  max_input_points: 5000000
+  max_processing_points: 1500000
+  random_seed: 42
+  write_binary_ply: true
+  strict_quality_gate: false
+
+  # Point cloud cleanup. Voxel downsampling comes before any point-count cap.
+  voxel_size_m: 0.025
+  dynamic_voxel_enabled: true
+  dynamic_voxel_max_iterations: 6
+  dynamic_voxel_growth_exponent: 0.50
+  dynamic_voxel_growth_margin: 1.05
+  statistical_enabled: true
+  statistical_nb_neighbors: 24
+  statistical_std_ratio: 2.0
+  radius_enabled: true
+  radius_nb_points: 8
+  radius_m: 0.10
+  remove_non_finite: true
+  remove_duplicated_points: true
+  preserve_colors: true
+  estimate_normals: true
+  normal_radius_m: 0.10
+  normal_max_nn: 40
+
+  # Keep global normal orientation opt-in. It can be unstable in open indoor scenes and can hurt Poisson meshing.
+  normal_orientation_strategy: none       # none | consistent_tangent_plane | towards_centroid
+  orient_normals_consistent_tangent_plane_k: 0
+
+  # Optional crop/frustum/BIM guard. If null, no crop is applied.
+  crop_bounding_box: null
+  crop_margin_m: 0.50
+
+  # Normal-prior RANSAC plane extraction for floor/wall/ceiling priors.
+  plane_extraction_enabled: true
+  normal_guided_plane_extraction: true
+  normal_guided_horizontal_dot_min: 0.85
+  normal_guided_wall_abs_dot_max: 0.35
+  normal_guided_max_horizontal_planes: 4
+  normal_guided_max_vertical_planes: 10
+  normal_guided_max_residual_planes: 2
+  normal_guided_allow_residual_planes: true
+  max_planes: 12
+  plane_distance_threshold_m: 0.035
+  plane_ransac_n: 3
+  plane_num_iterations: 1500
+  min_plane_points: 800
+  min_plane_ratio: 0.015
+  min_remaining_points: 2000
+  min_remaining_ratio: 0.15
+  plane_voxel_size_m: 0.035
+  classify_up_axis: z
+  floor_ceiling_normal_dot_min: 0.90
+  wall_vertical_abs_dot_max: 0.25
+  plane_merge_angle_deg: 7.5
+  plane_merge_distance_m: 0.08
+
+  # Meshing is fail-soft. Ball pivoting is the safer default for open architectural clouds;
+  # Poisson remains available when normals are reliable and a more closed mesh is desired.
+  mesh_enabled: true
+  mesh_method: ball_pivoting       # ball_pivoting | poisson | disabled
+  poisson_depth: 9
+  poisson_scale: 1.1
+  poisson_linear_fit: false
+  poisson_trim_quantile: 0.02
+  ball_pivoting_radii_m: [0.04, 0.08, 0.16]
+  mesh_min_vertices: 1000
+  fail_if_mesh_fails: false
+
+  # Optional architectural mesh trimming against extracted planes. Disabled by default because non-planar
+  # assets/columns may still be useful for progress monitoring.
+  mesh_plane_trim_enabled: false
+  mesh_plane_trim_distance_m: 0.12
+  mesh_plane_trim_min_planes: 2
+  mesh_plane_trim_min_keep_ratio: 0.25
+
+  # Quality gates are advisory by default because reconstruction completeness varies by site.
+  quality_min_points: 10000
+  quality_max_removed_ratio: 0.85
+  quality_min_planes: 1
+
+  # Optional image/semantic context hooks. No models or weights are executed by default.
+  semantics_enabled: true
+  yolo_enabled: true
+  yolo_detections_jsonl: data/semantics/site01/yolo_detections.jsonl
+  yolo_summary_json: data/semantics/site01/yolo_summary.json
+  yolo_transient_classes:
+    - person
+    - worker
+    - car
+    - truck
+    - bus
+    - motorcycle
+    - bicycle
+    - excavator
+    - crane
+    - forklift
+    - loader
+    - machinery
+
+  # Conservative, actionable semantic cleanup: only activated when YOLO reports transient objects.
+  semantic_color_filter_enabled: true
+  semantic_color_filter_activation: if_yolo_transients
+  semantic_color_filter_min_transient_frames: 1
+  semantic_color_filter_saturation_min: 0.45
+  semantic_color_filter_value_min: 0.35
+  semantic_color_filter_max_removed_ratio: 0.12
+  semantic_color_filter_hsv_ranges:
+    - [18.0, 48.0]
+    - [50.0, 85.0]
+
+  vlm_enabled: true
+  vlm_scene_report_json: data/semantics/site01/vlm_scene_report.json
+  vlm_summary_json: data/semantics/site01/vlm_summary.json

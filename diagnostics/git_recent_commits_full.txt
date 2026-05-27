@@ -1,0 +1,116 @@
+### command
+git log -8 --stat 
+
+commit e80e2ffcebc37ba72beeffeab7c54e5d085a2d5d
+Author: Ali Mirjafari <ali@example.com>
+Date:   Mon May 18 22:47:38 2026 +0330
+
+    Fix reviewed pipeline correctness test regressions
+
+ pipeline/stage_08_bim_eval/metric_alignment.py     | 80 +++++++++++++++++-----
+ ...stage_08_metric_alignment_selection_contract.py |  3 +-
+ tests/test_stage_09_sampling_helpers.py            |  7 ++
+ 3 files changed, 73 insertions(+), 17 deletions(-)
+
+commit bb094bee137ab7e1c76484d531675dd374f14743
+Author: Ali Mirjafari <ali@example.com>
+Date:   Fri May 8 08:39:52 2026 +0330
+
+    Add visual anchor triangulation quality gate
+
+ docs/stage_08_visual_anchor_workflow.md            |  21 ++
+ .../stage_08_bim_eval/visual_anchor_quality.py     | 254 +++++++++++++++++++++
+ tests/test_stage_08_visual_anchor_quality.py       |  94 ++++++++
+ ...test_stage_08_visual_anchor_quality_contract.py |  17 ++
+ 4 files changed, 386 insertions(+)
+
+commit b5794ebcccb9f990804e4bd234e7246010e1ee7d
+Author: Ali Mirjafari <ali@example.com>
+Date:   Fri May 8 08:36:24 2026 +0330
+
+    Add server handoff ZIP verifier
+
+ scripts/verify_server_handoff_zip.py | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+commit 9d793289f193d06ff9bb62b8873ec7d4cbc4696b
+Author: Ali Mirjafari <ali@example.com>
+Date:   Fri May 8 08:31:20 2026 +0330
+
+    Add server handoff ZIP verifier
+
+ README.md                                          |  12 +
+ docs/current_project_status.md                     |  12 +
+ docs/server_handoff_checklist.md                   |  12 +
+ pipeline/stage_08_bim_eval/metric_alignment.py     |   7 +
+ .../metric_alignment_selection.py                  | 371 +++++++++++++++++++++
+ scripts/verify_server_handoff_zip.py               | 154 +++++++++
+ tests/test_server_handoff_zip_verifier.py          |  51 +++
+ tests/test_stage_08_metric_alignment_selection.py  |  91 +++++
+ ...stage_08_metric_alignment_selection_contract.py |  11 +
+ 9 files changed, 721 insertions(+)
+
+commit 78bd25b36995dcc1aa550caeb4fe61527d1dda8b
+Author: Ali Mirjafari <ali@example.com>
+Date:   Fri May 8 08:19:18 2026 +0330
+
+    Make geometry smoke scripts dependency-aware
+
+ scripts/smoke_test_stage_07.py           |  6 +++++-
+ scripts/smoke_test_stage_07_5_vlm_qa.py  |  6 +++++-
+ scripts/smoke_test_stage_08.py           |  6 +++++-
+ scripts/smoke_test_stage_09.py           |  6 +++++-
+ tests/test_smoke_dependency_awareness.py | 20 ++++++++++++++++++++
+ 5 files changed, 40 insertions(+), 4 deletions(-)
+
+commit 25d99f204a14ee34ef80a6b48d091b031bc4c13d
+Author: Ali Mirjafari <ali@example.com>
+Date:   Fri May 8 08:14:20 2026 +0330
+
+    Add verified server handoff ZIP exporter
+
+ README.md                                    |  11 ++
+ docs/current_project_status.md               |   5 +
+ scripts/export_server_handoff_zip.py         | 149 +++++++++++++++++++++++++++
+ tests/conftest.py                            |  21 +++-
+ tests/test_lightweight_marker_contract.py    |  10 ++
+ tests/test_server_handoff_export_contract.py |  55 ++++++++++
+ 6 files changed, 246 insertions(+), 5 deletions(-)
+
+commit b7e246c11064e39fa5d3c76810719dbdef7f9250
+Author: Ali Mirjafari <ali@example.com>
+Date:   Fri May 8 07:23:40 2026 +0330
+
+    Harden Stage 9 interpretation and Stage 10 audit logging
+
+ docs/stage_09_progress.md                          |  19 ++
+ docs/stage_09_scientific_metrics.md                |  37 ++++
+ docs/stage_10_copilot.md                           |  11 +
+ pipeline/stage_09_progress/decision_enrichment.py  |  12 +-
+ .../stage_09_progress/progress_interpretation.py   | 226 +++++++++++++++++++++
+ pipeline/stage_09_progress/visibility_policy.py    | 126 ++++++++++++
+ pipeline/stage_10_copilot/api.py                   |  30 ++-
+ pipeline/stage_10_copilot/audit_log.py             |  98 +++++++++
+ scripts/upgrade_stage09_progress_schema.py         |  41 ++++
+ ...test_stage_09_decision_enrichment_visibility.py |  67 ++++++
+ tests/test_stage_09_progress_interpretation.py     | 104 ++++++++++
+ tests/test_stage_09_visibility_contract.py         |  10 +
+ tests/test_stage_09_visibility_policy.py           |  74 +++++++
+ tests/test_stage_10_api_audit_contract.py          |   9 +
+ tests/test_stage_10_audit_log.py                   |  37 ++++
+ 15 files changed, 898 insertions(+), 3 deletions(-)
+
+commit e0cb3b0845a9f547ea791e43996fd1f270826a26
+Author: Ali Mirjafari <ali@example.com>
+Date:   Fri May 8 07:20:29 2026 +0330
+
+    Sync final readiness docs and server gate fallback
+
+ README.md                                          |  2 +
+ docs/current_project_status.md                     | 52 +++++++++++++++++
+ docs/operational_readiness_matrix.md               | 65 +++++++---------------
+ docs/runbook_stage_05_to_10.md                     |  2 +
+ docs/server_handoff_checklist.md                   |  2 +
+ pipeline/common/server_readiness_policy.py         | 47 ++++++++++++----
+ .../test_server_readiness_element_map_fallback.py  | 48 ++++++++++++++++
+ 7 files changed, 163 insertions(+), 55 deletions(-)

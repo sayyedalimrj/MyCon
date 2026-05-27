@@ -1,0 +1,7 @@
+### command
+du -sh data runs exports model_cache models ollama_models hf_cache 2>/dev/null || true
+
+2.3G	data
+412M	runs
+22M	exports
+4.0K	models

@@ -1,0 +1,50 @@
+{
+  "configs/site01.yaml": {
+    "exists": true,
+    "size": 22521
+  },
+  "docs/runbook_stage_05_to_10.md": {
+    "exists": true,
+    "size": 22483
+  },
+  "docs/operational_readiness_matrix.md": {
+    "exists": true,
+    "size": 1373
+  },
+  "pytest.ini": {
+    "exists": true,
+    "size": 462
+  },
+  "docker/docker-compose.yml": {
+    "exists": true,
+    "size": 571
+  },
+  "docker/docker-compose.vlm.yml": {
+    "exists": true,
+    "size": 293
+  },
+  "pipeline": {
+    "exists": true,
+    "file_count": 255
+  },
+  "tests": {
+    "exists": true,
+    "file_count": 163
+  },
+  "scripts": {
+    "exists": true,
+    "file_count": 94
+  },
+  "docs": {
+    "exists": true,
+    "file_count": 24
+  },
+  "configs": {
+    "exists": true,
+    "file_count": 18
+  },
+  "docker": {
+    "exists": true,
+    "file_count": 6
+  }
+}

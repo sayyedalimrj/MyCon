@@ -1,0 +1,7 @@
+### command
+git ls-files --others --exclude-standard 
+
+bash
+dist/construction-progress-ai-bim_server_handoff.zip
+dist/server_handoff_test.zip
+tests/test_stage_06_da3_colmap_image_lookup.py

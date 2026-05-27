@@ -1,0 +1,27 @@
+# Apply this profile only when local/server Qwen VLM is available.
+# Do not merge into laptop default config until the model endpoint is ready.
+
+copilot:
+  vlm:
+    provider: ollama_local
+    endpoint: http://host.docker.internal:11434/api/chat
+    model: qwen3-vl:8b-thinking
+    hf_model: Qwen/Qwen3-VL-8B-Thinking
+    local_only: true
+    fallback_to_mock_when_unavailable: true
+    require_real_vlm: false
+    timeout_sec: 180
+    temperature: 0.1
+    max_tokens: 2048
+    max_images: 4
+    answer_policy: evidence_only
+    image_transport: base64
+
+vlm_qa:
+  provider: ollama_local
+  endpoint: http://host.docker.internal:11434/api/chat
+  model: qwen3-vl:8b-thinking
+  hf_model: Qwen/Qwen3-VL-8B-Thinking
+  fallback_to_mock_when_unavailable: true
+  require_real_vlm: false
+  answer_policy: evidence_only

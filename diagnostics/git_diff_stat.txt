@@ -1,0 +1,19 @@
+### command
+git diff --stat 
+
+ configs/site01.yaml                             |   6 ++
+ pipeline/stage_06_da3_assist/colmap_model.py    |   8 ++
+ pipeline/stage_06_da3_assist/depth_alignment.py |   7 +-
+ pipeline/stage_06_da3_assist/depth_fusion.py    |   7 +-
+ pipeline/stage_07_cleanup/run_cleanup.py        |   4 +-
+ pipeline/stage_08_bim_eval/run_registration.py  |   2 +
+ pipeline/stage_09_progress/run_progress.py      | 137 ++++++++++++++++++------
+ pipeline/stage_09_progress/visibility_policy.py |  11 +-
+ pipeline/stage_10_copilot/answer_validator.py   |  17 ++-
+ pipeline/stage_10_copilot/vlm_answer.py         |  39 +++++--
+ tests/test_stage_08_bim_eval.py                 |   2 +
+ tests/test_stage_08_metric_alignment.py         |  24 +++++
+ tests/test_stage_09_progress.py                 |  31 +++++-
+ tests/test_stage_09_visibility_policy.py        |  15 +++
+ tests/test_stage_10_answer_validator.py         |  15 +++
+ 15 files changed, 272 insertions(+), 53 deletions(-)
