@@ -78,6 +78,11 @@ from typing import Any, Iterable, Mapping, Sequence
 import numpy as np
 
 
+# NumPy 2.0 removed ``np.trapz`` in favour of ``np.trapezoid``. We support
+# both so the module runs unchanged across NumPy 1.x and 2.x deployments.
+_trapezoid = getattr(np, "trapezoid", None) or np.trapz  # type: ignore[attr-defined]
+
+
 __all__ = [
     "DEFAULT_CONFIDENCE_LABEL_PROBABILITIES",
     "CalibrationDataset",
@@ -489,10 +494,10 @@ def smooth_ece(
     integrand = gap * density
     # Density above is unnormalised on grid; renormalise so integral is a
     # weighted-average gap.
-    norm = float(np.trapz(density, grid))
+    norm = float(_trapezoid(density, grid))
     if norm <= 1e-12:
         return 0.0
-    return float(np.trapz(integrand, grid) / norm)
+    return float(_trapezoid(integrand, grid) / norm)
 
 
 def calibration_report(

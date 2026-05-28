@@ -166,7 +166,26 @@ class ViewObservation:
 
 @dataclass(frozen=True)
 class FusedElementBelief:
-    """Result of fusing N view observations of one BIM element."""
+    """Result of fusing N view observations of one BIM element.
+
+    Attributes
+    ----------
+    fused_belief_acceptable, fused_belief_not_acceptable, fused_uncertainty_mass
+        Subjective-logic masses on {acceptable, not_acceptable, U}; sum to 1.
+        These are *belief* masses, not probabilities.
+    expected_probability_acceptable
+        Dirichlet marginal expectation
+        ``alpha_a / S = (e_a + 1) / (e_a + e_n + 2)``,
+        which is the *probability* the element is acceptable under the
+        Dirichlet posterior. This is the natural quantity to threshold
+        for an accept/reject decision; it ranges over the full [0, 1]
+        interval as evidence accumulates, whereas the belief mass
+        ``fused_belief_acceptable`` is bounded above by ``1 - 2/(2+e_a+e_n)``
+        and so always leaves some uncertainty mass for finite evidence.
+    conflict_mass
+        Aggregated Dempster K across the fusion sequence; a diagnostic
+        for inter-view disagreement, *not* a part of the belief masses.
+    """
 
     element_global_id: str
     view_count: int
@@ -174,6 +193,7 @@ class FusedElementBelief:
     fused_belief_acceptable: float
     fused_belief_not_acceptable: float
     fused_uncertainty_mass: float
+    expected_probability_acceptable: float
     conflict_mass: float
     decision: str
     decision_threshold_acceptable: float
@@ -189,6 +209,7 @@ class FusedElementBelief:
             "fused_belief_acceptable": self.fused_belief_acceptable,
             "fused_belief_not_acceptable": self.fused_belief_not_acceptable,
             "fused_uncertainty_mass": self.fused_uncertainty_mass,
+            "expected_probability_acceptable": self.expected_probability_acceptable,
             "conflict_mass": self.conflict_mass,
             "decision": self.decision,
             "decision_threshold_acceptable": self.decision_threshold_acceptable,
@@ -351,27 +372,41 @@ def fuse_views(
     decision_threshold_uncertain: float = 0.50,
     conflict_mass_threshold: float = 0.30,
 ) -> FusedElementBelief:
-    """Fuse N ≥ 0 per-view observations into a single per-element belief.
+    """Fuse N >= 0 per-view observations into a single per-element belief.
 
-    Decision policy (configurable via the threshold parameters; defaults
-    chosen to match the existing :mod:`pipeline.common.progress_decision_policy`
-    operating point of 0.65):
+    Implementation uses the closed-form Dirichlet-evidence combination of
+    Han et al. (ICLR 2021). For two classes:
+
+        e_a_total = sum_i e_a_i        # sum of acceptable evidence
+        e_n_total = sum_i e_n_i        # sum of not-acceptable evidence
+        S         = e_a_total + e_n_total + 2
+        b_a       = e_a_total / S
+        b_n       = e_n_total / S
+        u         = 2 / S
+
+    The N-view evidence sum is associative and commutative (independent of
+    fusion order), so the mathematics is order-stable by construction.
+
+    Conflict is reported separately. We accumulate Dempster K *pairwise*
+    over a fixed fusion order (input order) using the iterative
+    {a, n, U}-frame combination of :func:`fuse_two_views`, and
+    summarise it as ``K_total = 1 - prod_i (1 - K_i)``. This is the same
+    "no-conflict probability" composition used in Sensoy et al.
+    (NeurIPS 2018). Note that K_total is a *diagnostic*; the belief
+    masses themselves come from the additive Dirichlet form, not from
+    the iterative Dempster fold.
+
+    Decision policy (configurable via the threshold parameters):
 
     - ``not_evidenced``         — N = 0 or all views had zero confidence.
-    - ``uncertain_conflict``    — total accumulated conflict mass exceeds
+    - ``uncertain_conflict``    — accumulated conflict mass exceeds
                                    ``conflict_mass_threshold``.
-    - ``acceptable``            — fused belief on acceptable ≥
+    - ``acceptable``            — fused belief on acceptable >=
                                    ``decision_threshold_acceptable`` and
                                    conflict mass below threshold.
-    - ``not_acceptable``        — fused belief on not_acceptable ≥
+    - ``not_acceptable``        — fused belief on not_acceptable >=
                                    ``decision_threshold_acceptable``.
     - ``uncertain``             — otherwise.
-
-    Implementation note: we accumulate conflict over the fusion sequence as
-    ``K_total = 1 - prod_i (1 - K_i)`` where ``K_i`` is the conflict at the
-    i-th pairwise fusion step. This mirrors the way independent Bernoulli
-    "no-conflict" probabilities compose; it gives a fusion-order-stable
-    summary even though the raw K_i depend on order.
     """
     if not observations:
         element_id = ""
@@ -382,6 +417,7 @@ def fuse_views(
             fused_belief_acceptable=0.0,
             fused_belief_not_acceptable=0.0,
             fused_uncertainty_mass=1.0,
+            expected_probability_acceptable=0.5,
             conflict_mass=0.0,
             decision="not_evidenced",
             decision_threshold_acceptable=decision_threshold_acceptable,
@@ -391,11 +427,9 @@ def fuse_views(
         )
 
     element_id = observations[0].element_global_id
-    contributing: list[str] = []
     notes: list[str] = []
 
-    # Drop zero-confidence observations: they carry no evidence and only
-    # cluttering the fusion log.
+    # Drop zero-confidence observations: they carry no evidence.
     active = [o for o in observations if o.view_confidence > 0.0]
     if len(active) < len(observations):
         notes.append(f"dropped_zero_confidence_views:{len(observations) - len(active)}")
@@ -407,6 +441,7 @@ def fuse_views(
             fused_belief_acceptable=0.0,
             fused_belief_not_acceptable=0.0,
             fused_uncertainty_mass=1.0,
+            expected_probability_acceptable=0.5,
             conflict_mass=0.0,
             decision="not_evidenced",
             decision_threshold_acceptable=decision_threshold_acceptable,
@@ -415,52 +450,65 @@ def fuse_views(
             notes=tuple(notes + ["all_views_zero_confidence"]),
         )
 
-    # Mismatched element IDs are flagged but tolerated; downstream consumers
-    # may legitimately fuse the same element observed under different IFC
-    # GlobalIds (rare, but possible after a BIM update).
     if any(o.element_global_id != element_id for o in active):
         notes.append("mixed_element_ids")
 
-    # First view: convert to (b_a, b_n, u, K=0).
-    first = active[0]
-    e_a, e_n = _to_evidence(first.p_acceptable, first.view_confidence)
-    b_a, b_n, u = _evidence_to_bu(e_a, e_n)
-    k_total_no_conflict = 1.0  # product of (1 - K_i)
-    contributing.append(first.view_id)
+    # ---- Belief masses: closed-form Dirichlet evidence sum -----------
+    e_a_total = 0.0
+    e_n_total = 0.0
+    contributing: list[str] = []
+    for o in active:
+        e_a, e_n = _to_evidence(o.p_acceptable, o.view_confidence)
+        e_a_total += e_a
+        e_n_total += e_n
+        contributing.append(o.view_id)
+    s = e_a_total + e_n_total + 2.0
+    b_a = e_a_total / s
+    b_n = e_n_total / s
+    u = 2.0 / s
+    # Dirichlet marginal expectation: alpha_a / S = (e_a + 1) / S.
+    # This is the *probability* the element is acceptable under the
+    # posterior, and is the natural quantity for the decision policy.
+    expected_p_a = (e_a_total + 1.0) / s
+    expected_p_n = 1.0 - expected_p_a
 
-    for next_obs in active[1:]:
-        # Build a synthetic "previous fused" pseudo-observation by inverting
-        # the (b_a, b_n, u) → (p, w) mapping. Since e_a + e_n = w and
-        # e_a / w = p, we recover (p, w) directly from the running belief.
-        running_e_a = b_a / max(u, 1e-12) if u > 0 else 1.0
-        running_e_n = b_n / max(u, 1e-12) if u > 0 else 0.0
-        running_w = running_e_a + running_e_n
-        # Cap the synthetic weight at 1.0 to keep the math stable; the cap
-        # only matters in the rare case of unanimous high-confidence
-        # observations, where it prevents the running evidence from
-        # exploding while still preserving the qualitative direction.
-        running_w = min(running_w, 1.0)
-        running_p = running_e_a / max(1e-12, running_e_a + running_e_n)
-        running_obs = ViewObservation(
-            view_id="__running__",
-            element_global_id=element_id,
-            p_acceptable=running_p,
-            view_confidence=running_w,
-        )
-        b_a, b_n, u, k = fuse_two_views(running_obs, next_obs)
-        k_total_no_conflict *= max(0.0, 1.0 - k)
-        contributing.append(next_obs.view_id)
-
-    conflict_total = float(max(0.0, min(1.0, 1.0 - k_total_no_conflict)))
+    # ---- Conflict diagnostic: pairwise Dempster K accumulation -------
+    # We compute K_i = b_a^(prev) * b_n^(cur) + b_n^(prev) * b_a^(cur) on
+    # the per-view {a, n, U} masses, then aggregate as
+    # K_total = 1 - prod_i (1 - K_i). The 'prev' belief here is the
+    # *fused* belief after the first i views (Dirichlet form), so each
+    # pairwise step measures conflict between the running consensus and
+    # the next view -- the meaningful quantity for an audit.
+    if len(active) == 1:
+        conflict_total = 0.0
+    else:
+        e_a_run = 0.0
+        e_n_run = 0.0
+        no_conflict_product = 1.0
+        # Seed with the first view.
+        e_a_run, e_n_run = _to_evidence(active[0].p_acceptable, active[0].view_confidence)
+        for o in active[1:]:
+            s_run = e_a_run + e_n_run + 2.0
+            b_a_run = e_a_run / s_run
+            b_n_run = e_n_run / s_run
+            e_a_cur, e_n_cur = _to_evidence(o.p_acceptable, o.view_confidence)
+            s_cur = e_a_cur + e_n_cur + 2.0
+            b_a_cur = e_a_cur / s_cur
+            b_n_cur = e_n_cur / s_cur
+            k_i = b_a_run * b_n_cur + b_n_run * b_a_cur
+            no_conflict_product *= max(0.0, 1.0 - k_i)
+            e_a_run += e_a_cur
+            e_n_run += e_n_cur
+        conflict_total = float(max(0.0, min(1.0, 1.0 - no_conflict_product)))
 
     if conflict_total > conflict_mass_threshold:
         decision = "uncertain_conflict"
         notes.append(f"conflict_mass_above_threshold:{conflict_total:.6f}>{conflict_mass_threshold:.6f}")
-    elif b_a >= decision_threshold_acceptable:
+    elif expected_p_a >= decision_threshold_acceptable:
         decision = "acceptable"
-    elif b_n >= decision_threshold_acceptable:
+    elif expected_p_n >= decision_threshold_acceptable:
         decision = "not_acceptable"
-    elif b_a >= decision_threshold_uncertain or b_n >= decision_threshold_uncertain:
+    elif expected_p_a >= decision_threshold_uncertain or expected_p_n >= decision_threshold_uncertain:
         decision = "uncertain"
     else:
         decision = "uncertain"
@@ -472,6 +520,7 @@ def fuse_views(
         fused_belief_acceptable=float(b_a),
         fused_belief_not_acceptable=float(b_n),
         fused_uncertainty_mass=float(u),
+        expected_probability_acceptable=float(expected_p_a),
         conflict_mass=conflict_total,
         decision=decision,
         decision_threshold_acceptable=decision_threshold_acceptable,
