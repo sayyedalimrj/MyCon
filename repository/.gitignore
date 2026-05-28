@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+data/
+runs/
+exports/
+model_cache/
+models/
+ollama_models/
+hf_cache/
+.venv/
+venv/
+dist/
+*.egg-info/
