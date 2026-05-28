@@ -16,6 +16,7 @@ import { VlmPanel } from "../panels/VlmPanel";
 import { ViewerPanel } from "../panels/ViewerPanel";
 import { DiffPanel } from "../panels/DiffPanel";
 import { ReportPanel } from "../panels/ReportPanel";
+import { ScheduleComparePage } from "../pages/ScheduleCompare";
 
 export function App() {
   return (
@@ -38,6 +39,7 @@ export function App() {
               <Route path="/viewer" element={<ViewerPanel />} />
               <Route path="/diff" element={<DiffPanel />} />
               <Route path="/report" element={<ReportPanel />} />
+              <Route path="/schedule" element={<ScheduleComparePage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </ErrorBoundary>
