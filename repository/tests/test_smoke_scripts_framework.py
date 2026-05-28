@@ -21,6 +21,7 @@ SMOKE_CASES = [
     ("stage_08_bim_eval", "scripts/smoke_test_stage_08.py", "STAGE_08_SMOKE_OK"),
     ("stage_09_progress", "scripts/smoke_test_stage_09.py", "STAGE_09_SMOKE_OK"),
     ("stage_10_copilot", "scripts/smoke_test_stage_10.py", "STAGE_10_SMOKE_OK"),
+    ("stage_11_schedule_variance", "scripts/smoke_test_stage_11.py", "STAGE_11_SMOKE_OK"),
 ]
 
 

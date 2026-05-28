@@ -690,6 +690,40 @@ class Stage10CopilotSchema:
         )
 
 
+@dataclass(frozen=True)
+class Stage11ScheduleVarianceSchema:
+    """Stage 11 (schedule variance) typed config view.
+
+    Stage 11 is laptop-runnable and pure-Python: it reads the canonical
+    schedule CSV and the BIM<->schedule mapping CSV and consumes Stage 9
+    element_metrics.csv to produce per-activity rollups + run-wide
+    variance + dashboard summary. Required config keys are intentionally
+    minimal because the runner's CLI flags carry the per-run details.
+    """
+
+    project: ProjectSchema
+    paths: PathsSchema
+    on_schedule_band_pct: float
+
+    @classmethod
+    def required_config_keys(cls) -> tuple[str, ...]:
+        return (
+            *ProjectSchema.required_config_keys(),
+            *PathsSchema.required_config_keys(),
+        )
+
+    @classmethod
+    def from_config(cls, cfg: PipelineConfig) -> "Stage11ScheduleVarianceSchema":
+        return cls(
+            project=ProjectSchema.from_config(cfg),
+            paths=PathsSchema.from_config(cfg),
+            on_schedule_band_pct=_as_float(
+                _get(cfg, "schedule_variance.on_schedule_band_pct", 5.0),
+                "schedule_variance.on_schedule_band_pct",
+            ),
+        )
+
+
 # Public ordered tuple consumed by the registry to populate stage descriptors.
 # Order matches the canonical pipeline execution order documented in
 # scripts/run_pipeline_plan.py.
@@ -704,4 +738,5 @@ ALL_STAGE_SCHEMAS: tuple[type, ...] = (
     Stage08BimEvalSchema,
     Stage09ProgressSchema,
     Stage10CopilotSchema,
+    Stage11ScheduleVarianceSchema,
 )
