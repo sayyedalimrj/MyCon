@@ -41,20 +41,53 @@ def test_every_descriptor_has_unique_name() -> None:
     assert len(names) == len(set(names))
 
 
+@pytest.mark.geometry
 def test_every_descriptor_has_resolvable_callable() -> None:
-    """``descriptor.callable()`` must successfully load the in-process entry-point."""
+    """``descriptor.callable()`` must successfully load the in-process entry-point.
+
+    Marked ``geometry`` because importing the per-stage CLI modules pulls
+    OpenCV / Open3D / IfcOpenShell at top-level. The lightweight/laptop test
+    set is documented (in ``pytest.ini`` and ``tests/conftest.py``) as not
+    requiring those binaries; this assertion belongs in the geometry-enabled
+    server / Docker test runs.
+    """
     for d in STAGE_REGISTRY:
         fn = d.callable()
         assert callable(fn), f"{d.name}: {d.cli_module}.{d.callable_name} is not callable"
 
 
+@pytest.mark.geometry
 def test_every_descriptor_cli_module_is_importable() -> None:
-    """``cli_module`` must be a real importable Python module."""
+    """``cli_module`` must be a real importable Python module.
+
+    Marked ``geometry`` for the same reason as
+    :func:`test_every_descriptor_has_resolvable_callable`.
+    """
     for d in STAGE_REGISTRY:
         try:
             importlib.import_module(d.cli_module)
         except Exception as exc:  # pragma: no cover - failure path
             pytest.fail(f"{d.name}: cli_module {d.cli_module!r} not importable: {exc}")
+
+
+def test_every_descriptor_cli_module_path_is_well_formed() -> None:
+    """Lightweight check: every ``cli_module`` is a dotted Python path under
+    ``pipeline.`` and the corresponding source file exists on disk.
+
+    This lets us catch typos in the registry without importing the heavy
+    geometry stack — useful in the laptop test set, where the stronger
+    ``geometry``-marked import test is skipped.
+    """
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[1]
+    for d in STAGE_REGISTRY:
+        assert d.cli_module.startswith("pipeline."), (
+            f"{d.name}: cli_module must start with 'pipeline.', got {d.cli_module!r}"
+        )
+        rel = Path(*d.cli_module.split(".")).with_suffix(".py")
+        path = repo_root / rel
+        assert path.is_file(), f"{d.name}: cli_module source file does not exist: {path}"
 
 
 def test_dependency_graph_is_valid_dag() -> None:
