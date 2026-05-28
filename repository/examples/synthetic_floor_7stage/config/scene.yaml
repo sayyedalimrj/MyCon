@@ -1,0 +1,345 @@
+# =====================================================================
+# Synthetic Floor (7 Stages) - Master Configuration
+# ---------------------------------------------------------------------
+# This single file controls EVERYTHING about the example dataset:
+#   - the floor's geometric layout
+#   - the seven construction stages
+#   - the camera and smartphone simulation parameters
+#   - the renderer settings
+#   - the output paths
+#
+# All units are SI (meters, seconds, radians) unless explicitly noted.
+# All coordinates use a right-handed system with +Z up.
+# The origin (0, 0, 0) is the south-west corner of the slab on the
+# ground level.
+#
+# The whole pipeline is deterministic: the random_seed below controls
+# every stochastic element (camera jitter, texture noise, etc.).
+# =====================================================================
+
+project:
+  # Name of the dataset; appears in manifests and IFC headers.
+  name: synthetic_floor_7stage
+  # Numeric run identifier - bump this if you regenerate everything.
+  run_id: "v1"
+  # Human-readable description used in IFC project header.
+  description: "Synthetic single-floor building, 7 construction stages."
+  # ALL random numbers in the pipeline derive from this seed.
+  random_seed: 42
+
+# ---------------------------------------------------------------------
+# 1) Floor geometry
+# ---------------------------------------------------------------------
+# A simple rectangular floor with a regular structural grid.
+# Length (X), Width (Y), Height (Z) in meters.
+floor:
+  length_m: 18.0      # X axis (east-west)
+  width_m: 12.0       # Y axis (north-south)
+  height_m: 3.0       # Z axis (slab top to slab bottom of next floor)
+  slab_thickness_m: 0.20
+  exterior_wall_thickness_m: 0.25
+  interior_wall_thickness_m: 0.12
+  # Structural column grid. Columns are placed at every grid intersection.
+  grid:
+    bays_x: 3         # number of bays along X (=> 4 column lines)
+    bays_y: 2         # number of bays along Y (=> 3 column lines)
+    column_size_m: 0.40   # square cross-section side length
+  # Door opening (used for both exterior main door and interior doors).
+  door_opening:
+    width_m: 0.90
+    height_m: 2.10
+  # Window opening (consistent for every exterior window).
+  window_opening:
+    width_m: 1.40
+    height_m: 1.20
+    sill_height_m: 0.95   # height of the bottom of the window above the slab top
+  # Internal layout: rectangular rooms defined by SW + NE corners (XY).
+  # The floor is partitioned into a corridor and 6 rooms.
+  # NOTE: Interior walls are inferred from these room boundaries.
+  rooms:
+    - id: ROOM_01
+      name: "Office A"
+      sw: [0.0,  0.0]
+      ne: [6.0,  5.5]
+    - id: ROOM_02
+      name: "Office B"
+      sw: [6.0,  0.0]
+      ne: [12.0, 5.5]
+    - id: ROOM_03
+      name: "Meeting Room"
+      sw: [12.0, 0.0]
+      ne: [18.0, 5.5]
+    - id: CORRIDOR
+      name: "Corridor"
+      sw: [0.0,  5.5]
+      ne: [18.0, 7.5]
+    - id: ROOM_04
+      name: "Office C"
+      sw: [0.0,  7.5]
+      ne: [6.0,  12.0]
+    - id: ROOM_05
+      name: "Office D"
+      sw: [6.0,  7.5]
+      ne: [12.0, 12.0]
+    - id: ROOM_06
+      name: "Storage"
+      sw: [12.0, 7.5]
+      ne: [18.0, 12.0]
+  # Doors connect rooms to the corridor or the outside.
+  # (room_a, room_b) gives the two rooms separated by the door.
+  # offset_m is the door's center along the shared wall (measured from
+  # the SW corner of room_a's shared edge, in meters).
+  doors:
+    - id: DOOR_MAIN
+      from: EXTERIOR
+      to: CORRIDOR
+      side: south        # south = wall at Y=0.0 (front facade); we put the main door in the corridor's SW area via the front facade
+      offset_m: 9.0      # along the corridor's south wall (front of building)
+    - id: DOOR_R01
+      from: CORRIDOR
+      to: ROOM_01
+      side: shared
+      offset_m: 3.0
+    - id: DOOR_R02
+      from: CORRIDOR
+      to: ROOM_02
+      side: shared
+      offset_m: 3.0
+    - id: DOOR_R03
+      from: CORRIDOR
+      to: ROOM_03
+      side: shared
+      offset_m: 3.0
+    - id: DOOR_R04
+      from: CORRIDOR
+      to: ROOM_04
+      side: shared
+      offset_m: 3.0
+    - id: DOOR_R05
+      from: CORRIDOR
+      to: ROOM_05
+      side: shared
+      offset_m: 3.0
+    - id: DOOR_R06
+      from: CORRIDOR
+      to: ROOM_06
+      side: shared
+      offset_m: 3.0
+  # Exterior windows. Each window sits on one of the four exterior facades.
+  # 'facade' is south (Y=0), north (Y=W), west (X=0) or east (X=L).
+  # 'offset_m' is the window center along the facade from the SW-most
+  # end (south/north => measured along X; west/east => measured along Y).
+  windows:
+    - { id: WIN_S1, facade: south, offset_m: 3.0  }
+    - { id: WIN_S2, facade: south, offset_m: 6.0  }
+    - { id: WIN_S3, facade: south, offset_m: 12.0 }
+    - { id: WIN_S4, facade: south, offset_m: 15.0 }
+    - { id: WIN_N1, facade: north, offset_m: 3.0  }
+    - { id: WIN_N2, facade: north, offset_m: 9.0  }
+    - { id: WIN_N3, facade: north, offset_m: 15.0 }
+    - { id: WIN_W1, facade: west,  offset_m: 6.0  }
+    - { id: WIN_E1, facade: east,  offset_m: 6.0  }
+
+# ---------------------------------------------------------------------
+# 2) Construction stages
+# ---------------------------------------------------------------------
+# All seven stages share the same geometry. What changes from one
+# stage to the next is the COMPLETION RATIO of each element category
+# and the FINISHING SURFACE of walls and floors.
+#
+# completion: 0.0 means the element is invisible at this stage,
+#             1.0 means it is fully present.
+# finishing : a string identifier picked up by the material library:
+#             "raw_concrete" | "rough_plaster" | "fine_plaster" | "painted"
+# Stage 1 = bare structure; Stage 7 = fully completed interior.
+stages:
+  - id: 1
+    name: "Structural Skeleton"
+    description: "Slab + columns only."
+    elements:
+      slab:           { completion: 1.0, finishing: raw_concrete }
+      columns:        { completion: 1.0, finishing: raw_concrete }
+      exterior_walls: { completion: 0.0, finishing: raw_concrete }
+      interior_walls: { completion: 0.0, finishing: raw_concrete }
+      windows:        { completion: 0.0, finishing: raw_concrete }
+      doors:          { completion: 0.0, finishing: raw_concrete }
+      ceiling:        { completion: 0.0, finishing: raw_concrete }
+      floor_finish:   { completion: 0.0, finishing: raw_concrete }
+      baseboards:     { completion: 0.0, finishing: raw_concrete }
+      fixtures:       { completion: 0.0, finishing: raw_concrete }
+
+  - id: 2
+    name: "Partial Exterior Walls"
+    description: "About half of the exterior masonry has been built."
+    elements:
+      slab:           { completion: 1.0, finishing: raw_concrete }
+      columns:        { completion: 1.0, finishing: raw_concrete }
+      exterior_walls: { completion: 0.5, finishing: raw_concrete }
+      interior_walls: { completion: 0.0, finishing: raw_concrete }
+      windows:        { completion: 0.0, finishing: raw_concrete }
+      doors:          { completion: 0.0, finishing: raw_concrete }
+      ceiling:        { completion: 0.0, finishing: raw_concrete }
+      floor_finish:   { completion: 0.0, finishing: raw_concrete }
+      baseboards:     { completion: 0.0, finishing: raw_concrete }
+      fixtures:       { completion: 0.0, finishing: raw_concrete }
+
+  - id: 3
+    name: "Full Exterior Walls + Window Openings"
+    description: "All exterior walls built; window cut-outs visible."
+    elements:
+      slab:           { completion: 1.0, finishing: raw_concrete }
+      columns:        { completion: 1.0, finishing: raw_concrete }
+      exterior_walls: { completion: 1.0, finishing: raw_concrete }
+      interior_walls: { completion: 0.0, finishing: raw_concrete }
+      windows:        { completion: 0.0, finishing: raw_concrete }
+      doors:          { completion: 0.0, finishing: raw_concrete }
+      ceiling:        { completion: 0.0, finishing: raw_concrete }
+      floor_finish:   { completion: 0.0, finishing: raw_concrete }
+      baseboards:     { completion: 0.0, finishing: raw_concrete }
+      fixtures:       { completion: 0.0, finishing: raw_concrete }
+
+  - id: 4
+    name: "Partial Interior Walls + Door Openings"
+    description: "Half of the interior partitions are erected with door openings."
+    elements:
+      slab:           { completion: 1.0, finishing: raw_concrete }
+      columns:        { completion: 1.0, finishing: raw_concrete }
+      exterior_walls: { completion: 1.0, finishing: rough_plaster }
+      interior_walls: { completion: 0.5, finishing: raw_concrete }
+      windows:        { completion: 0.0, finishing: raw_concrete }
+      doors:          { completion: 0.0, finishing: raw_concrete }
+      ceiling:        { completion: 0.0, finishing: raw_concrete }
+      floor_finish:   { completion: 0.0, finishing: raw_concrete }
+      baseboards:     { completion: 0.0, finishing: raw_concrete }
+      fixtures:       { completion: 0.0, finishing: raw_concrete }
+
+  - id: 5
+    name: "Full Interior Walls + Doors Partially Installed"
+    description: "All partitions are up; about half of the doors are installed; some glass."
+    elements:
+      slab:           { completion: 1.0, finishing: raw_concrete }
+      columns:        { completion: 1.0, finishing: rough_plaster }
+      exterior_walls: { completion: 1.0, finishing: rough_plaster }
+      interior_walls: { completion: 1.0, finishing: rough_plaster }
+      windows:        { completion: 0.5, finishing: rough_plaster }
+      doors:          { completion: 0.5, finishing: raw_wood }
+      ceiling:        { completion: 0.5, finishing: raw_concrete }
+      floor_finish:   { completion: 0.0, finishing: raw_concrete }
+      baseboards:     { completion: 0.0, finishing: raw_concrete }
+      fixtures:       { completion: 0.0, finishing: raw_concrete }
+
+  - id: 6
+    name: "Rough Finishing"
+    description: "Plaster + ceiling done; partial paint and floor finish."
+    elements:
+      slab:           { completion: 1.0, finishing: fine_plaster }
+      columns:        { completion: 1.0, finishing: fine_plaster }
+      exterior_walls: { completion: 1.0, finishing: fine_plaster }
+      interior_walls: { completion: 1.0, finishing: fine_plaster }
+      windows:        { completion: 1.0, finishing: fine_plaster }
+      doors:          { completion: 0.75, finishing: raw_wood }
+      ceiling:        { completion: 1.0, finishing: fine_plaster }
+      floor_finish:   { completion: 0.5, finishing: tile }
+      baseboards:     { completion: 0.5, finishing: raw_wood }
+      fixtures:       { completion: 0.25, finishing: painted }
+
+  - id: 7
+    name: "Fully Completed Interior"
+    description: "Painted, doors installed, glazing in, floor and baseboards complete."
+    elements:
+      slab:           { completion: 1.0, finishing: painted }
+      columns:        { completion: 1.0, finishing: painted }
+      exterior_walls: { completion: 1.0, finishing: painted }
+      interior_walls: { completion: 1.0, finishing: painted }
+      windows:        { completion: 1.0, finishing: painted }
+      doors:          { completion: 1.0, finishing: painted_wood }
+      ceiling:        { completion: 1.0, finishing: painted }
+      floor_finish:   { completion: 1.0, finishing: tile }
+      baseboards:     { completion: 1.0, finishing: painted_wood }
+      fixtures:       { completion: 1.0, finishing: painted }
+
+# ---------------------------------------------------------------------
+# 3) Camera and smartphone simulation
+# ---------------------------------------------------------------------
+camera:
+  # Output video resolution (16:9). 640x360 keeps render time
+  # manageable on CPU while still looking convincingly HD. Increase to
+  # 960x540, 1280x720 or 1920x1080 for higher fidelity at the cost of
+  # much longer render time. (At 640x360 a full 7-stage run takes
+  # roughly 8-15 minutes on a modern laptop CPU.)
+  width_px: 640
+  height_px: 360
+  fps: 30
+  # ~28mm-equivalent on full frame. 65 deg horizontal FOV is typical
+  # of modern smartphone main cameras.
+  horizontal_fov_deg: 65.0
+  # Mild barrel distortion (Brown-Conrady k1, k2). A slightly negative
+  # k1 produces the soft outward bend smartphones usually show after
+  # de-distortion.
+  k1: -0.04
+  k2: 0.01
+  # Camera ergonomic height when held by a walking person (eye / chest).
+  hold_height_m: 1.55
+  # Per-stage clip duration (seconds). Total frames = duration * fps.
+  duration_per_stage_sec: 3.0
+  # Path planner settings.
+  walk_speed_m_s: 0.85          # comfortable indoor walking speed
+  look_at_height_m: 1.55        # height of the LookAt target
+  hand_jitter:
+    translation_amplitude_m: 0.012   # small bobbing on each axis
+    rotation_amplitude_deg: 0.7      # small yaw/pitch/roll wobble
+    breathing_period_s: 3.5          # slow breathing oscillation
+    walking_period_s: 0.55           # gait step period
+    walking_pitch_amp_deg: 0.6       # gait pitch
+    walking_yaw_amp_deg: 0.4         # gait yaw
+    walking_z_amp_m: 0.012           # gait vertical bob
+  exposure:
+    target_brightness: 0.45     # mean target brightness (0..1)
+    adapt_speed: 0.10           # 0..1, how fast the meter reacts
+    max_ev_change_per_frame: 0.06
+  noise:
+    iso_equivalent: 200.0       # higher = more noise
+    read_noise_sigma: 0.012     # per-channel additive Gaussian
+    photon_scale: 1.0           # multiplier on shot noise
+  motion_blur:
+    shutter_fraction: 0.5       # shutter open for 1/(2*fps) seconds
+    samples: 4                  # number of sub-samples per output frame
+  rolling_shutter:
+    # A simple top-to-bottom row delay producing slight skew when the
+    # camera pans quickly. 0.0 disables it.
+    row_delay_sec: 0.001
+
+# ---------------------------------------------------------------------
+# 4) Renderer
+# ---------------------------------------------------------------------
+renderer:
+  # The repo-internal Python software rasterizer is the default. It
+  # works in any environment (no Blender, no GPU). Feel free to swap
+  # the backend by editing scripts/run_generate.py.
+  backend: software_rasterizer
+  ambient_light: 0.18
+  sun_azimuth_deg: 135.0
+  sun_elevation_deg: 38.0
+  sun_color: [1.00, 0.96, 0.88]
+  sky_color: [0.55, 0.70, 0.95]
+  shadow_softness: 0.25
+  vignette_strength: 0.22
+  # Render textured material samples for spot inspection. Optional.
+  emit_material_samples: true
+
+# ---------------------------------------------------------------------
+# 5) Output paths
+# ---------------------------------------------------------------------
+# All output paths are RELATIVE to the example folder. The runner
+# resolves them against examples/synthetic_floor_7stage/output.
+output:
+  root: output
+  bim_dir: bim
+  mesh_dir: mesh
+  renders_dir: renders
+  video_dir: video
+  depth_dir: depth
+  segmentation_dir: segmentation
+  camera_dir: camera
+  manifests_dir: manifests
+  logs_dir: logs
