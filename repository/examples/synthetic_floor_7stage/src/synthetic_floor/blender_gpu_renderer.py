@@ -739,7 +739,7 @@ def configure_compositor(args: RenderArgs) -> None:
     fo_depth.base_path = str(depth_dir)
     fo_depth.file_slots[0].path = "frame_"
     fo_depth.format.file_format = "OPEN_EXR"
-    fo_depth.format.color_mode = "BW"
+    fo_depth.format.color_mode = "RGB"  # Blender 4.2+ does not support "BW" on EXR File Output
     fo_depth.format.color_depth = "32"
     nt.links.new(rl.outputs["Depth"], fo_depth.inputs[0])
 
@@ -756,7 +756,7 @@ def configure_compositor(args: RenderArgs) -> None:
     fo_seg.base_path = str(seg_dir)
     fo_seg.file_slots[0].path = "frame_"
     fo_seg.format.file_format = "PNG"
-    fo_seg.format.color_mode = "BW"
+    fo_seg.format.color_mode = "RGB"  # Blender 4.2+ does not support "BW" on PNG File Output
     fo_seg.format.color_depth = "16"
     nt.links.new(div.outputs[0], fo_seg.inputs[0])
 
@@ -897,12 +897,29 @@ def main() -> int:
         _log(f"hid {n_hidden} ceiling object(s) so the open sky is visible at stage {args.stage_id}.")
 
     cam_obj, _path_obj, _target = build_camera(mesh_objs, args.frames, args.fps, args)
+    _log("camera built.")
+
     configure_render(args)
-    configure_compositor(args)
+    _log("render settings configured.")
+
+    try:
+        configure_compositor(args)
+        _log("compositor wired (rgb + depth + seg).")
+    except Exception as e:
+        import traceback
+        _log(f"ERROR in configure_compositor: {e}")
+        _log(traceback.format_exc())
+        return 5
 
     # Render the animation
     _log("rendering animation ...")
-    bpy.ops.render.render(animation=True)
+    try:
+        bpy.ops.render.render(animation=True)
+    except Exception as e:
+        import traceback
+        _log(f"ERROR during render: {e}")
+        _log(traceback.format_exc())
+        return 6
     _log(f"render complete in {time.time() - t0:.1f}s")
 
     # Dump camera path + palette
