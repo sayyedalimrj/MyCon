@@ -96,10 +96,8 @@ def validate_copilot_answer_payload(payload: dict[str, Any]) -> CopilotAnswerVal
     if confidence == "high" and has_low_risk:
         failures.append("high_confidence_with_low_quality_risks")
     elif confidence not in {"low", "low_to_medium", "medium"} and has_low_risk:
-        failures.append("unverified_confidence_with_low_quality_risks")
-    elif confidence not in {"low", "low_to_medium", "medium"} and has_low_risk:
-        failures.append("unverified_confidence_with_low_quality_risks")
-    elif confidence not in {"low", "low_to_medium", "medium"} and has_low_risk:
+        # B1: was previously a chain of three identical `elif` clauses; only the
+        # first could ever fire. Collapsed into a single branch.
         failures.append("unverified_confidence_with_low_quality_risks")
 
     if claims_acceptance and has_low_risk and not is_refusal:

@@ -1,0 +1,24 @@
+# Example ablation grid: how does the ICP robust loss interact with the
+# correspondence-distance threshold across seeds?
+#
+# Reference: Zhang & Singh, "A Field Analysis on Degeneracy-aware ICP" (arXiv
+# 2408.11809, 2024); Zhang et al., "Fast and Robust ICP" (arXiv 2007.07627).
+#
+# Run with:
+#
+#   python3 scripts/ablation_run.py \
+#     --config configs/site01.yaml \
+#     --grid configs/ablation_examples/icp_robust.yaml \
+#     --stage stage_08_bim_registration \
+#     --out-dir runs/_ablation/icp_robust
+#
+# This is a 3 x 3 x 3 = 27-cell grid. Each cell runs Stage 8 BIM registration
+# only; the per-cell aggregator surfaces ICP fitness, inlier RMSE, and the
+# applied robust kernel into the ablation_summary.csv next to the run.
+
+name: icp_robust
+
+axes:
+  bim.icp_robust_loss: [none, huber, tukey]
+  bim.icp_max_corr_distance_m: [0.05, 0.08, 0.12]
+  project.random_seed: [42, 43, 44]

@@ -134,3 +134,28 @@ def safe_voxel_size_from_bounds(source: Any, requested: float, fallback_fraction
     if not math.isfinite(b.diagonal) or b.diagonal <= 0:
         return 0.05
     return max(0.005, b.diagonal * fallback_fraction)
+
+
+def seed_open3d_rng(seed: int) -> bool:
+    """Best-effort seeding of Open3D's global RNG.
+
+    Open3D 0.17+ exposes ``open3d.utility.random.seed(int)`` which seeds the
+    same RNG used by ``registration_ransac_based_on_feature_matching`` and
+    ``sample_points_uniformly``. This is the only available knob; the
+    ``RANSACConvergenceCriteria`` struct does not expose a seed in current
+    bindings (verified against Open3D 0.19.0).
+
+    Returns True if seeding was applied, False if Open3D is unavailable or the
+    ``utility.random.seed`` symbol is missing on the running build.
+    """
+    if o3d is None:
+        return False
+    try:
+        random_mod = getattr(o3d.utility, "random", None)
+        seed_fn = getattr(random_mod, "seed", None) if random_mod is not None else None
+        if seed_fn is None:
+            return False
+        seed_fn(int(seed))
+        return True
+    except Exception:
+        return False

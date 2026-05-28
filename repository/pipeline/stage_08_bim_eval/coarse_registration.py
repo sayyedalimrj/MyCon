@@ -16,8 +16,10 @@ from typing import Any
 import numpy as np
 
 from .config_access import cfg_bool, cfg_float, cfg_get
-from .geometry_utils import bounds_summary, require_open3d, safe_voxel_size_from_bounds
+from .geometry_utils import bounds_summary, require_open3d, safe_voxel_size_from_bounds, seed_open3d_rng
 from .metric_initial_transform import load_metric_initial_transform
+
+from pipeline.common.determinism import derived_seed, project_seed
 
 
 @dataclass(frozen=True)
@@ -152,6 +154,17 @@ def _try_fpfh_ransac(source: Any, target: Any, initial: np.ndarray, voxel_size: 
 
 
 def coarse_register(cfg: Any, scan_pcd: Any, bim_pcd: Any, logger: logging.Logger) -> CoarseRegistrationResult:
+
+    # B6: seed Open3D's global RNG so registration_ransac_based_on_feature_matching
+    # and sample_points_uniformly are deterministic. Open3D bindings do not
+    # expose a per-call seed parameter, so this is the only available knob.
+    base_seed = project_seed(cfg)
+    seeded = seed_open3d_rng(derived_seed("stage_08_coarse_ransac", base_seed=base_seed))
+    if not seeded:
+        logger.warning(
+            "Open3D global RNG seeding is unavailable on this build; "
+            "Stage 8 FPFH RANSAC results may differ across runs."
+        )
 
     metric_initial = load_metric_initial_transform(cfg, logger=logger)
     if metric_initial is not None:
