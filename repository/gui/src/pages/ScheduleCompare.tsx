@@ -13,9 +13,10 @@
 // calibration endpoints all exist behind /api/v1/.
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { scheduleEndpoints } from "../api/scheduleEndpoints";
+import { calibrationEndpoints } from "../api/calibrationEndpoints";
 import { queryKeys } from "../api/queryKeys";
 import type {
   ActivityVarianceRow,
@@ -30,6 +31,7 @@ import {
   ReliabilityCard,
   type CalibrationReportPayload,
 } from "../components/ReliabilityCard";
+import { HitlCorrectionForm } from "../components/HitlCorrectionForm";
 import { PageHeader } from "../panels/PageHeader";
 
 const STATUS_LABEL: Record<ActivityVarianceStatus, string> = {
@@ -51,6 +53,8 @@ function ActivityDrilldown({ row, runId }: DrilldownProps) {
       scheduleEndpoints.getActivityDetail(row!.activity_id, { runId }),
     enabled: !!row,
   });
+  const queryClient = useQueryClient();
+  const [correctionTarget, setCorrectionTarget] = useState<string | null>(null);
 
   if (!row) {
     return (
@@ -125,10 +129,24 @@ function ActivityDrilldown({ row, runId }: DrilldownProps) {
               {detail.mapped_elements.map((e) => (
                 <li
                   key={e.ifc_global_id}
-                  className="flex justify-between rounded bg-surface-2 px-2 py-1 font-mono"
+                  className="flex items-center justify-between rounded bg-surface-2 px-2 py-1 font-mono"
                 >
                   <span>{e.ifc_global_id}</span>
-                  <span className="text-ink-subtle">w={e.weight}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-ink-subtle">w={e.weight}</span>
+                    <button
+                      type="button"
+                      data-testid={`hitl-open-form-${e.ifc_global_id}`}
+                      onClick={() =>
+                        setCorrectionTarget(
+                          correctionTarget === e.ifc_global_id ? null : e.ifc_global_id,
+                        )
+                      }
+                      className="rounded border border-surface-border px-1.5 py-0.5 text-[10px] text-ink-muted hover:bg-surface-1 hover:text-ink"
+                    >
+                      {correctionTarget === e.ifc_global_id ? "Cancel" : "Correct"}
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -137,6 +155,31 @@ function ActivityDrilldown({ row, runId }: DrilldownProps) {
           )}
         </div>
       </div>
+
+      {correctionTarget && (
+        <HitlCorrectionForm
+          ifcGlobalId={correctionTarget}
+          runId={runId}
+          predictedValue={
+            row.status === "behind" ? "uncertain" : row.status === "on_schedule" ? "accept" : "uncertain"
+          }
+          predictedConfidence={row.confidence}
+          evidenceRefs={
+            runId
+              ? [`runs/${runId}/reports/element_metrics.csv`]
+              : ["runs/latest/reports/element_metrics.csv"]
+          }
+          onSubmitted={() => {
+            // Refresh the calibration card if it had loaded a 404
+            // empty-state earlier; the dashboard will pull a new
+            // report on the next replay run.
+            queryClient.invalidateQueries({
+              queryKey: ["calibration", "report"],
+            });
+            setCorrectionTarget(null);
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -168,6 +211,27 @@ export function ScheduleComparePage({ runId }: ScheduleCompareProps = {}) {
       }
     },
     retry: false,
+  });
+
+  const queryClient = useQueryClient();
+  const [replayStatus, setReplayStatus] = useState<string | undefined>(undefined);
+  const replayMutation = useMutation({
+    mutationFn: () => calibrationEndpoints.runReplay(undefined, { runId }),
+    onSuccess: (resp) => {
+      const ts = new Date().toLocaleTimeString();
+      setReplayStatus(
+        `Replayed ${resp.n_replayed_records} corrections at ${ts}` +
+          (resp.n_conflicts > 0 ? ` (${resp.n_conflicts} conflict${resp.n_conflicts === 1 ? "" : "s"})` : ""),
+      );
+      // Push the fresh report straight into the query cache so the
+      // ReliabilityCard rerenders without a network round-trip, and
+      // also invalidate so any background refetch stays consistent.
+      queryClient.setQueryData(["calibration", "report", { runId }], resp.report);
+      queryClient.invalidateQueries({ queryKey: ["calibration", "report"] });
+    },
+    onError: (err) => {
+      setReplayStatus(`Replay failed: ${(err as Error).message}`);
+    },
   });
 
   const selectedRow = useMemo<ActivityVarianceRow | null>(() => {
@@ -234,6 +298,9 @@ export function ScheduleComparePage({ runId }: ScheduleCompareProps = {}) {
             report={
               calibrationQuery.data ?? null
             }
+            onReplay={() => replayMutation.mutate()}
+            isReplaying={replayMutation.isPending}
+            replayStatus={replayStatus}
           />
         </>
       )}

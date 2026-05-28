@@ -362,3 +362,180 @@ def test_attach_grounding_guard_falls_back_to_response_fields_when_no_package() 
     }
     out = attach_grounding_guard(response)
     assert out["grounding_guard"]["passed"] is False
+
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: extra unit conversions
+# ---------------------------------------------------------------------------
+
+
+def test_extract_numeric_claim_with_inches() -> None:
+    """Imperial inches should canonicalise to metres (1 in = 0.0254 m)."""
+    claims = extract_claims("Wall thickness is 8 inches.")
+    numeric = [c for c in claims if c.kind == ClaimKind.NUMERIC]
+    assert len(numeric) == 1
+    assert numeric[0].quantity == "thickness"
+    assert numeric[0].unit == "m"
+    assert numeric[0].value == pytest.approx(8 * 0.0254, abs=1e-9)
+
+
+def test_extract_numeric_claim_with_inch_singular() -> None:
+    claims = extract_claims("Spacing of 1 inch.")
+    numeric = [c for c in claims if c.kind == ClaimKind.NUMERIC]
+    assert len(numeric) == 1
+    assert numeric[0].value == pytest.approx(0.0254, abs=1e-9)
+
+
+def test_extract_numeric_claim_with_in_short_form() -> None:
+    claims = extract_claims("12 in offset.")
+    numeric = [c for c in claims if c.kind == ClaimKind.NUMERIC]
+    # 'in' must match because it's followed by a space (not a letter),
+    # and our negative lookahead is on the letter class.
+    assert len(numeric) == 1
+    assert numeric[0].value == pytest.approx(12 * 0.0254, abs=1e-9)
+
+
+def test_extract_numeric_claim_with_feet() -> None:
+    claims = extract_claims("Clearance height of 9 ft.")
+    numeric = [c for c in claims if c.kind == ClaimKind.NUMERIC]
+    assert len(numeric) == 1
+    assert numeric[0].unit == "m"
+    assert numeric[0].value == pytest.approx(9 * 0.3048, abs=1e-9)
+
+
+def test_extract_numeric_claim_with_radians() -> None:
+    """Radians should canonicalise to degrees."""
+    claims = extract_claims("Skew angle of 1.5 rad.")
+    numeric = [c for c in claims if c.kind == ClaimKind.NUMERIC]
+    assert len(numeric) == 1
+    assert numeric[0].quantity == "angle"
+    assert numeric[0].unit == "deg"
+    assert numeric[0].value == pytest.approx(1.5 * 57.295779513082323, abs=1e-6)
+
+
+def test_unit_pattern_does_not_match_letter_m_inside_word() -> None:
+    """'meeting' / 'minimum' / 'morning' must NOT trip the 'm' unit
+    matcher; the negative lookahead (?![A-Za-z]) is what guards this."""
+    assert extract_claims("There is a meeting in the morning.") == []
+    assert extract_claims("The minimum is required.") == []
+    # And as a sanity check the standalone 'm' still works:
+    inflate = extract_claims("Distance is 4 m.")
+    assert any(c.unit == "m" and c.value == 4.0 for c in inflate)
+
+
+def test_imperial_inches_match_evidence_in_metres_within_tolerance() -> None:
+    """End-to-end: a claim of '8 inches thickness' (= 0.2032 m) should
+    match an evidence package value of 0.20 m for 'thickness' under the
+    default tolerance (rel 10 % or abs 5 mm, whichever is larger)."""
+    answer = "Wall thickness is 8 inches."
+    evidence = {"metrics": {"thickness": 0.20}}
+    result = ground_answer(answer, evidence)
+    assert result.passed is True
+    assert result.n_unsupported == 0
+
+
+def test_imperial_inches_unsupported_when_evidence_disagrees() -> None:
+    """8 inches = 0.2032 m must NOT match an evidence value of 0.05 m."""
+    answer = "Wall thickness is 8 inches."
+    evidence = {"metrics": {"thickness": 0.05}}
+    result = ground_answer(answer, evidence)
+    assert result.passed is False
+    assert result.n_unsupported >= 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: plug-in claim extractor (Protocol)
+# ---------------------------------------------------------------------------
+
+
+def test_default_claim_extractor_is_a_regex_extractor() -> None:
+    from pipeline.stage_10_copilot.grounding_guard import (
+        DEFAULT_CLAIM_EXTRACTOR,
+        RegexClaimExtractor,
+    )
+
+    assert isinstance(DEFAULT_CLAIM_EXTRACTOR, RegexClaimExtractor)
+
+
+def test_regex_claim_extractor_matches_extract_claims_function() -> None:
+    """The default extractor must be byte-for-byte equivalent to
+    :func:`extract_claims` so callers swapping in a custom extractor
+    can do A/B comparisons against the regex baseline."""
+    from pipeline.stage_10_copilot.grounding_guard import RegexClaimExtractor
+
+    answer = "Wall offset 3.2 cm. Activity A0432 has 75% completion."
+    a = extract_claims(answer)
+    b = RegexClaimExtractor().extract(answer)
+    assert [c.to_dict() for c in a] == [c.to_dict() for c in b]
+
+
+def test_claim_extractor_protocol_runtime_checkable() -> None:
+    """ClaimExtractor must be a runtime-checkable Protocol so consumers
+    can ``isinstance(x, ClaimExtractor)`` without subclassing it."""
+    from pipeline.stage_10_copilot.grounding_guard import (
+        ClaimExtractor,
+        DEFAULT_CLAIM_EXTRACTOR,
+        RegexClaimExtractor,
+    )
+
+    assert isinstance(DEFAULT_CLAIM_EXTRACTOR, ClaimExtractor)
+    assert isinstance(RegexClaimExtractor(), ClaimExtractor)
+
+    class _NotAnExtractor:
+        pass
+
+    assert not isinstance(_NotAnExtractor(), ClaimExtractor)
+
+
+def test_ground_answer_uses_custom_extractor_when_supplied() -> None:
+    """A custom extractor that returns a single named-entity claim must
+    be honoured by ground_answer; the regex output is bypassed entirely."""
+    from pipeline.stage_10_copilot.grounding_guard import Claim, ClaimKind
+
+    class _SyntheticExtractor:
+        def extract(self, answer, *, known_activity_ids=()):
+            # Return a single named-entity claim regardless of the answer
+            # text -- so we can prove the verifier consumed *our* output.
+            return [
+                Claim(
+                    kind=ClaimKind.NAMED_ENTITY,
+                    text="SyntheticElement",
+                    entity_kind="ifc_class",
+                    entity_value="SyntheticElement",
+                )
+            ]
+
+    answer = "irrelevant text with no IFC classes"
+    evidence = {"selected_context": {"element_global_id": "SyntheticElement"}}
+    result = ground_answer(answer, evidence, claim_extractor=_SyntheticExtractor())
+    assert result.n_claims == 1
+    assert result.per_claim[0].claim.entity_value == "SyntheticElement"
+    assert result.per_claim[0].status == "matched"
+
+
+def test_attach_grounding_guard_threads_custom_extractor() -> None:
+    """attach_grounding_guard forwards claim_extractor to ground_answer."""
+    from pipeline.stage_10_copilot.grounding_guard import Claim, ClaimKind
+
+    class _ZeroClaimExtractor:
+        def extract(self, answer, *, known_activity_ids=()):
+            return []
+
+    response = {"answer": "literally anything", "evidence_package": {}}
+    out = attach_grounding_guard(response, claim_extractor=_ZeroClaimExtractor())
+    # Zero claims -> guard passes (no unsupported), risk_tokens contains
+    # the no-claims diagnostic.
+    assert out["grounding_guard"]["passed"] is True
+    assert out["grounding_guard"]["n_claims"] == 0
+    assert "vlm_answer_carries_no_extractable_claims" in out["grounding_guard"]["risk_tokens"]
+
+
+def test_default_claim_extractor_is_module_level_singleton() -> None:
+    """``DEFAULT_CLAIM_EXTRACTOR`` is exported in __all__ so plug-in
+    authors can subclass / wrap it."""
+    from pipeline.stage_10_copilot import grounding_guard
+
+    assert "DEFAULT_CLAIM_EXTRACTOR" in grounding_guard.__all__
+    assert "ClaimExtractor" in grounding_guard.__all__
+    assert "RegexClaimExtractor" in grounding_guard.__all__

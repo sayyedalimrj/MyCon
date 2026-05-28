@@ -1,0 +1,8 @@
+activity_id,ifc_global_id,weight
+A0001,1FoundElemAaaaaaaaaaaa,1.0
+A0001,2FoundElemBbbbbbbbbbbb,1.0
+A0432,3WallElemCccccccccccc,1.0
+A0432,4WallElemDdddddddddddd,1.0
+A0432,5WallElemEeeeeeeeeeee,1.0
+A0432,6WallElemFfffffffffff,1.0
+A0432,7WallElemGggggggggggg,1.0

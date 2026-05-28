@@ -1,231 +1,217 @@
-# Construction Progress AI+BIM Pipeline
+# MyCon — Construction Progress AI+BIM Pipeline
 
+> Development of an Integrated AI- and BIM-Based Framework for
+> Automated Monitoring of Construction Project Progress.
 
-## Current status snapshot
+A research-grade framework that takes a captured site (mobile video or
+laser scan) and produces a calibrated, evidence-linked answer to the
+question "is this project on schedule?" It joins:
 
-This repository is now a laptop-ready, server-handoff-ready framework for a staged construction progress AI/BIM pipeline.
+- **Geometry** — COLMAP / Open3D / IfcOpenShell scan-vs-BIM (Stages 1–9);
+- **Schedule** — canonical CSV imported from Microsoft Project /
+  Primavera P6 / vendor exports (Stage 11);
+- **Reasoning** — local VLM with deterministic claim grounding
+  (Stage 10 + grounding guard);
+- **Trust** — Wilson 95 % intervals, HITL corrections, ECE / smooth-ECE
+  calibration (Phase 4);
+- **Dashboard** — typed React UI with KPI strip, activities table,
+  reliability diagram, HITL submit form, calibration replay button
+  (Phase 3 + 5).
 
-Implemented or scaffolded stages:
-
-- Stage 1/2: video ingest, frame quality, keyframes.
-- Stage 3/4/5: COLMAP sparse/refinement/dense wrappers.
-- Stage 6: DA3 assist scaffold / skip-safe depth completion hook.
-- Stage 7: Open3D cleanup, plane extraction, meshing.
-- Stage 7.5: VLM/visual QA scaffold.
-- Stage 7.6: viewer export package.
-- Stage 7.7: CAMS-GS/3DGS evidence package scaffold.
-- Stage 8: BIM extraction/registration plus metric alignment, anchor validation, and visual-anchor server workflow.
-- Stage 9: deterministic progress/deviation metrics and dashboard scaffold.
-- Stage 10: evidence package and local/mock/Qwen-ready copilot.
-
-Important limitations:
-
-- Real Qwen/Qwen3-VL-8B-Thinking inference is server-only until the local model endpoint is installed and cached.
-- DA3 and 3DGS/CAMS-GS real training/inference are not laptop-baseline requirements.
-- Visual anchor picking requires real project video/images and real/project BIM; do not complete it on the laptop with demo data.
-- Progress claims are only defensible when Stage 8 registration confidence and metric anchor residuals are acceptable.
-
-Server handoff:
-
-- See `docs/server_handoff_checklist.md`.
-- See `scripts/server_readiness_check.py`.
-- See `scripts/run_pipeline_plan.py`.
-
-
-This repository is organized as a file-contract pipeline for thesis-grade construction progress monitoring:
-
-`mobile video -> ingest/normalization -> adaptive keyframes -> COLMAP sparse/dense -> conditional DA3 -> Open3D cleanup -> IfcOpenShell BIM alignment -> deviation/progress reporting`
-
-This bundle implements Phase 0 shared scaffolding, Stage 1 ingest/normalization, and Stage 2 adaptive keyframe selection. It does not implement COLMAP, DA3, BIM registration, deviation metrics, or dashboards.
-
-## Working assumptions
-
-- Docker working directory: `/workspace`
-- Config root inside Docker: `/workspace`
-- All paths are project-root-relative in `configs/site01.yaml`
-- Docker Compose is run from Windows PowerShell
-- Git status should be checked from WSL
-- Do not modify or rebuild Docker for Stage 2 unless a test proves it is strictly necessary
-
-## Stage 1 input
-
-```text
-data/raw/site01.mp4
-```
-
-## Stage 1 outputs
-
-```text
-data/normalized/site01_normalized.mp4
-data/normalized/site01_metadata.json
-data/normalized/site01_frame_quality.csv
-runs/<run_id>/reports/stage_01_ingest_report.json
-```
-
-## Stage 2 inputs
-
-```text
-data/normalized/site01_normalized.mp4
-data/normalized/site01_frame_quality.csv
-```
-
-## Stage 2 outputs
-
-```text
-data/frames/key/site01/*.jpg
-data/frames/key/site01_manifest.csv
-data/frames/key/site01_contact_sheet.jpg
-runs/<run_id>/reports/keyframe_summary.json
-```
-
-## Stage 1 quality CSV
-
-Required columns are preserved:
-
-```text
-frame_index
-timestamp_sec
-sharpness_laplacian
-exposure_mean
-exposure_std
-exposure_jump
-motion_score
-duplicate_similarity
-novelty_score
-quality_score
-reject_reason
-```
-
-Additional diagnostic columns may be present and are used by Stage 2 when available:
-
-```text
-histogram_similarity
-feature_count
-feature_density_score
-adaptive_blur_threshold
-rolling_shutter_score
-jitter_score
-sampling_method
-warning_reason
-scoring_width
-scoring_height
-```
-
-## Stage 2 keyframe policy
-
-Stage 2 selects useful frames rather than merely fewer frames. It reads Stage 1 scoring, rejects obviously bad rows, groups valid rows into stable subsequences, enforces `keyframes.min_time_gap_sec`, caps the first run with `keyframes.max_frames_first_run`, preserves temporal coverage, and writes an explainable manifest.
-
-The baseline remains lightweight. It does not use COLMAP, DA3, SAM, YOLO, SIFT, or learned models. If too few frames survive strict gates, Stage 2 can use a controlled fallback that relaxes duplicate and aggregate rejection first while still rejecting dangerous blur, severe exposure jumps, and extreme motion. A final emergency fallback can select the best available rows only to avoid an empty manifest on severely degraded videos; the summary report flags this so the run can be reviewed before Stage 3.
-
-Stage 2 validates frame-index bounds against the normalized video and checks timestamp/frame-index consistency by default. This catches accidental VFR/CFR drift before keyframes are extracted.
-
-## PowerShell commands
-
-Run from Windows PowerShell:
-
-```powershell
-cd "\\wsl.localhost\Ubuntu-22.04\home\ali\projects\construction-progress-ai-bim"
-```
-
-Stage 1:
-
-```powershell
-docker compose -f docker\docker-compose.yml run --rm core `
-  python3 -m pipeline.stage_01_ingest.run_ingest `
-  --config configs/site01.yaml
-```
-
-Stage 2:
-
-```powershell
-docker compose -f docker\docker-compose.yml run --rm core `
-  python3 -m pipeline.stage_02_keyframes.select_keyframes `
-  --config configs/site01.yaml `
-  --force
-```
-
-Generic launcher:
-
-```powershell
-docker compose -f docker\docker-compose.yml run --rm core `
-  python3 scripts/run_stage.py stage_02_keyframes `
-  --config configs/site01.yaml `
-  --force
-```
-
-Smoke tests:
-
-```powershell
-docker compose -f docker\docker-compose.yml run --rm core `
-  python3 scripts/smoke_test_stage_01.py
-
-docker compose -f docker\docker-compose.yml run --rm core `
-  python3 scripts/smoke_test_stage_02.py
-```
-
-Pytest:
-
-```powershell
-docker compose -f docker\docker-compose.yml run --rm core `
-  pytest -q tests/test_config.py tests/test_stage_01_ingest.py tests/test_stage_02_keyframes.py
-```
-
-## WSL commands
+## 30-second tour
 
 ```bash
-cd ~/projects/construction-progress-ai-bim
+# 1. Reproduce the synthetic walkthrough end-to-end (no GPU, no VLM,
+#    no Open3D required; runs in under a second).
+python3 scripts/run_end_to_end_walkthrough.py \
+    --output-dir runs/example_walkthrough/ \
+    --data-date-utc 2026-04-16
+# -> writes activity_progress.json, schedule_variance.json,
+#    dashboard_summary.json, calibration_report.json,
+#    grounding_guard_demo.json, walkthrough_summary.json.
+# Headline: 1 activity on schedule, 1 behind, ECE on 6 reviewer
+# corrections measured, 3 VLM grounding-guard failure modes
+# demonstrated.
+
+# 2. Run the full lightweight test suite (~5 s, no heavy deps).
+PYENV_VERSION=3.11.15 pytest -m lightweight \
+    --ignore=tests/test_service_api.py \
+    --ignore=tests/test_service_websocket.py
+# -> 580+ tests pass.
+
+# 3. Build and serve the dashboard.
+cd gui && npm install && npm run build
+# -> Schedule Compare page available at /schedule.
+```
+
+## Quick start
+
+### A. Set up the Python environment
+
+The pipeline targets **Python 3.11**. A laptop test set runs without
+any geometry libraries; the full geometry stack (Open3D, OpenCV,
+IfcOpenShell, COLMAP) is only needed for Stages 3–9.
+
+```bash
+python3.11 -m venv .venv
 source .venv/bin/activate
 
-python -m pipeline.stage_01_ingest.run_ingest --config configs/site01.yaml
-python -m pipeline.stage_02_keyframes.select_keyframes --config configs/site01.yaml --force
-python scripts/smoke_test_stage_01.py
-python scripts/smoke_test_stage_02.py
-pytest -q tests/test_config.py tests/test_stage_01_ingest.py tests/test_stage_02_keyframes.py
+# Lightweight (Stages 11 + Phase 4 modules + dashboard backend):
+pip install -r requirements-core.txt
+
+# Full geometry stack (Stages 3-9):
+pip install -r requirements-server.txt   # see docs/server_handoff_checklist.md
 ```
 
-## Authoritative Git status
+If `requirements-core.txt` is missing in your fork, the minimum
+dependencies for the laptop test set are `numpy`, `pyyaml`, and
+`pytest`.
 
-```powershell
-wsl -d Ubuntu-22.04 -u ali -- bash -lc "cd ~/projects/construction-progress-ai-bim && git status --short"
-```
+### B. Reproduce the walkthrough
 
-## Acceptance criteria
-
-Stage 1 is accepted when it creates the normalized video, metadata JSON, frame quality CSV, and report, and its smoke/pytest tests pass.
-
-Stage 2 is accepted when:
-
-1. `python3 -m pipeline.stage_02_keyframes.select_keyframes --config configs/site01.yaml --force` runs from Docker Compose.
-2. Stage 2 reads only Stage 1 outputs and YAML config.
-3. Keyframe JPGs are written under `data/frames/key/site01/`.
-4. `data/frames/key/site01_manifest.csv` exists and contains the required manifest columns.
-5. `data/frames/key/site01_contact_sheet.jpg` exists.
-6. `runs/<run_id>/reports/keyframe_summary.json` exists.
-7. `scripts/smoke_test_stage_02.py` prints `STAGE_02_SMOKE_OK`.
-8. Pytest passes for config, Stage 1, and Stage 2.
-9. Generated keyframes, manifests, contact sheets, and run reports remain ignored by Git unless deliberately added for a small fixture.
-
-- Current project status: docs/current_project_status.md
-
-
-## Server handoff ZIP
-
-Create the official source handoff ZIP with:
+The committed synthetic site under
+[`examples/end_to_end/`](examples/end_to_end/) exercises every
+Phase 4 module deterministically:
 
 ```bash
-python3 scripts/export_server_handoff_zip.py --output dist/construction-progress-ai-bim_server_handoff.zip
+python3 scripts/run_end_to_end_walkthrough.py \
+    --output-dir runs/example_walkthrough/ \
+    --data-date-utc 2026-04-16
 ```
 
-This exporter verifies that server-critical files such as requirements files and `env/server.env.example` are tracked and included.
+Outputs (with [`schema_version`](docs/end_to_end_finishing_plan.md)
+fields locked):
 
+| File | Schema | What it carries |
+|---|---|---|
+| `activity_progress.json` | `activity_progress.v1` | Per-activity rollup of element-level acceptance |
+| `schedule_variance.json` | `schedule_variance.v1` | Planned vs actual % at the data date, with Wilson 95 % CIs |
+| `dashboard_summary.json` | `dashboard_summary.v1` | Exactly the JSON the GUI consumes |
+| `calibration_report.json` | `calibration_report.v1` | ECE, MCE, Brier, smooth-ECE on the HITL log |
+| `grounding_guard_demo.json` | `grounding_guard_demo.v1` | The three VLM hallucination failure modes |
+| `walkthrough_summary.json` | `walkthrough_summary.v1` | Index of every output by SHA-256 |
 
-## Handoff ZIP verification
+### C. Bring your own project
 
-After creating a server handoff ZIP, verify it before upload:
+Three input files plus the existing geometry pipeline are all you need:
+
+1. **Schedule CSV** in canonical form
+   (see [`docs/schedule_format.md`](docs/schedule_format.md)). If your
+   schedule lives in MS Project or Primavera P6, run one of:
+   ```bash
+   python3 scripts/import_schedule_msp_xml.py --input my.xml --output configs/schedule.csv
+   python3 scripts/import_schedule_p6_xer.py  --input my.xer --output configs/schedule.csv
+   python3 scripts/import_schedule_generic_csv.py --input vendor.csv --output configs/schedule.csv \
+       --activity-id-column "Task ID" --activity-name-column "Task Name" \
+       --planned-start-column "Start Date" --planned-finish-column "Finish Date"
+   ```
+2. **BIM ↔ schedule mapping CSV** with `(activity_id, ifc_global_id, weight)` rows.
+3. **Stage 9 `element_metrics.csv`** (already produced by the geometry
+   pipeline). On a laptop you can synthesise this manually for
+   experiments.
+
+Then run Stage 11:
 
 ```bash
-python3 scripts/export_server_handoff_zip.py --output dist/construction-progress-ai-bim_server_handoff.zip
-python3 scripts/verify_server_handoff_zip.py dist/construction-progress-ai-bim_server_handoff.zip
+python3 -m pipeline.stage_11_schedule_variance.run_schedule_variance \
+    --schedule-csv configs/schedule.csv \
+    --mapping-csv  configs/bim_schedule_mapping.csv \
+    --element-metrics-csv runs/<run_id>/reports/element_metrics.csv \
+    --activity-progress-json runs/<run_id>/reports/activity_progress.json \
+    --schedule-variance-json runs/<run_id>/reports/schedule_variance.json \
+    --dashboard-summary-json runs/<run_id>/reports/dashboard_summary.json \
+    --data-date-utc 2026-04-16
 ```
 
-The verifier fails if requirements files, mirrored requirements, or `env/server.env.example` are missing, or if generated runtime paths such as `data/`, `runs/`, `exports/`, or `model_cache/` are included.
+### D. Boot the dashboard
+
+```bash
+cd gui
+npm install
+npm run dev    # http://localhost:5173/schedule
+# or
+npm run build  # production bundle in gui/dist/
+```
+
+The page consumes `/api/v1/schedule/dashboard`,
+`/api/v1/schedule/activities/{id}`, `/api/v1/calibration/report`,
+`/api/v1/calibration/run`, `/api/v1/hitl/corrections`, and
+`/api/v1/elements/{id}` — all served by `pipeline.service.app` (Phase 2)
+plus the schedule / HITL / calibration routers (Phase 5).
+
+## Repository layout
+
+| Path | Purpose |
+|---|---|
+| `pipeline/common/` | Phase 1 typed config, registry, provenance, plugins; Phase 4 calibration, HITL, schedule I/O, BIM↔schedule mapping, method comparison |
+| `pipeline/stage_*/` | One directory per pipeline stage; canonical I/O contracts and CLI runners |
+| `pipeline/stage_11_schedule_variance/` | Phase 4 schedule-variance stage (laptop-runnable, no Open3D) |
+| `pipeline/service/` | Phase 2 + 5 backend: pipeline / artefact / run-control / schedule / HITL / calibration endpoints |
+| `pipeline/stage_10_copilot/grounding_guard.py` | VLM claim verification with imperial unit support and a plug-in `ClaimExtractor` Protocol |
+| `gui/` | Phase 3 + 5 React + Vite + Tailwind dashboard with the Schedule Compare page |
+| `examples/end_to_end/` | Synthetic walkthrough fixture and runner |
+| `scripts/` | Side-car CLIs (schedule importers, walkthrough runner, calibration report, LaTeX comparison renderer) |
+| `docs/` | Reviewer-facing reference (see "Documentation index" below) |
+| `tests/` | Lightweight Python tests (`pytest -m lightweight`) |
+| `configs/` | Sample YAML configs used by the geometry stages |
+| `docker/` | Server-grade container build for the heavy geometry stack |
+
+## Documentation index
+
+| Document | What it covers |
+|---|---|
+| [`docs/end_to_end_finishing_plan.md`](docs/end_to_end_finishing_plan.md) | The architectural target: capture → schedule comparison → dashboard |
+| [`docs/literature_q1_2024_2026.md`](docs/literature_q1_2024_2026.md) | Q1 2024–2026 literature map (AiC, CACAIE, AEI, JCCEE5, JCEMD4, ITcon, Construction Robotics, J. Building Eng.) |
+| [`docs/schedule_format.md`](docs/schedule_format.md) | Canonical schedule CSV reference + side-car importers |
+| [`docs/hitl_workflow.md`](docs/hitl_workflow.md) | HITL corrections workflow (Beck WACV'24-style) |
+| [`docs/calibration_workflow.md`](docs/calibration_workflow.md) | Reliability / ECE / smooth-ECE workflow (Naeini AAAI'15, Błasiok-Nakkiran ICLR'24) |
+| [`docs/reproducibility.md`](docs/reproducibility.md) | Bit-for-bit reproducibility guide (this file is created in Phase 5 task 8) |
+| [`docs/phase_4_summary.md`](docs/phase_4_summary.md) | Phase 4 algorithmic novelty (Trusted-MVC, evidential fusion) |
+| [`docs/legacy_stage_reference.md`](docs/legacy_stage_reference.md) | Stage 1–10 inputs/outputs/CLI reference (predates Phase 1–5) |
+
+## Running the tests
+
+The test suite has two tiers, declared in `pytest.ini`:
+
+- **`lightweight`** (default for laptop / CI without GPU):
+
+  ```bash
+  pytest -m lightweight \
+      --ignore=tests/test_service_api.py \
+      --ignore=tests/test_service_websocket.py
+  ```
+
+  580+ tests, ~5 s, no Open3D / OpenCV / IfcOpenShell required.
+
+- **`geometry`**, **`server`**, **`vlm`**, **`colmap`**, **`slow`** — run
+  inside the `docker/Dockerfile.core-dev` image with the heavy stack
+  installed. See [`docs/legacy_stage_reference.md`](docs/legacy_stage_reference.md)
+  §"PowerShell commands" / §"WSL commands".
+
+The GUI suite uses [Vitest](https://vitest.dev/) + [MSW](https://mswjs.io/):
+
+```bash
+cd gui
+npm install
+npm run lint   # tsc -b --noEmit
+npm test       # 60+ tests
+npm run build  # vite production bundle
+```
+
+## Citation
+
+If you use this repository in academic work, please cite the literature
+map at [`docs/literature_q1_2024_2026.md`](docs/literature_q1_2024_2026.md)
+together with the upstream work it positions this project against.
+
+## License
+
+See [`LICENSE`](LICENSE) at the repository root (if present); otherwise
+contact the project authors for terms.
+
+---
+
+The pre-Phase-1 stage-by-stage reference (Stage 1 + 2 ingest commands,
+Docker Compose snippets, server handoff ZIP recipes, etc.) is preserved
+verbatim in [`docs/legacy_stage_reference.md`](docs/legacy_stage_reference.md)
+for continuity.
