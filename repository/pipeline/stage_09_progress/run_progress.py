@@ -12,10 +12,14 @@ import numpy as np
 from pipeline.common.config import load_config
 from pipeline.common.logging_utils import setup_logging
 
-from .config_access import cfg_float, project_name, run_id
+from .config_access import cfg_bool, cfg_float, cfg_get, project_name, run_id
 from .input_selection import missing_required_inputs, stage9_paths
 from .io_utils import read_csv, read_json, read_jsonl, write_csv_atomic, write_json_atomic
 from .decision_enrichment import enrich_progress_decisions_from_config
+from .bidirectional_metrics import BidirectionalResult, compute_bidirectional
+from .uncertainty import bootstrap_ci
+
+from pipeline.common.determinism import derived_seed, project_seed
 
 LOGGER_NAME = "pipeline.stage_09_progress"
 
@@ -110,7 +114,8 @@ def _nearest_distances_with_indices(
 
     all_indices = np.arange(len(query_points), dtype=np.int64)
     if len(query_points) > limit:
-        rng = np.random.default_rng(9)
+        # B5: was np.random.default_rng(9) — literal seed bypassed project.random_seed.
+        rng = np.random.default_rng(derived_seed("stage_09_progress.nn_sampling", limit))
         sampled_indices = np.sort(rng.choice(all_indices, size=limit, replace=False))
     else:
         sampled_indices = all_indices
@@ -168,8 +173,11 @@ def _status_from_metrics(
     confidence_label: str,
     threshold: float,
     *,
-    partial_threshold: float = 0.20,
+    partial_threshold: float,
 ) -> str:
+    # B8: partial_threshold has no default; callers MUST pass the configured
+    # `progress.partial_observed_threshold` so any future caller that forgets
+    # gets a TypeError rather than silently using a magic 0.20.
     if confidence_label == "low":
         return "uncertain_low_registration"
     if coverage >= threshold:
@@ -179,8 +187,8 @@ def _status_from_metrics(
     return "not_evidenced"
 
 
-def _fieldnames() -> list[str]:
-    return [
+def _fieldnames(*, include_bidirectional: bool = False, include_distance_ci: bool = False) -> list[str]:
+    base = [
         "global_id",
         "name",
         "ifc_class",
@@ -197,6 +205,35 @@ def _fieldnames() -> list[str]:
         "registration_confidence",
         "notes",
     ]
+    if include_distance_ci:
+        # Inserted before "status" would re-order the legacy columns; appending
+        # keeps byte-stability for downstream consumers that key by column name.
+        base.extend([
+            "mean_deviation_ci_lo",
+            "mean_deviation_ci_hi",
+            "median_deviation_ci_lo",
+            "median_deviation_ci_hi",
+        ])
+    if include_bidirectional:
+        # Names mirror BidirectionalResult.to_row keys exactly.
+        base.extend([
+            "bidirectional_tau_m",
+            "accuracy",
+            "completeness",
+            "f_score",
+            "accuracy_n_evaluated",
+            "accuracy_n_in_tolerance",
+            "completeness_n_evaluated",
+            "completeness_n_in_tolerance",
+            "accuracy_wilson_lo",
+            "accuracy_wilson_hi",
+            "completeness_wilson_lo",
+            "completeness_wilson_hi",
+            "f_score_wilson_lo",
+            "f_score_wilson_hi",
+            "bidirectional_notes",
+        ])
+    return base
 
 
 def _write_deviation_map(path: Path, scan_cloud: Any, bim_cloud: Any, threshold: float) -> None:
@@ -314,6 +351,17 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
     bbox_margin = cfg_float(cfg, "progress.element_bbox_margin_m", max(0.05, threshold * 2.0))
     reg_quality = _registration_confidence(reg_report, cfg)
 
+    # O2: bidirectional accuracy/completeness/F-score plus bootstrap CIs.
+    # Both flags default ON for new runs; either can be disabled to reproduce
+    # historical byte-identical CSV output for downstream tools that lock
+    # column names. See docs/scientific_upgrades.md §3.
+    bidirectional_enabled = cfg_bool(cfg, "progress.bidirectional_metrics_enabled", True)
+    distance_ci_enabled = cfg_bool(cfg, "progress.distance_ci_enabled", True)
+    bootstrap_iterations = int(cfg_get(cfg, "progress.bootstrap_iterations", 1000))
+    base_seed_for_uncertainty = project_seed(cfg)
+
+    bidirectional_results: list[BidirectionalResult] = []
+
     element_rows: list[dict[str, Any]] = []
     all_deviation_values: list[float] = []
     undercovered: list[dict[str, Any]] = []
@@ -326,21 +374,34 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
         mn = element.get("bounds_min", [0, 0, 0])
         mx = element.get("bounds_max", [0, 0, 0])
         target_pts = _select_points_in_bbox(bim_points, mn, mx, bbox_margin)
-        if len(target_pts) < 10:
-            target_pts = bim_points
 
-        distances = _nearest_distances(target_pts, scan, limit=50000)
-        if len(distances) == 0:
+        # B2: when bbox-crop yields too few BIM points (small/sliver elements:
+        # railings, mullions, mullion stops), the previous code silently fell back
+        # to the WHOLE BIM cloud, which produced artificially inflated coverage.
+        # Treat such elements as not_evidenced with an explicit reason instead.
+        element_notes: list[str] = []
+        if reg_quality["confidence_label"] == "low":
+            element_notes.append("synthetic_or_low_confidence")
+
+        if len(target_pts) < 10:
+            element_notes.append("bim_target_too_sparse_for_bbox_crop")
+            distances = np.asarray([], dtype=np.float64)
             coverage = 0.0
             in_tol = 0.0
             mean_dev = median_dev = p95_dev = float("nan")
         else:
-            all_deviation_values.extend(float(x) for x in distances if math.isfinite(float(x)))
-            in_tol = float(np.mean(distances <= threshold))
-            coverage = in_tol
-            mean_dev = float(np.mean(distances))
-            median_dev = float(np.median(distances))
-            p95_dev = float(np.percentile(distances, 95))
+            distances = _nearest_distances(target_pts, scan, limit=50000)
+            if len(distances) == 0:
+                coverage = 0.0
+                in_tol = 0.0
+                mean_dev = median_dev = p95_dev = float("nan")
+            else:
+                all_deviation_values.extend(float(x) for x in distances if math.isfinite(float(x)))
+                in_tol = float(np.mean(distances <= threshold))
+                coverage = in_tol
+                mean_dev = float(np.mean(distances))
+                median_dev = float(np.median(distances))
+                p95_dev = float(np.percentile(distances, 95))
 
         confidence = float(max(0.0, min(1.0, coverage * reg_quality["confidence_score"])))
         status = _status_from_metrics(
@@ -367,8 +428,56 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
             "status": status,
             "confidence": f"{confidence:.6f}",
             "registration_confidence": reg_quality["confidence_label"],
-            "notes": "synthetic_or_low_confidence" if reg_quality["confidence_label"] == "low" else "",
+            "notes": ";".join(element_notes),
         }
+
+        # O2a: percentile-bootstrap CIs for distance summaries (mean, median).
+        # Skipped when distances has < 2 finite samples; the CI columns are
+        # written as empty strings in that case.
+        if distance_ci_enabled:
+            if len(distances) >= 2:
+                rng_dist = np.random.default_rng(
+                    derived_seed("stage_09.distance_bootstrap", gid, base_seed=base_seed_for_uncertainty)
+                )
+                m_lo, _, m_hi = bootstrap_ci(distances, statistic=lambda a: float(np.mean(a)), n_boot=bootstrap_iterations, rng=rng_dist)
+                rng_dist = np.random.default_rng(
+                    derived_seed("stage_09.median_bootstrap", gid, base_seed=base_seed_for_uncertainty)
+                )
+                me_lo, _, me_hi = bootstrap_ci(distances, statistic=lambda a: float(np.median(a)), n_boot=bootstrap_iterations, rng=rng_dist)
+                row.update({
+                    "mean_deviation_ci_lo": f"{m_lo:.6f}" if math.isfinite(m_lo) else "",
+                    "mean_deviation_ci_hi": f"{m_hi:.6f}" if math.isfinite(m_hi) else "",
+                    "median_deviation_ci_lo": f"{me_lo:.6f}" if math.isfinite(me_lo) else "",
+                    "median_deviation_ci_hi": f"{me_hi:.6f}" if math.isfinite(me_hi) else "",
+                })
+            else:
+                row.update({
+                    "mean_deviation_ci_lo": "",
+                    "mean_deviation_ci_hi": "",
+                    "median_deviation_ci_lo": "",
+                    "median_deviation_ci_hi": "",
+                })
+
+        # O2b: bidirectional accuracy / completeness / F-score @ tau plus
+        # Wilson CIs. Computed against the bbox-cropped scan and BIM points so
+        # the metric is element-local. Pure-Python; no Open3D dependency.
+        if bidirectional_enabled:
+            scan_pts_for_element = _select_points_in_bbox(scan_points, mn, mx, bbox_margin)
+            if len(target_pts) < 10 or len(scan_pts_for_element) == 0:
+                bid = compute_bidirectional(
+                    scan_points=np.zeros((0, 3), dtype=np.float64),
+                    bim_points=target_pts if len(target_pts) >= 10 else np.zeros((0, 3), dtype=np.float64),
+                    tau_m=threshold,
+                )
+            else:
+                bid = compute_bidirectional(
+                    scan_points=scan_pts_for_element,
+                    bim_points=target_pts,
+                    tau_m=threshold,
+                )
+            bidirectional_results.append(bid)
+            row.update(bid.to_row())
+
         element_rows.append(row)
 
     by_activity: dict[str, list[dict[str, Any]]] = {}
@@ -413,6 +522,45 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
         "undercovered_regions": undercovered,
     }
 
+    # O2c: aggregate bidirectional metrics across all elements. We weight by
+    # the number of evaluated points on each side of the comparison, which is
+    # the standard "micro-average" choice — it gives small elements
+    # proportional voice to large ones, rather than the macro-average across
+    # elements which would over-weight slivers (railings, mullions).
+    bidirectional_summary: dict[str, Any] | None = None
+    if bidirectional_enabled and bidirectional_results:
+        ac_n = sum(b.accuracy_count_evaluated for b in bidirectional_results)
+        ac_k = sum(b.accuracy_count_in_tolerance for b in bidirectional_results)
+        cm_n = sum(b.completeness_count_evaluated for b in bidirectional_results)
+        cm_k = sum(b.completeness_count_in_tolerance for b in bidirectional_results)
+        from .uncertainty import f_score, wilson_interval
+
+        agg_acc = (ac_k / ac_n) if ac_n > 0 else 0.0
+        agg_cmp = (cm_k / cm_n) if cm_n > 0 else 0.0
+        agg_f = f_score(agg_acc, agg_cmp)
+        ac_lo, _, ac_hi = wilson_interval(ac_k, ac_n)
+        cm_lo, _, cm_hi = wilson_interval(cm_k, cm_n)
+        bidirectional_summary = {
+            "tau_m": float(threshold),
+            "method": "micro_average_over_evaluated_points",
+            "accuracy": float(agg_acc),
+            "completeness": float(agg_cmp),
+            "f_score": float(agg_f),
+            "accuracy_n_evaluated": int(ac_n),
+            "accuracy_n_in_tolerance": int(ac_k),
+            "completeness_n_evaluated": int(cm_n),
+            "completeness_n_in_tolerance": int(cm_k),
+            "accuracy_wilson_lo": float(ac_lo),
+            "accuracy_wilson_hi": float(ac_hi),
+            "completeness_wilson_lo": float(cm_lo),
+            "completeness_wilson_hi": float(cm_hi),
+            "element_count_evaluated": int(len(bidirectional_results)),
+            "references": [
+                "Knapitsch et al., Tanks and Temples, SIGGRAPH 2017 (F-score @ tau).",
+                "Wilson, JASA 22(158), 1927 (score interval for proportions).",
+            ],
+        }
+
     mode_note = "Pipeline validation mode. Metrics are deterministic, but interpretation depends on registration quality and whether the BIM is synthetic or real."
     summary = {
         "stage": "stage_09_progress",
@@ -423,13 +571,27 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
         "registration_quality": reg_quality,
         "deviation_summary": deviation_summary,
         "coverage_summary": coverage_summary,
+        "bidirectional_summary": bidirectional_summary,
+        "uncertainty_config": {
+            "bidirectional_metrics_enabled": bidirectional_enabled,
+            "distance_ci_enabled": distance_ci_enabled,
+            "bootstrap_iterations": bootstrap_iterations,
+            "base_seed": int(base_seed_for_uncertainty),
+        },
         "element_count": len(element_rows),
         "activity_count": len(activity_rows),
         "mode_note": mode_note,
         "elapsed_sec": time.perf_counter() - t0,
     }
 
-    write_csv_atomic(paths["element_metrics_csv"], element_rows, _fieldnames())
+    write_csv_atomic(
+        paths["element_metrics_csv"],
+        element_rows,
+        _fieldnames(
+            include_bidirectional=bidirectional_enabled,
+            include_distance_ci=distance_ci_enabled,
+        ),
+    )
     write_csv_atomic(paths["activity_progress_csv"], activity_rows)
     write_json_atomic(paths["deviation_summary_json"], deviation_summary)
     write_json_atomic(paths["coverage_summary_json"], coverage_summary)

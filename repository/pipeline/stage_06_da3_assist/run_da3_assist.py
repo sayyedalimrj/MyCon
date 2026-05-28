@@ -130,6 +130,12 @@ def run_da3_assist(cfg: Any, *, force: bool = False, log_level: str = "INFO") ->
     if not _provider_available(cfg, records, provider_result):
         fail = bool_value(cfg_get(cfg, "da3.fail_if_required_but_unavailable", False))
         report["status"] = "required_but_provider_unavailable"
+        # B3: explicit structural classification so downstream automation/CI can
+        # distinguish a *legitimate* skip ("dense was sufficient, DA3 not needed")
+        # from a *structural skip* ("DA3 was needed but no provider was available
+        # to produce it"). Exit code is still controlled by
+        # da3.fail_if_required_but_unavailable to preserve laptop-baseline UX.
+        report["status_classification"] = "skip_unsafe"
         report["duration_sec"] = round(time.time() - started, 3)
         write_alignment_manifest(paths["alignment_manifest_csv"], [])
         write_json_atomic(paths["fusion_plan_json"], {"status": "not_run", "reason": "provider_unavailable"})
@@ -140,7 +146,12 @@ def run_da3_assist(cfg: Any, *, force: bool = False, log_level: str = "INFO") ->
         )
         if fail:
             raise Stage6DA3Error(message)
-        print(f"STAGE_06_DA3_OK status=required_but_provider_unavailable report={paths['report_json']}")
+        # Distinct stdout marker so an orchestrator parsing logs cannot mistake
+        # this for a clean STAGE_06_DA3_OK.
+        print(
+            f"STAGE_06_DA3_REQUIRED_BUT_UNAVAILABLE status=required_but_provider_unavailable "
+            f"report={paths['report_json']}"
+        )
         return report
 
     logger.info("Preparing sparse model text for DA3 depth alignment")

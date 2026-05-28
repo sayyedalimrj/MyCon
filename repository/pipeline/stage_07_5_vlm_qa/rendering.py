@@ -9,6 +9,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from pipeline.common.determinism import derived_seed
+
 
 def _o3d():
     import open3d as o3d
@@ -18,7 +20,8 @@ def _o3d():
 def _sample_points(points: np.ndarray, colors: np.ndarray | None, max_points: int) -> tuple[np.ndarray, np.ndarray | None]:
     if len(points) <= max_points:
         return points, colors
-    rng = np.random.default_rng(75)
+    # B5: was np.random.default_rng(75) — literal seed bypassed project.random_seed.
+    rng = np.random.default_rng(derived_seed("stage_07_5_vlm_qa.sample_points"))
     idx = rng.choice(len(points), size=max_points, replace=False)
     return points[idx], colors[idx] if colors is not None and len(colors) == len(points) else None
 

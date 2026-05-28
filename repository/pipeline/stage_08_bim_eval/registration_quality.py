@@ -5,6 +5,8 @@ from typing import Any
 
 import numpy as np
 
+from pipeline.common.determinism import derived_seed
+
 from .config_access import cfg_bool, cfg_float, cfg_int
 from .geometry_utils import require_open3d
 
@@ -16,7 +18,8 @@ def nearest_neighbor_summary(source_pcd: Any, target_pcd: Any, *, sample_limit: 
     if len(source_points) == 0 or len(target_points) == 0:
         return {"count": 0, "mean_m": None, "median_m": None, "p90_m": None, "p95_m": None, "max_m": None}
     if len(source_points) > sample_limit:
-        rng = np.random.default_rng(42)
+        # B5: was np.random.default_rng(42) — literal seed bypassed project.random_seed.
+        rng = np.random.default_rng(derived_seed("stage_08_registration_quality.nn_summary"))
         idx = rng.choice(len(source_points), size=sample_limit, replace=False)
         source_points = source_points[idx]
     target = o3d.geometry.PointCloud()

@@ -408,22 +408,6 @@ def _build_metric_alignment_report_unvalidated(
     return report
 
 
-def _rewrite_metric_alignment_report_output(report: dict[str, Any], output_json: Any) -> None:
-    if output_json is None:
-        return
-    out = Path(output_json)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(report, indent=2), encoding="utf-8")
-
-
-def _rewrite_metric_alignment_report_output(report: dict[str, Any], output_json: Any) -> None:
-    if output_json is None:
-        return
-    out = Path(output_json)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(report, indent=2), encoding="utf-8")
-
-
 def _write_metric_alignment_report_if_requested(report: dict[str, Any], output_json: Any) -> None:
     if output_json is None:
         return

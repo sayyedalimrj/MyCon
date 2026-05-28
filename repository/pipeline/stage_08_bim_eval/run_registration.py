@@ -147,6 +147,7 @@ def run_registration(cfg: Any, *, force: bool = False, log_level: str = "INFO") 
             "inlier_rmse": icp.inlier_rmse,
             "correspondence_set_size": icp.correspondence_set_size,
             "warnings": icp.warnings,
+            "robust_loss": icp.robust_loss,
         },
         "nearest_neighbor_scan_to_bim": nn_scan_to_bim,
         "elapsed_sec": time.perf_counter() - t0,
