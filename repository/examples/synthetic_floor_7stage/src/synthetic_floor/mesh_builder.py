@@ -9,10 +9,17 @@ The mesh is *not* used by the in-repo software renderer (which uses the
 element list directly), but it is the standard way to feed the data
 into Blender, Open3D, Meshlab, three.js, the rest of the MyCon
 geometry stack, etc.
+
+We also emit a ``stage_NN_elements.json`` sidecar with the element
+metadata (id, category, finishing, ifc_global_id, bounding box). This
+is the contract the Blender GPU renderer reads to assign procedural
+PBR materials and segmentation pass indices, since GLB ``extras`` do
+not reliably round-trip through Blender 4.x's glTF importer.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -80,6 +87,7 @@ def write_stage_meshes(
     obj_path = out_dir / f"stage_{stage_id:02d}.obj"
     glb_path = out_dir / f"stage_{stage_id:02d}.glb"
     ply_path = out_dir / f"stage_{stage_id:02d}.ply"
+    sidecar_path = out_dir / f"stage_{stage_id:02d}_elements.json"
 
     # OBJ + MTL
     with obj_path.open("wb") as f:
@@ -95,4 +103,26 @@ def write_stage_meshes(
         with ply_path.open("wb") as f:
             f.write(trimesh.exchange.ply.export_ply(merged))
 
-    return {"obj": obj_path, "glb": glb_path, "ply": ply_path}
+    # Sidecar JSON: stable element_id -> {category, finishing, ifc_global_id, bbox}
+    # The Blender renderer reads this to assign per-category procedural
+    # PBR materials and per-element segmentation pass indices.
+    sidecar = {
+        "schema_version": "synthetic_floor_elements.v1",
+        "stage_id": stage_id,
+        "elements": [
+            {
+                "element_id": s.element.id,
+                "ifc_global_id": s.element.ifc_global_id,
+                "name": s.element.name,
+                "category": s.element.category,
+                "finishing": s.finishing,
+                "completion": s.completion,
+                "box_min": list(s.element.box_min),
+                "box_max": list(s.element.box_max),
+            }
+            for s in kept
+        ],
+    }
+    sidecar_path.write_text(json.dumps(sidecar, indent=2), encoding="utf-8")
+
+    return {"obj": obj_path, "glb": glb_path, "ply": ply_path, "elements_json": sidecar_path}
