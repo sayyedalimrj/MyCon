@@ -26,7 +26,12 @@ def test_root_level_requirements_expected_by_dockerfiles_exist() -> None:
 
 
 def test_documented_requirements_folder_mirrors_root_requirements() -> None:
-    for name in ["requirements-core.txt", "requirements-da3.txt", "requirements-dev.txt"]:
+    for name in [
+        "requirements-core.txt",
+        "requirements-da3.txt",
+        "requirements-dev.txt",
+        "requirements-service.txt",
+    ]:
         root_file = ROOT / name
         folder_file = ROOT / "requirements" / name
         assert root_file.exists(), root_file
