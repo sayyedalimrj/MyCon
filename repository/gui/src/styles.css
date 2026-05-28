@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Theme colors are declared as CSS custom properties so dark/light mode
+   only swaps the variable values; component classes never rebind. */
+
+:root {
+  /* Light theme. */
+  --surface-0: 248 250 252;       /* slate-50  */
+  --surface-1: 255 255 255;       /* white     */
+  --surface-2: 241 245 249;       /* slate-100 */
+  --surface-border: 226 232 240;  /* slate-200 */
+
+  --ink: 15 23 42;                /* slate-900 */
+  --ink-muted: 71 85 105;         /* slate-600 */
+  --ink-subtle: 148 163 184;      /* slate-400 */
+
+  --accent: 56 189 248;           /* sky-400   */
+  --accent-muted: 14 116 144;     /* sky-700   */
+
+  --status-ok: 34 197 94;         /* green-500 */
+  --status-warn: 234 179 8;       /* yellow-500 */
+  --status-err: 239 68 68;        /* red-500   */
+  --status-info: 59 130 246;      /* blue-500  */
+}
+
+html.dark {
+  /* Dark theme: deliberately a touch warmer than pure slate-900 to
+     reduce eye strain during long inspection sessions. */
+  --surface-0: 11 15 23;          /* near-black, blue-tinted */
+  --surface-1: 17 24 39;          /* gray-900 */
+  --surface-2: 30 41 59;          /* slate-800 */
+  --surface-border: 51 65 85;     /* slate-700 */
+
+  --ink: 226 232 240;             /* slate-200 */
+  --ink-muted: 148 163 184;       /* slate-400 */
+  --ink-subtle: 100 116 139;      /* slate-500 */
+
+  --accent: 125 211 252;          /* sky-300 */
+  --accent-muted: 14 165 233;     /* sky-500 */
+
+  --status-ok: 74 222 128;
+  --status-warn: 250 204 21;
+  --status-err: 248 113 113;
+  --status-info: 96 165 250;
+}
+
+html, body, #root {
+  height: 100%;
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Pretty thin scrollbars in long content areas. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--surface-border));
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--ink-subtle)); }
+
+/* Focus ring kept simple; relies on accent variable for theme parity. */
+:focus-visible {
+  outline: 2px solid rgb(var(--accent));
+  outline-offset: 2px;
+  border-radius: 6px;
+}
