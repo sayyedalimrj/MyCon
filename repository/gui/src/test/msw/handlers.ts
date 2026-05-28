@@ -106,4 +106,51 @@ export const handlers = [
       error: { code: "not_found", message: "no calibration report yet", details: {} },
     }, { status: 404 }),
   ),
+
+  // Phase 5 HITL endpoints
+  http.post(`${API}/v1/hitl/corrections`, async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    if (!body || typeof body !== "object") {
+      return HttpResponse.json(
+        { error: { code: "invalid_input", message: "payload must be a JSON object" } },
+        { status: 400 },
+      );
+    }
+    if (!body["reviewer_id"]) {
+      return HttpResponse.json(
+        { error: { code: "invalid_input", message: "missing reviewer_id" } },
+        { status: 400 },
+      );
+    }
+    return HttpResponse.json({
+      schema_version: "hitl_submit_response.v1",
+      stored_path: "/runs/test/reports/hitl_corrections.jsonl",
+      correction: {
+        schema_version: "hitl_correction.v1",
+        target_kind: body["target_kind"] ?? "element_acceptance",
+        target_id: body["target_id"] ?? "",
+        predicted_value: body["predicted_value"] ?? "accept",
+        predicted_confidence: body["predicted_confidence"] ?? "high",
+        corrected_value: body["corrected_value"] ?? "reject",
+        reviewer_id: body["reviewer_id"],
+        timestamp_utc: "2026-05-28T12:00:00Z",
+        rationale: body["rationale"] ?? "",
+        evidence_refs: body["evidence_refs"] ?? [],
+        run_id: body["run_id"] ?? "",
+        record_id: "abc1234567ab",
+      },
+    });
+  }),
+  http.get(`${API}/v1/hitl/corrections`, () =>
+    HttpResponse.json({
+      schema_version: "hitl_list_response.v1",
+      schema_version_record: "hitl_correction.v1",
+      stored_path: "/runs/test/reports/hitl_corrections.jsonl",
+      n_total_records: 0,
+      n_effective: 0,
+      n_conflicts: 0,
+      effective: [],
+      conflicts: [],
+    }),
+  ),
 ];
