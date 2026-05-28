@@ -18,6 +18,17 @@ question "is this project on schedule?" It joins:
   reliability diagram, HITL submit form, calibration replay button
   (Phase 3 + 5).
 
+## Run on Google Colab
+
+Open [`MyCon_Colab_Pipeline.ipynb`](MyCon_Colab_Pipeline.ipynb) in
+Colab (GPU runtime recommended). The notebook mounts Google Drive,
+installs system + Python deps, and launches a Gradio UI that drives
+the pipeline stage-by-stage with live logs, memory cleanup between
+heavy stages, and direct downloads. Helper code lives in
+[`colab/`](colab/) and a user-facing walkthrough lives at
+[`docs/colab_workflow.md`](docs/colab_workflow.md). All Colab outputs
+are written directly to Drive so a Colab disconnect does not lose work.
+
 ## 30-second tour
 
 ```bash
