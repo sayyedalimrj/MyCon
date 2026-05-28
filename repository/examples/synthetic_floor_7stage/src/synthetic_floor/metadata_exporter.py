@@ -259,13 +259,28 @@ def write_manifest(
     return out_path
 
 
-def _entry(path: Path) -> dict:
+def _entry(path) -> dict:
+    """Build a manifest entry for an artifact path.
+
+    Handles None, directories, missing files, and regular files gracefully.
+    """
+    if path is None:
+        return {"path": None, "exists": False, "type": "null"}
     p = Path(path)
     if not p.exists():
-        return {"path": str(p), "exists": False}
+        return {"path": str(p), "exists": False, "type": "missing"}
+    if p.is_dir():
+        children = list(p.iterdir())
+        return {
+            "path": str(p),
+            "exists": True,
+            "type": "directory",
+            "children_count": len(children),
+        }
     return {
         "path": str(p),
         "exists": True,
+        "type": "file",
         "size_bytes": p.stat().st_size,
         "sha256": _sha256(p),
     }

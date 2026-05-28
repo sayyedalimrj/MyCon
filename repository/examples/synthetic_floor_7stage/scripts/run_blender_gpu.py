@@ -255,6 +255,7 @@ def render_stage_with_blender(
 
 
 def encode_mp4(frames_dir: Path, out_path: Path, fps: int, log: logging.Logger) -> Path | None:
+    """Encode PNGs to MP4. Robust: handles mixed sizes, corrupt frames, progress."""
     pngs = sorted(frames_dir.glob("frame_*.png"))
     if not pngs:
         log.warning("no PNGs found in %s; skipping MP4 encode", frames_dir)
@@ -268,10 +269,34 @@ def encode_mp4(frames_dir: Path, out_path: Path, fps: int, log: logging.Logger) 
         return None
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    arr_iter = (np.asarray(Image.open(p).convert("RGB")) for p in pngs)
-    arrays = np.stack(list(arr_iter), axis=0)
+
+    # Load frames, normalising to a common size + RGB mode.
+    # Skip corrupt or unreadable files instead of crashing.
+    valid_frames: list = []
+    target_size: tuple | None = None
+    for i, p in enumerate(pngs):
+        try:
+            img = Image.open(p).convert("RGB")
+        except Exception as e:
+            log.warning("  skipping corrupt frame %s: %s", p.name, e)
+            continue
+        if target_size is None:
+            target_size = img.size  # (W, H)
+        elif img.size != target_size:
+            img = img.resize(target_size, Image.LANCZOS)
+        valid_frames.append(np.asarray(img))
+        # Progress indicator every 20% of frames
+        if (i + 1) % max(1, len(pngs) // 5) == 0:
+            log.info("  encoding: loaded %d/%d frames ...", i + 1, len(pngs))
+
+    if not valid_frames:
+        log.error("no valid frames in %s; MP4 not written.", frames_dir)
+        return None
+
+    arrays = np.stack(valid_frames, axis=0)
     iio.imwrite(out_path, arrays, fps=fps, codec="libx264", quality=8, macro_block_size=1)
-    log.info("wrote %s (%d frames)", out_path, len(pngs))
+    log.info("wrote %s (%d frames, %dx%d)", out_path, len(valid_frames),
+             target_size[0] if target_size else 0, target_size[1] if target_size else 0)
     return out_path
 
 
@@ -345,7 +370,15 @@ def main() -> int:
     blender_renders = spec.output.root / "blender_renders"
     blender_renders.mkdir(parents=True, exist_ok=True)
 
+    # Import the progress bar (non-critical; fallback to plain logging)
+    try:
+        from synthetic_floor.progress import ProgressBar
+    except ImportError:
+        ProgressBar = None  # type: ignore[assignment,misc]
+
     files_by_stage: dict[int, dict] = {}
+    if ProgressBar:
+        pb = ProgressBar(total=len(stage_ids), label="stages")
     for sid in stage_ids:
         info = prepared[sid]
         if not Path(info["glb"]).exists():
@@ -387,6 +420,8 @@ def main() -> int:
             "video": video_path,
             "element_metrics_csv": info.get("element_metrics_csv"),
         }
+        if ProgressBar:
+            pb.update(1)
 
     # Refresh manifest so the new files show up
     extras = {
