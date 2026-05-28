@@ -98,13 +98,16 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass, field
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Protocol, Sequence, runtime_checkable
 
 __all__ = [
     "ClaimKind",
     "Claim",
     "ClaimVerification",
     "GroundingResult",
+    "ClaimExtractor",
+    "RegexClaimExtractor",
+    "DEFAULT_CLAIM_EXTRACTOR",
     "DEFAULT_TOLERANCES",
     "DEFAULT_UNIT_FACTORS",
     "extract_claims",
@@ -216,15 +219,31 @@ DEFAULT_TOLERANCES: Mapping[str, tuple[float, float]] = {
 
 # Unit conversion factors to canonical metres / dimensionless. Keys are
 # lower-case unit strings.
+#
+# We support the imperial linear units (in / inch / inches / ft / feet)
+# explicitly because US construction specifications routinely quote
+# clearances, slab thicknesses, and reinforcement spacings in inches and
+# feet. Following the international foot definition (NIST SP 811),
+# ``1 in = 0.0254 m`` and ``1 ft = 0.3048 m`` exactly.
 DEFAULT_UNIT_FACTORS: Mapping[str, float] = {
+    # Linear (canonical -> metres)
     "mm": 1e-3,
     "cm": 1e-2,
     "m": 1.0,
+    "in": 0.0254,
+    "inch": 0.0254,
+    "inches": 0.0254,
+    "ft": 0.3048,
+    "feet": 0.3048,
+    # Dimensionless (canonical -> fraction)
     "%": 0.01,
     "percent": 0.01,
+    # Angular (canonical -> degrees). ``rad`` is converted to degrees so
+    # the canonical angular unit stays consistent with ``deg``/``degrees``.
     "deg": 1.0,
     "degrees": 1.0,
-    "rad": 57.295779513082323,  # to degrees
+    "rad": 57.295779513082323,  # 180 / pi
+    "radians": 57.295779513082323,
 }
 
 
@@ -239,7 +258,17 @@ _NUMERIC_PATTERN = re.compile(
     \s*
     (?P<value>[-+]?\d+(?:\.\d+)?)
     \s*
-    (?P<unit>mm|cm|m|%|percent|deg|degrees|rad)
+    # Units. Order matters: longer tokens come first so 'inches' wins
+    # over 'inch', 'feet' over 'ft', 'percent' over 'p'. Each unit is
+    # required to be followed by a non-letter character (or end of
+    # string) so 'm' does not silently match the leading 'm' of words
+    # like 'mm', 'meeting', or 'minimum'.
+    (?P<unit>
+        mm|cm|inches|inch|in|feet|ft|m
+        |percent|%
+        |radians|rad|degrees|deg
+    )
+    (?![A-Za-z])             # must not be followed by a letter
     """,
     re.IGNORECASE | re.VERBOSE,
 )
@@ -281,12 +310,26 @@ def _normalise_quantity(raw: str | None) -> str | None:
 
 
 def _to_canonical(value: float, unit: str) -> tuple[float, str]:
-    """Convert ``(value, unit)`` to canonical (metres / fraction / degrees)."""
+    """Convert ``(value, unit)`` to canonical (metres / fraction / degrees).
+
+    Returns ``(canonical_value, canonical_unit)``. The canonical units
+    are:
+
+    - ``"m"`` for any linear input (``mm``/``cm``/``m``/``in``/``inch``/
+      ``inches``/``ft``/``feet``).
+    - ``"fraction"`` for any dimensionless ratio (``%``/``percent``).
+    - ``"deg"`` for any angular input (``deg``/``degrees``/``rad``/
+      ``radians``).
+
+    Unknown units are passed through verbatim; the verifier will then
+    only match against evidence that uses the same unit string, which is
+    the safe behaviour.
+    """
     u = unit.strip().lower()
     if u in DEFAULT_UNIT_FACTORS:
         if u in {"%", "percent"}:
             return value * DEFAULT_UNIT_FACTORS[u], "fraction"
-        if u in {"deg", "degrees", "rad"}:
+        if u in {"deg", "degrees", "rad", "radians"}:
             return value * DEFAULT_UNIT_FACTORS[u], "deg"
         return value * DEFAULT_UNIT_FACTORS[u], "m"
     return value, u
@@ -409,6 +452,62 @@ def extract_claims(
         )
 
     return claims
+
+
+# ---------------------------------------------------------------------------
+# Plug-in claim extractor (Phase 5)
+# ---------------------------------------------------------------------------
+#
+# The grounding guard's claim decomposition is currently a regex; that's
+# auditable, deterministic, and fast, but a future revision may want to
+# plug in a learned NER (e.g. a small transformer fine-tuned on
+# construction-site VLM answers). We expose a typed Protocol so the
+# verifier never imports the extractor implementation directly. New
+# extractors only have to implement one method.
+
+
+@runtime_checkable
+class ClaimExtractor(Protocol):
+    """Protocol that any claim extractor (regex, learned NER, hybrid) must
+    satisfy.
+
+    Implementations must be **stateless and deterministic** for the same
+    input. They must NOT raise on empty / malformed answers — the
+    verifier's contract is that an empty extractor result simply means
+    'no claims to verify' rather than an error. Failing loudly belongs
+    in pre-extractor sanitisation, not in the extractor itself.
+    """
+
+    def extract(
+        self,
+        answer: str,
+        *,
+        known_activity_ids: Iterable[str] = (),
+    ) -> list[Claim]:
+        """Return the atomic claims contained in ``answer``."""
+        ...
+
+
+class RegexClaimExtractor:
+    """The default extractor: thin wrapper around :func:`extract_claims`.
+
+    Production callers should use :data:`DEFAULT_CLAIM_EXTRACTOR`. The
+    class exists so test code can subclass / monkey-patch the extractor
+    without touching the verifier, and so a future learned extractor
+    can implement :class:`ClaimExtractor` and be swapped in by passing
+    ``ground_answer(..., claim_extractor=MyExtractor())``.
+    """
+
+    def extract(
+        self,
+        answer: str,
+        *,
+        known_activity_ids: Iterable[str] = (),
+    ) -> list[Claim]:
+        return extract_claims(answer, known_activity_ids=known_activity_ids)
+
+
+DEFAULT_CLAIM_EXTRACTOR: ClaimExtractor = RegexClaimExtractor()
 
 
 # ---------------------------------------------------------------------------
@@ -647,14 +746,23 @@ def ground_answer(
     tolerances: Mapping[str, tuple[float, float]] = DEFAULT_TOLERANCES,
     known_activity_ids: Iterable[str] = (),
     pass_threshold_unsupported: int = 0,
+    claim_extractor: ClaimExtractor | None = None,
 ) -> GroundingResult:
     """Run the full grounding-guard pipeline on one (answer, evidence) pair.
 
     ``pass_threshold_unsupported`` is the maximum number of unsupported
     claims the answer may have and still ``passed = True``. Default 0
     (any unsupported claim fails the guard); set to 1 to be lenient.
+
+    ``claim_extractor`` is an optional plug-in following
+    :class:`ClaimExtractor`. The default is :data:`DEFAULT_CLAIM_EXTRACTOR`
+    (the regex extractor wrapped as :class:`RegexClaimExtractor`). Pass
+    a custom extractor to swap in a learned NER without touching the
+    verifier; the rest of the pipeline (``verify_claim``, evidence
+    walking, the result aggregation) is unchanged.
     """
-    claims = extract_claims(answer, known_activity_ids=known_activity_ids)
+    extractor = claim_extractor or DEFAULT_CLAIM_EXTRACTOR
+    claims = extractor.extract(answer, known_activity_ids=known_activity_ids)
     verifications = [verify_claim(c, evidence, tolerances=tolerances) for c in claims]
 
     n_matched = sum(1 for v in verifications if v.status == "matched")
@@ -690,6 +798,7 @@ def attach_grounding_guard(
     tolerances: Mapping[str, tuple[float, float]] = DEFAULT_TOLERANCES,
     known_activity_ids: Iterable[str] = (),
     pass_threshold_unsupported: int = 0,
+    claim_extractor: ClaimExtractor | None = None,
 ) -> dict[str, Any]:
     """Run :func:`ground_answer` on a Stage 10 response dict and attach
     the result.
@@ -731,6 +840,7 @@ def attach_grounding_guard(
         tolerances=tolerances,
         known_activity_ids=known_activity_ids,
         pass_threshold_unsupported=pass_threshold_unsupported,
+        claim_extractor=claim_extractor,
     )
     response["grounding_guard"] = result.to_dict()
 
