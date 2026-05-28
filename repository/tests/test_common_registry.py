@@ -32,8 +32,9 @@ from pipeline.common.registry import (
 
 def test_default_registry_size_is_canonical() -> None:
     # The shipping pipeline has 14 distinct ``run_*`` modules. Stage 8 has
-    # two entries (metric_alignment + registration), so the registry has 15.
-    assert len(STAGE_REGISTRY) == 15
+    # two entries (metric_alignment + registration), and Stage 11 (schedule
+    # variance, Phase 4) is the 16th entry.
+    assert len(STAGE_REGISTRY) == 16
 
 
 def test_every_descriptor_has_unique_name() -> None:

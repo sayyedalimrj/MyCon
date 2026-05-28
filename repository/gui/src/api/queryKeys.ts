@@ -15,4 +15,15 @@ export const queryKeys = {
   run: (runId: string) => ["runs", runId] as const,
   runEvents: (runId: string) => ["runs", runId, "events"] as const,
   runArtifacts: (runId: string) => ["runs", runId, "artifacts"] as const,
+  scheduleActivities: (runId?: string, dataDateIso?: string) =>
+    ["schedule", "activities", { runId, dataDateIso }] as const,
+  scheduleActivityDetail: (
+    activityId: string,
+    runId?: string,
+    dataDateIso?: string,
+  ) => ["schedule", "activity", activityId, { runId, dataDateIso }] as const,
+  scheduleVariance: (runId?: string) => ["schedule", "variance", { runId }] as const,
+  scheduleDashboard: (runId?: string) => ["schedule", "dashboard", { runId }] as const,
+  elementStatus: (ifcGlobalId: string, runId?: string) =>
+    ["elements", ifcGlobalId, { runId }] as const,
 };

@@ -75,6 +75,7 @@ from pipeline.common.schema import (
     Stage08BimEvalSchema,
     Stage09ProgressSchema,
     Stage10CopilotSchema,
+    Stage11ScheduleVarianceSchema,
 )
 
 __all__ = [
@@ -631,6 +632,25 @@ def build_default_registry() -> StageRegistry:
             inputs=("paths.metrics_dir",),
             outputs=(),
             report_basename=None,  # Stage 10 writes copilot/<...>/latest_evidence_package.json, not a stage report.
+            capabilities=frozenset({StageCapability.OPTIONAL}),
+        ),
+        StageDescriptor(
+            name="stage_11_schedule_variance",
+            order=110,
+            title="Schedule variance and dashboard summary",
+            description=(
+                "Join Stage 9 element-level results with the canonical schedule CSV and "
+                "the BIM<->schedule mapping. Produces per-activity rollups (Wilson 95% "
+                "intervals on actual percent complete), a run-wide schedule_variance.json, "
+                "and the dashboard_summary.json the Schedule Compare GUI consumes."
+            ),
+            cli_module="pipeline.stage_11_schedule_variance.run_schedule_variance",
+            callable_name="main",
+            schema_class=Stage11ScheduleVarianceSchema,
+            dependencies=("stage_09_progress",),
+            inputs=("paths.metrics_dir", "inputs.schedule"),
+            outputs=("paths.schedule_variance_dir",),
+            report_basename="schedule_variance.json",
             capabilities=frozenset({StageCapability.OPTIONAL}),
         ),
     )

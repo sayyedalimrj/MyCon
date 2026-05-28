@@ -12,6 +12,7 @@ const NAV: Array<{ to: string; label: string; description: string }> = [
   { to: "/viewer", label: "3D Viewer", description: "BIM & alignment" },
   { to: "/diff", label: "Config Diff", description: "Compare versions" },
   { to: "/report", label: "Report", description: "Export & summarize" },
+  { to: "/schedule", label: "Schedule", description: "Planned vs actual" },
 ];
 
 export function Sidebar() {

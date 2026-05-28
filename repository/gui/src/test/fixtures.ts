@@ -270,3 +270,115 @@ export const fixtureArtifacts: ArtifactSummary[] = [
     parse_error: null,
   },
 ];
+
+
+
+// ---------------------------------------------------------------------------
+// Phase 4 schedule-comparison fixtures
+// ---------------------------------------------------------------------------
+
+export const fixtureScheduleActivitiesResponse = {
+  schema_version: "schedule_activities_response.v1",
+  data_date_utc: "2026-04-16T00:00:00+00:00",
+  n_activities: 2,
+  activities: [
+    {
+      activity_id: "A0001",
+      activity_name: "Foundations",
+      wbs_code: "1.1",
+      trade: "structural",
+      location: "Site",
+      predecessors: [],
+      planned_start_iso: "2026-03-01T00:00:00+00:00",
+      planned_finish_iso: "2026-04-01T00:00:00+00:00",
+      planned_percent_complete: 100,
+    },
+    {
+      activity_id: "A0432",
+      activity_name: "Floor 2 Zone B walls",
+      wbs_code: "1.2.3",
+      trade: "structural",
+      location: "Floor 2 Zone B",
+      predecessors: ["A0001"],
+      planned_start_iso: "2026-04-01T00:00:00+00:00",
+      planned_finish_iso: "2026-05-01T00:00:00+00:00",
+      planned_percent_complete: 50,
+    },
+  ],
+  schedule_provenance: {
+    source_path: "/runs/r1/inputs/schedule.csv",
+    source_sha256: "deadbeef".repeat(8),
+    source_bytes: 1024,
+    schema_version: "schedule.v1",
+    n_rows_total: 2,
+    n_rows_kept: 2,
+    n_rows_skipped: 0,
+    skip_reasons: [] as Array<[string, number]>,
+  },
+};
+
+const fixtureActivityRows = [
+  {
+    activity_id: "A0001",
+    activity_name: "Foundations",
+    planned_percent_complete: 100,
+    actual_percent_complete: 100,
+    actual_percent_complete_lower_95: 80,
+    actual_percent_complete_upper_95: 100,
+    schedule_variance_percent: 0,
+    status: "on_schedule" as const,
+    confidence: "high" as const,
+    n_evaluated_elements: 1,
+    n_mapped_elements: 1,
+    risks: [] as string[],
+  },
+  {
+    activity_id: "A0432",
+    activity_name: "Floor 2 Zone B walls",
+    planned_percent_complete: 50,
+    actual_percent_complete: 25,
+    actual_percent_complete_lower_95: 10,
+    actual_percent_complete_upper_95: 50,
+    schedule_variance_percent: -25,
+    status: "behind" as const,
+    confidence: "medium" as const,
+    n_evaluated_elements: 4,
+    n_mapped_elements: 8,
+    risks: ["schedule_behind", "low_confidence_actual_percent"],
+  },
+];
+
+export const fixtureDashboardSummary = {
+  schema_version: "dashboard_summary.v1",
+  data_date_utc: "2026-04-16T00:00:00+00:00",
+  kpi: {
+    planned_percent: 75,
+    actual_percent: 62.5,
+    actual_lower_95: 45,
+    actual_upper_95: 75,
+    variance_percent: -12.5,
+    n_activities: 2,
+    n_on_schedule: 1,
+    n_behind: 1,
+    n_ahead: 0,
+    n_unknown_evidence: 0,
+  },
+  activities: fixtureActivityRows,
+};
+
+export const fixtureScheduleVariance = {
+  schema_version: "schedule_variance.v1",
+  data_date_utc: "2026-04-16T00:00:00+00:00",
+  on_schedule_band_pct: 5,
+  n_activities: 2,
+  n_on_schedule: 1,
+  n_ahead: 0,
+  n_behind: 1,
+  n_unknown_evidence: 0,
+  overall_planned_percent_complete: 75,
+  overall_actual_percent_complete: 62.5,
+  overall_actual_lower_95: 45,
+  overall_actual_upper_95: 75,
+  overall_schedule_variance_percent: -12.5,
+  activities: fixtureActivityRows,
+};

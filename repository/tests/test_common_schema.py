@@ -103,7 +103,7 @@ def test_all_stage_schemas_tuple_matches_stage_count() -> None:
     # The 10 shipping stages each have one schema entry. Stages 4.5, 7.5,
     # 7.6, 7.7, 8a (metric_alignment) reuse the closest matching schema
     # (Stage04Refinement, Stage07Cleanup, Stage08BimEval).
-    assert len(classes) == 10
+    assert len(classes) == 11
 
 
 def test_required_keys_are_subset_of_config_keys() -> None:
