@@ -1,0 +1,143 @@
+FROM ubuntu:22.04
+
+ARG PROXY_URL=
+ARG MAMBA_VERSION=1.5.10
+ARG COLMAP_VERSION=4.0.3
+ARG PYCOLMAP_VERSION=4.0.3
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PIP_NO_CACHE_DIR=0
+ENV PIP_DEFAULT_TIMEOUT=300
+ENV PIP_RETRIES=20
+ENV MAMBA_ROOT_PREFIX=/opt/micromamba
+ENV PATH=/opt/micromamba/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+WORKDIR /workspace
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    set -eux; \
+    if [ -n "${PROXY_URL}" ]; then \
+      export http_proxy="${PROXY_URL}"; \
+      export https_proxy="${PROXY_URL}"; \
+      printf '%s\n' \
+        "Acquire::http::Proxy \"${PROXY_URL}\";" \
+        "Acquire::https::Proxy \"${PROXY_URL}\";" \
+        "Acquire::Retries \"40\";" \
+        "Acquire::http::Timeout \"180\";" \
+        "Acquire::https::Timeout \"180\";" \
+        > /etc/apt/apt.conf.d/95proxy; \
+    else \
+      printf '%s\n' \
+        "Acquire::Retries \"40\";" \
+        "Acquire::http::Timeout \"180\";" \
+        "Acquire::https::Timeout \"180\";" \
+        > /etc/apt/apt.conf.d/95retry; \
+    fi; \
+    retry() { \
+      n=0; \
+      until "$@"; do \
+        n=$((n+1)); \
+        if [ "$n" -ge 20 ]; then echo "FAILED after $n tries: $*" >&2; return 1; fi; \
+        echo "Retry $n/20 in 20s: $*" >&2; \
+        sleep 20; \
+      done; \
+    }; \
+    retry apt-get update; \
+    retry apt-get install -y --no-install-recommends --fix-missing \
+      ca-certificates curl bzip2 git wget unzip zip rsync \
+      python3 python3-pip python3-venv python3-dev \
+      ffmpeg \
+      build-essential cmake ninja-build pkg-config \
+      libgl1 libglib2.0-0 libgomp1; \
+    rm -f /etc/apt/apt.conf.d/95proxy /etc/apt/apt.conf.d/95retry
+
+COPY requirements-core.txt /tmp/requirements-core.txt
+
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    set -eux; \
+    python3 -m pip install --upgrade pip==24.3.1 setuptools==75.6.0 wheel==0.45.1; \
+    retry() { \
+      n=0; \
+      until "$@"; do \
+        n=$((n+1)); \
+        if [ "$n" -ge 12 ]; then echo "FAILED after $n tries: $*" >&2; return 1; fi; \
+        echo "Retry $n/12 in 20s: $*" >&2; \
+        sleep 20; \
+      done; \
+    }; \
+    if [ -n "${PROXY_URL}" ]; then \
+      retry python3 -m pip install --proxy "${PROXY_URL}" --timeout 300 --retries 20 -r /tmp/requirements-core.txt; \
+      retry python3 -m pip install --proxy "${PROXY_URL}" --timeout 300 --retries 20 "pycolmap-cuda12==${PYCOLMAP_VERSION}"; \
+    else \
+      retry python3 -m pip install --timeout 300 --retries 20 -r /tmp/requirements-core.txt; \
+      retry python3 -m pip install --timeout 300 --retries 20 "pycolmap-cuda12==${PYCOLMAP_VERSION}"; \
+    fi
+
+RUN set -eux; \
+    if [ -n "${PROXY_URL}" ]; then \
+      export http_proxy="${PROXY_URL}"; \
+      export https_proxy="${PROXY_URL}"; \
+    fi; \
+    curl -L --retry 20 --retry-delay 10 --connect-timeout 60 \
+      "https://micro.mamba.pm/api/micromamba/linux-64/${MAMBA_VERSION}" \
+      -o /tmp/micromamba.tar.bz2; \
+    mkdir -p /opt/micromamba/bin; \
+    tar -xjf /tmp/micromamba.tar.bz2 -C /tmp bin/micromamba; \
+    mv /tmp/bin/micromamba /opt/micromamba/bin/micromamba; \
+    rm -rf /tmp/micromamba.tar.bz2 /tmp/bin; \
+    micromamba shell init -s bash -r /opt/micromamba
+
+RUN --mount=type=cache,target=/opt/micromamba/pkgs,sharing=locked \
+    set -eux; \
+    if [ -n "${PROXY_URL}" ]; then \
+      export http_proxy="${PROXY_URL}"; \
+      export https_proxy="${PROXY_URL}"; \
+    fi; \
+    retry() { \
+      n=0; \
+      until "$@"; do \
+        n=$((n+1)); \
+        if [ "$n" -ge 12 ]; then echo "FAILED after $n tries: $*" >&2; return 1; fi; \
+        echo "Retry $n/12 in 30s: $*" >&2; \
+        sleep 30; \
+      done; \
+    }; \
+    retry micromamba create -y -n colmap -c conda-forge "colmap=${COLMAP_VERSION}" faiss-cpu; \
+    micromamba clean -i -y
+
+RUN set -eux; \
+    printf '%s\n' '#!/usr/bin/env bash' 'exec /opt/micromamba/bin/micromamba run -n colmap colmap "$@"' > /usr/local/bin/colmap; \
+    chmod +x /usr/local/bin/colmap
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    set -eux; \
+    if [ -n "${PROXY_URL}" ]; then \
+      export http_proxy="${PROXY_URL}"; \
+      export https_proxy="${PROXY_URL}"; \
+      printf '%s\n' \
+        "Acquire::http::Proxy \"${PROXY_URL}\";" \
+        "Acquire::https::Proxy \"${PROXY_URL}\";" \
+        > /etc/apt/apt.conf.d/95proxy; \
+    fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends libsm6 libxext6 libxrender1; \
+    rm -f /etc/apt/apt.conf.d/95proxy
+
+RUN set -eux; \
+    command -v colmap; \
+    colmap help | head -40; \
+    /usr/bin/python3 - <<'PY'
+import cv2
+import open3d as o3d
+import ifcopenshell
+import pycolmap
+print("OpenCV:", cv2.__version__)
+print("Open3D:", o3d.__version__)
+print("IfcOpenShell:", ifcopenshell.version)
+print("PyCOLMAP:", pycolmap.__version__)
+PY
+
+CMD ["bash"]

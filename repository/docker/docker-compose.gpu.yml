@@ -1,0 +1,12 @@
+# Optional GPU override for servers/workstations with NVIDIA GPUs.
+# Use together with the base compose file:
+# docker compose -f docker/docker-compose.yml -f docker/docker-compose.gpu.yml run --rm core nvidia-smi
+services:
+  core:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
