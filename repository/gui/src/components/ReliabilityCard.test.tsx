@@ -1,13 +1,18 @@
-// Unit tests for the Phase 5 reliability per-bin chart.
+// Unit tests for the Phase 5 reliability per-bin chart and the Phase 5
+// Replay button.
 //
 // We render the card directly (no MSW; the prop carries the report
-// payload verbatim) and assert the three rendering states:
+// payload verbatim) and assert the rendering states:
 //   - report=null         -> empty-state guidance
 //   - report without table -> headline metrics only (legacy path)
 //   - report with table    -> SVG chart with one element per populated bin
+//   - onReplay prop wired  -> Replay button visible, disabled state
+//                              while isReplaying is true, status line
+//                              rendered when replayStatus is supplied
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import {
   CalibrationReportPayload,
@@ -130,5 +135,68 @@ describe("ReliabilityCard", () => {
     };
     render(<ReliabilityCard report={report} />);
     expect(screen.getByText("miscalibrated")).toBeInTheDocument();
+  });
+
+  it("hides the Replay button when onReplay is not supplied", () => {
+    render(<ReliabilityCard report={null} />);
+    expect(screen.queryByTestId("reliability-replay-button")).toBeNull();
+  });
+
+  it("shows the Replay button on the empty state when onReplay is supplied", async () => {
+    const onReplay = vi.fn();
+    render(<ReliabilityCard report={null} onReplay={onReplay} />);
+    const button = screen.getByTestId("reliability-replay-button");
+    expect(button).toBeInTheDocument();
+    expect(button).not.toBeDisabled();
+    await userEvent.click(button);
+    expect(onReplay).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the Replay button while isReplaying is true", () => {
+    const report: CalibrationReportPayload = {
+      schema_version: "calibration_report.v1",
+      n_samples: 6,
+      metrics: _METRICS,
+    };
+    render(
+      <ReliabilityCard
+        report={report}
+        onReplay={() => undefined}
+        isReplaying
+      />,
+    );
+    const button = screen.getByTestId("reliability-replay-button");
+    expect(button).toBeDisabled();
+    expect(button.textContent).toMatch(/Replaying/i);
+  });
+
+  it("renders the replayStatus line under the metrics caption", () => {
+    const report: CalibrationReportPayload = {
+      schema_version: "calibration_report.v1",
+      n_samples: 6,
+      metrics: _METRICS,
+    };
+    render(
+      <ReliabilityCard
+        report={report}
+        onReplay={() => undefined}
+        replayStatus="Replayed 6 corrections at 12:34"
+      />,
+    );
+    const status = screen.getByTestId("reliability-replay-status");
+    expect(status.textContent).toMatch(/Replayed 6 corrections at 12:34/);
+  });
+
+  it("renders the replayStatus on the empty-state card too", () => {
+    render(
+      <ReliabilityCard
+        report={null}
+        onReplay={() => undefined}
+        replayStatus="Replay failed: 500"
+      />,
+    );
+    expect(screen.getByTestId("reliability-replay-status").textContent).toMatch(
+      /Replay failed: 500/,
+    );
   });
 });

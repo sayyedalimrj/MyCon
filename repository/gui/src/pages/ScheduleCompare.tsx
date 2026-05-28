@@ -13,9 +13,10 @@
 // calibration endpoints all exist behind /api/v1/.
 
 import { useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { scheduleEndpoints } from "../api/scheduleEndpoints";
+import { calibrationEndpoints } from "../api/calibrationEndpoints";
 import { queryKeys } from "../api/queryKeys";
 import type {
   ActivityVarianceRow,
@@ -212,6 +213,27 @@ export function ScheduleComparePage({ runId }: ScheduleCompareProps = {}) {
     retry: false,
   });
 
+  const queryClient = useQueryClient();
+  const [replayStatus, setReplayStatus] = useState<string | undefined>(undefined);
+  const replayMutation = useMutation({
+    mutationFn: () => calibrationEndpoints.runReplay(undefined, { runId }),
+    onSuccess: (resp) => {
+      const ts = new Date().toLocaleTimeString();
+      setReplayStatus(
+        `Replayed ${resp.n_replayed_records} corrections at ${ts}` +
+          (resp.n_conflicts > 0 ? ` (${resp.n_conflicts} conflict${resp.n_conflicts === 1 ? "" : "s"})` : ""),
+      );
+      // Push the fresh report straight into the query cache so the
+      // ReliabilityCard rerenders without a network round-trip, and
+      // also invalidate so any background refetch stays consistent.
+      queryClient.setQueryData(["calibration", "report", { runId }], resp.report);
+      queryClient.invalidateQueries({ queryKey: ["calibration", "report"] });
+    },
+    onError: (err) => {
+      setReplayStatus(`Replay failed: ${(err as Error).message}`);
+    },
+  });
+
   const selectedRow = useMemo<ActivityVarianceRow | null>(() => {
     if (!dashboardQuery.data || !selectedId) return null;
     return (
@@ -276,6 +298,9 @@ export function ScheduleComparePage({ runId }: ScheduleCompareProps = {}) {
             report={
               calibrationQuery.data ?? null
             }
+            onReplay={() => replayMutation.mutate()}
+            isReplaying={replayMutation.isPending}
+            replayStatus={replayStatus}
           />
         </>
       )}

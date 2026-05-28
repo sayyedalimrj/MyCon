@@ -51,6 +51,15 @@ export interface CalibrationReportPayload {
 export interface ReliabilityCardProps {
   /** ``null`` when the calibration report is not yet available for the run. */
   report: CalibrationReportPayload | null;
+  /** Optional handler invoked when the reviewer clicks "Replay". When
+   *  omitted, the Replay button is hidden. */
+  onReplay?: () => void;
+  /** When ``true``, the Replay button is disabled and shows a spinner-
+   *  shaped label so the reviewer knows the request is in flight. */
+  isReplaying?: boolean;
+  /** When supplied, rendered next to the Replay button as a status
+   *  message (e.g. "Replayed 42 corrections at 12:34"). */
+  replayStatus?: string;
 }
 
 function fmt(value: number): string {
@@ -266,19 +275,51 @@ function ReliabilityChart({ bins }: ReliabilityChartProps) {
   );
 }
 
-export function ReliabilityCard({ report }: ReliabilityCardProps) {
+export function ReliabilityCard({
+  report,
+  onReplay,
+  isReplaying = false,
+  replayStatus,
+}: ReliabilityCardProps) {
   if (!report) {
     return (
       <section
         data-testid="reliability-card"
         className="flex flex-col gap-2 rounded-md border border-surface-border bg-surface-1 px-4 py-3"
       >
-        <h3 className="text-sm font-semibold text-ink">Reliability</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-ink">Reliability</h3>
+          {onReplay && (
+            <button
+              type="button"
+              data-testid="reliability-replay-button"
+              onClick={onReplay}
+              disabled={isReplaying}
+              className={clsx(
+                "rounded-md border px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-widest",
+                isReplaying
+                  ? "cursor-not-allowed border-surface-border text-ink-subtle"
+                  : "border-surface-border text-ink-muted hover:bg-surface-2 hover:text-ink",
+              )}
+            >
+              {isReplaying ? "Replaying…" : "Replay"}
+            </button>
+          )}
+        </div>
         <p className="text-xs text-ink-muted">
           No calibration report yet. Submit reviewer corrections via{" "}
           <code className="rounded bg-surface-2 px-1">pipeline.common.hitl</code> and run{" "}
-          <code className="rounded bg-surface-2 px-1">scripts/run_calibration_report.py</code> to populate this card.
+          <code className="rounded bg-surface-2 px-1">scripts/run_calibration_report.py</code> to populate this card,
+          or click <strong>Replay</strong> above to recompute now.
         </p>
+        {replayStatus && (
+          <p
+            data-testid="reliability-replay-status"
+            className="text-[11px] text-ink-subtle"
+          >
+            {replayStatus}
+          </p>
+        )}
       </section>
     );
   }
@@ -295,7 +336,25 @@ export function ReliabilityCard({ report }: ReliabilityCardProps) {
     >
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-ink">Reliability</h3>
-        <span className="text-xs uppercase tracking-widest">{verdict.label}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs uppercase tracking-widest">{verdict.label}</span>
+          {onReplay && (
+            <button
+              type="button"
+              data-testid="reliability-replay-button"
+              onClick={onReplay}
+              disabled={isReplaying}
+              className={clsx(
+                "rounded-md border px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-widest",
+                isReplaying
+                  ? "cursor-not-allowed border-surface-border text-ink-subtle"
+                  : "border-surface-border text-ink-muted hover:bg-surface-2 hover:text-ink",
+              )}
+            >
+              {isReplaying ? "Replaying…" : "Replay"}
+            </button>
+          )}
+        </div>
       </div>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-ink-muted sm:grid-cols-4">
         <div>
@@ -321,6 +380,14 @@ export function ReliabilityCard({ report }: ReliabilityCardProps) {
       <p className="text-[11px] text-ink-subtle">
         Computed from {report.n_samples} reviewer corrections. ECE per Naeini et&nbsp;al. AAAI&nbsp;2015; Smooth ECE per Błasiok &amp; Nakkiran ICLR&nbsp;2024.
       </p>
+      {replayStatus && (
+        <p
+          data-testid="reliability-replay-status"
+          className="text-[11px] text-ink-subtle"
+        >
+          {replayStatus}
+        </p>
+      )}
     </section>
   );
 }
