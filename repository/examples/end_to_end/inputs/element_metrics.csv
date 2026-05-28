@@ -1,0 +1,8 @@
+global_id,name,status
+1FoundElemAaaaaaaaaaaa,Foundation A,likely_completed
+2FoundElemBbbbbbbbbbbb,Foundation B,likely_completed
+3WallElemCccccccccccc,Wall C,likely_completed
+4WallElemDdddddddddddd,Wall D,partially_observed
+5WallElemEeeeeeeeeeee,Wall E,partially_observed
+6WallElemFfffffffffff,Wall F,not_evidenced
+7WallElemGggggggggggg,Wall G,not_evidenced
