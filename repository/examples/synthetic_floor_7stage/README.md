@@ -80,6 +80,36 @@ All outputs land in `examples/synthetic_floor_7stage/output/`.
 | `--save-frames` | Also save per-frame PNGs |
 | `--log-level DEBUG` | Verbose logging |
 
+## GPU / Colab pipeline (Blender 4.2 LTS)
+
+If you have access to a CUDA GPU (or a free Colab T4 / paid A100), there
+is a **second renderer** based on Blender + Cycles that produces much
+more photorealistic frames — same scene, same 7 stages, same metadata
+contract. It lives next to the CPU code:
+
+```
+examples/synthetic_floor_7stage/
+├── src/synthetic_floor/blender_gpu_renderer.py    # runs INSIDE Blender
+├── scripts/run_blender_gpu.py                     # host-side orchestrator
+├── scripts/setup_colab_blender.sh                 # installs Blender 4.2
+└── colab/
+    ├── synthetic_floor_blender_gpu.ipynb          # one-click notebook
+    └── README.md                                  # full GPU docs
+```
+
+Quick start (after opening the notebook in Colab with a GPU runtime):
+
+```bash
+bash examples/synthetic_floor_7stage/scripts/setup_colab_blender.sh
+PYTHONPATH=examples/synthetic_floor_7stage/src \
+    python3 examples/synthetic_floor_7stage/scripts/run_blender_gpu.py \
+        --blender /content/blender/blender --quick
+```
+
+See [`colab/README.md`](colab/README.md) for full docs. The CPU
+pipeline above is unaffected — Blender is **not** a dependency of the
+default example.
+
 ## How to Use With the Main Pipeline
 
 The generated outputs plug directly into the MyCon pipeline:
