@@ -169,6 +169,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--strict-render", action="store_true",
                    help="Fail loudly if Blender does not produce the expected "
                         "number of frames or any of the required outputs.")
+    p.add_argument("--save-blend", action="store_true",
+                   help="Save a self-contained .blend per stage and zip it under "
+                        "output/blend/ for download (open in Blender on Windows).")
     # --- Google Drive persistence / resume ---
     p.add_argument("--drive-root", type=Path, default=None,
                    help="Drive folder to mirror outputs into (e.g. "
@@ -268,6 +271,8 @@ def render_stage_with_blender(
     ]
     if not motion_blur:
         cmd.append("--no-motion-blur")
+    if getattr(args, "save_blend", False):
+        cmd.append("--save-blend")
 
     log.info("[stage %d] launching: %s", stage_id, " ".join(cmd))
     t0 = time.time()
@@ -379,6 +384,36 @@ def check_frame_quality(frames_dir: Path, log: logging.Logger) -> dict | None:
                     "(geometry off-frame or over-exposed)",
                     mid.name, mean, std, white_frac * 100)
     return report
+
+
+def zip_blend_project(spec, stage_id: int, stage_dir: Path, log: logging.Logger) -> Path | None:
+    """Zip the per-stage .blend project under output/blend/ for download.
+
+    The .blend is self-contained (procedural materials + packed data), so the
+    zip can be downloaded and opened in Blender on Windows/macOS/Linux.
+    """
+    import zipfile
+
+    blend_path = Path(stage_dir) / f"stage_{stage_id:02d}.blend"
+    if not blend_path.exists():
+        log.warning("[blend] stage %d: no .blend was produced (%s)", stage_id, blend_path)
+        return None
+    blend_dir = spec.output.root / "blend"
+    blend_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = blend_dir / f"{spec.project_name}_stage_{stage_id:02d}.blend.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.write(blend_path, arcname=blend_path.name)
+        # Include a short README so the recipient knows what it is.
+        zf.writestr(
+            "README.txt",
+            f"{spec.project_name} stage {stage_id}\n"
+            f"Open {blend_path.name} in Blender 4.2+ and press F12 (or play the\n"
+            f"timeline) to re-render. Materials are procedural; no external\n"
+            f"textures are required.\n",
+        )
+    log.info("[blend] stage %d -> %s (%.1f MB)", stage_id, zip_path,
+             zip_path.stat().st_size / 1024 / 1024)
+    return zip_path
 
 
 # ---------------------------------------------------------------------
@@ -574,6 +609,11 @@ def main() -> int:
             log.error("[strict] stage %d: render looks blank (%s)", sid, quality)
             return 7
 
+        # Package the saved .blend project as a downloadable zip.
+        blend_zip = None
+        if args.save_blend:
+            blend_zip = zip_blend_project(spec, sid, stage_dir, log)
+
         files_by_stage[sid] = {
             "glb": Path(info["glb"]),
             "elements_json": Path(info["elements_json"]),
@@ -597,6 +637,7 @@ def main() -> int:
             "motion_blur": preset.motion_blur,
             "strict_render": bool(args.strict_render),
             "frame_quality": quality,
+            "blend_zip": str(blend_zip) if blend_zip else None,
         }, gpu=True)
 
         # Persist progress to Drive immediately (per-stage), plus a portable

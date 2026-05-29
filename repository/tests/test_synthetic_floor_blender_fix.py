@@ -111,3 +111,62 @@ def test_drive_mirror_push_pull_roundtrip() -> None:
         local2 = root / "local2"
         CS.DriveMirror(local2, drive_root, mount=mount, interval=999).pull()
         assert (local2 / "manifests" / "m.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# Detailed example scenes (office / loft / warehouse) — construction logic
+# ---------------------------------------------------------------------------
+
+import pytest  # noqa: E402
+
+_DETAILED_CONFIGS = ["scene_office.yaml", "scene_loft.yaml", "scene_warehouse.yaml"]
+_CONFIG_DIR = REPO_ROOT / "examples" / "synthetic_floor_7stage" / "config"
+
+
+def _cats_at(spec, by_cat, stage_id):
+    from synthetic_floor.stage_controller import select_for_stage, kept_only
+
+    staged = select_for_stage(spec.stages[stage_id - 1], by_cat)
+    return {s.element.category for s in kept_only(staged)}
+
+
+@pytest.mark.parametrize("cfg", _DETAILED_CONFIGS)
+def test_detailed_example_has_rich_geometry(cfg: str) -> None:
+    from synthetic_floor.scene_spec import load_scene_spec
+    from synthetic_floor.layout import build_layout, elements_by_category
+
+    spec = load_scene_spec(_CONFIG_DIR / cfg)
+    assert len(spec.stages) == 7
+    cats = set(elements_by_category(build_layout(spec)))
+    for need in ("site_ground", "foundation", "beams", "window_frame", "floor_finish"):
+        assert need in cats, f"{cfg}: missing {need}"
+
+
+@pytest.mark.parametrize("cfg", _DETAILED_CONFIGS)
+def test_detailed_example_construction_sequence(cfg: str) -> None:
+    """Doors/windows installed late; final floor only at the end; beams by S3."""
+    from synthetic_floor.scene_spec import load_scene_spec
+    from synthetic_floor.layout import build_layout, elements_by_category
+
+    spec = load_scene_spec(_CONFIG_DIR / cfg)
+    by = elements_by_category(build_layout(spec))
+
+    c1 = _cats_at(spec, by, 1)
+    assert "foundation" in c1 and "site_ground" in c1
+    for absent in ("slab", "columns", "windows", "door"):
+        assert absent not in c1, f"{cfg}: {absent} should not exist at stage 1"
+
+    assert "beams" in _cats_at(spec, by, 3), f"{cfg}: beams missing by stage 3"
+
+    c4 = _cats_at(spec, by, 4)
+    assert "north_wall" in c4
+    for absent in ("windows", "window_frame", "door"):
+        assert absent not in c4, f"{cfg}: {absent} installed too early"
+
+    c6 = _cats_at(spec, by, 6)
+    for present in ("windows", "window_frame", "door"):
+        assert present in c6, f"{cfg}: {present} missing at stage 6"
+
+    c7 = _cats_at(spec, by, 7)
+    assert "floor_finish" not in c6 and "floor_finish" in c7
+    assert "ceiling_lights" in c7

@@ -14,9 +14,8 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Sequence
 
-from .layout import Element
 from .scene_spec import SceneSpec
 from .stage_controller import StagedElement, kept_only
 
@@ -24,8 +23,11 @@ _LOG = logging.getLogger(__name__)
 
 
 _CATEGORY_TO_IFC: dict[str, str] = {
+    "site_ground": "IfcSlab",
+    "foundation": "IfcFooting",
     "slab": "IfcSlab",
     "columns": "IfcColumn",
+    "beams": "IfcBeam",
     "ceiling_slab": "IfcSlab",
     "ceiling_finish": "IfcCovering",
     "overhead_pipes": "IfcFlowSegment",
@@ -36,7 +38,9 @@ _CATEGORY_TO_IFC: dict[str, str] = {
     "west_wall": "IfcWall",
     "south_wall": "IfcWall",
     "windows": "IfcWindow",
+    "window_frame": "IfcMember",
     "door": "IfcDoor",
+    "floor_finish": "IfcCovering",
     "plaster_left_lower": "IfcCovering",
     "plaster_left_upper": "IfcCovering",
     "plaster_other": "IfcCovering",
@@ -46,7 +50,7 @@ _CATEGORY_TO_IFC: dict[str, str] = {
     "interior_walls": "IfcWall",
     "doors": "IfcDoor",
     "ceiling": "IfcCovering",
-    "floor_finish": "IfcCovering",
+    "floor_finish_legacy": "IfcCovering",
     "baseboards": "IfcCovering",
     "fixtures": "IfcFlowTerminal",
 }
@@ -62,7 +66,6 @@ def write_stage_ifc(
     try:
         import ifcopenshell  # type: ignore
         import ifcopenshell.api  # type: ignore
-        from ifcopenshell.api import run  # type: ignore
     except Exception as e:  # pragma: no cover - optional dependency
         _LOG.warning("IfcOpenShell unavailable (%s); writing minimal text IFC.", e)
         return _write_minimal_ifc_fallback(spec, stage_id, staged_elements, out_path)

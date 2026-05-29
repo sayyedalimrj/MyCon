@@ -1,0 +1,6 @@
+# Generated runtime outputs for every example config (never committed).
+output/
+output_*/
+material_samples/
+*.blend
+*.blend1

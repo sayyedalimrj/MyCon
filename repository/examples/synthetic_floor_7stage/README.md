@@ -165,6 +165,60 @@ The GPU runner accepts `--preset {debug,balanced,hq}` with the same
 override semantics as the CPU pipeline. Explicit flags such as
 `--resolution 1920 1080` or `--samples 256` always win over the preset.
 
+### Detailed example buildings (office / loft / warehouse)
+
+Besides the original single room (`config/scene.yaml`), three richer,
+**construction-logical** example buildings ship in `config/`. Select one with
+`--config`:
+
+| Config | Building | Final floor | Extra detail |
+|--------|----------|-------------|--------------|
+| `scene_office.yaml` | office room | **ceramic tile** | pad footings, concrete beams, exterior site, framed windows, 4 windows + 1 door |
+| `scene_loft.yaml` | loft studio (3.6 m, denser grid) | **wood plank** | 7 large windows, exposed beams |
+| `scene_warehouse.yaml` | warehouse bay (4.2 m) | **polished epoxy** | heavy beams, wide roller door, high clerestory windows |
+
+All three add geometry the original lacked: **exterior ground/site** (seen
+through the openings), **pad foundations**, **concrete beams** spanning the
+columns, **visible window frames** (so finished windows read clearly, not as
+empty holes), and a **distinct final floor finish** laid only in the last
+stage.
+
+Their seven stages follow a realistic sequence — and **doors and windows are
+deliberately *not* present in the early stages**:
+
+1. Earthwork & foundation (site + pad footings)
+2. Ground slab + concrete columns
+3. Concrete beams + roof/ceiling slab (frame topped out)
+4. Masonry walls with rough openings (**no doors/windows yet**)
+5. Services (overhead pipes) + rough plaster
+6. **Doors + glazed windows + frames installed**, walls painted
+7. Final floor finish (tile/wood/epoxy) + suspended lit ceiling
+
+```bash
+# Render the office example, save a downloadable .blend per stage, sync to Drive:
+PYTHONPATH=examples/synthetic_floor_7stage/src \
+    python3 examples/synthetic_floor_7stage/scripts/run_blender_gpu.py \
+        --config examples/synthetic_floor_7stage/config/scene_office.yaml \
+        --blender /content/blender/blender --preset balanced \
+        --save-blend --mount-drive --resume
+```
+
+### Save the Blender project (.blend) for Windows/macOS
+
+`--save-blend` makes the renderer write a self-contained `stage_NN.blend`
+(procedural materials, packed data — **no external textures**) and the host
+zips it to `<output>/blend/<project>_stage_NN.blend.zip`. Download it from the
+notebook (cell 10) or from Drive, then open it in Blender 4.2+ on any OS and
+press **F12** to re-render or inspect the scene.
+
+### IFC for the main pipeline
+
+Every stage of every example exports a valid **IFC4** file
+(`<output>/bim/stage_NN.ifc`) with stable `GlobalId`s. The detailed examples
+carry `IfcFooting`, `IfcColumn`, `IfcBeam`, `IfcWall`, `IfcWindow`, `IfcDoor`
+and `IfcCovering` entities, so they feed the main MyCon BIM/registration
+stages directly and can be diffed across stages by GUID for progress.
+
 ### Google Drive persistence + resume (Colab)
 
 The GPU runner can mirror everything it produces to Google Drive so a Colab

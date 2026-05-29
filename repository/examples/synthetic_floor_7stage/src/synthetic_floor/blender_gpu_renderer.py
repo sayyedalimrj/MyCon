@@ -58,6 +58,7 @@ class RenderArgs:
     seed: int
     device: str
     motion_blur: bool
+    save_blend: bool = False
 
 
 def _parse_args() -> RenderArgs:
@@ -81,6 +82,9 @@ def _parse_args() -> RenderArgs:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", default="OPTIX", choices=("OPTIX", "CUDA", "CPU"))
     p.add_argument("--no-motion-blur", action="store_true")
+    p.add_argument("--save-blend", action="store_true",
+                   help="Save a self-contained .blend project next to the render "
+                        "(open it in Blender on any OS to inspect/re-render).")
     a = p.parse_args(argv)
     return RenderArgs(
         input_mesh=a.input_mesh, elements_json=a.elements_json,
@@ -90,6 +94,7 @@ def _parse_args() -> RenderArgs:
         sun_elevation_deg=float(a.sun_elevation),
         sun_azimuth_deg=float(a.sun_azimuth),
         seed=int(a.seed), device=a.device, motion_blur=not a.no_motion_blur,
+        save_blend=bool(a.save_blend),
     )
 
 
@@ -277,6 +282,8 @@ CATEGORY_PASS_INDEX = {
     "north_wall": 8, "east_wall": 9, "west_wall": 10, "south_wall": 11,
     "windows": 12, "door": 13, "plaster_left_lower": 14,
     "plaster_left_upper": 15, "plaster_other": 16, "ceiling_lights": 17,
+    "site_ground": 18, "foundation": 19, "beams": 20, "window_frame": 21,
+    "floor_finish": 22,
     "unknown": 99,
 }
 
@@ -286,9 +293,17 @@ FINISHING_PRESETS = {
         "color": (0.45, 0.44, 0.42, 1.0), "roughness": 0.92,
         "metallic": 0.0, "noise_scale": 8.0, "bump": 0.15,
     },
+    "concrete_beam": {
+        "color": (0.48, 0.47, 0.45, 1.0), "roughness": 0.90,
+        "metallic": 0.0, "noise_scale": 7.0, "bump": 0.12,
+    },
     "cinderblock": {
         "color": (0.55, 0.52, 0.48, 1.0), "roughness": 0.95,
         "metallic": 0.0, "noise_scale": 25.0, "bump": 0.25,
+    },
+    "rough_plaster": {
+        "color": (0.80, 0.79, 0.76, 1.0), "roughness": 0.85,
+        "metallic": 0.0, "noise_scale": 30.0, "bump": 0.10,
     },
     "plaster_base": {
         "color": (0.88, 0.87, 0.85, 1.0), "roughness": 0.70,
@@ -302,6 +317,10 @@ FINISHING_PRESETS = {
         "color": (0.42, 0.44, 0.46, 1.0), "roughness": 0.35,
         "metallic": 0.85, "noise_scale": 5.0, "bump": 0.01,
     },
+    "metal_frame": {
+        "color": (0.30, 0.31, 0.33, 1.0), "roughness": 0.30,
+        "metallic": 0.90, "noise_scale": 3.0, "bump": 0.005,
+    },
     "window_glazed": {
         "color": (0.85, 0.92, 0.98, 0.3), "roughness": 0.02,
         "metallic": 0.0, "noise_scale": 0.0, "bump": 0.0,
@@ -311,6 +330,27 @@ FINISHING_PRESETS = {
         "color": (1.0, 0.98, 0.95, 1.0), "roughness": 0.20,
         "metallic": 0.10, "noise_scale": 0.0, "bump": 0.0,
         "emission": 5.0,
+    },
+    # --- exterior + finishes ---
+    "earth": {
+        "color": (0.34, 0.27, 0.20, 1.0), "roughness": 0.98,
+        "metallic": 0.0, "noise_scale": 14.0, "bump": 0.30,
+    },
+    "gravel": {
+        "color": (0.46, 0.45, 0.43, 1.0), "roughness": 0.97,
+        "metallic": 0.0, "noise_scale": 60.0, "bump": 0.35,
+    },
+    "floor_tile": {
+        "color": (0.80, 0.79, 0.76, 1.0), "roughness": 0.22,
+        "metallic": 0.0, "noise_scale": 12.0, "bump": 0.02,
+    },
+    "wood_floor": {
+        "color": (0.55, 0.36, 0.20, 1.0), "roughness": 0.40,
+        "metallic": 0.0, "noise_scale": 18.0, "bump": 0.05,
+    },
+    "epoxy_floor": {
+        "color": (0.40, 0.42, 0.45, 1.0), "roughness": 0.12,
+        "metallic": 0.0, "noise_scale": 6.0, "bump": 0.01,
     },
     "none": {
         "color": (0.5, 0.5, 0.5, 1.0), "roughness": 0.8,
@@ -985,6 +1025,20 @@ def main() -> int:
         _log(f"ERROR in compositor: {e}")
         _log(traceback.format_exc())
         return 5
+
+    # Optionally save a self-contained .blend so the user can open the exact
+    # scene in Blender on Windows/macOS/Linux and re-render or inspect it.
+    if args.save_blend:
+        blend_path = args.output_dir / f"stage_{args.stage_id:02d}.blend"
+        try:
+            try:
+                bpy.ops.file.pack_all()  # embed any external data into the file
+            except Exception:
+                pass
+            bpy.ops.wm.save_as_mainfile(filepath=str(blend_path), compress=True)
+            _log(f"Saved Blender project: {blend_path} ({blend_path.stat().st_size} bytes)")
+        except Exception as e:
+            _log(f"WARNING: could not save .blend: {e}")
 
     # Render
     _log("Rendering animation...")

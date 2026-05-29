@@ -28,6 +28,26 @@ using Blender Cycles + GPU (T4/A100) on Google Colab.
 | 9 | Download MP4 videos |
 | 10 | Resilience / resume notes |
 
+## Example buildings
+
+Set `CONFIG` in cell 1 to pick which building to render:
+
+| `CONFIG` | Building | Final floor |
+|----------|----------|-------------|
+| `config/scene.yaml` | original single room | raw slab |
+| `config/scene_office.yaml` | office room | tile |
+| `config/scene_loft.yaml` | loft studio | wood |
+| `config/scene_warehouse.yaml` | warehouse bay | epoxy |
+
+The three detailed examples add pad foundations, concrete beams, an exterior
+site, framed windows and a distinct final floor, and follow a realistic
+sequence where **doors and windows are installed only at stage 6** (after the
+walls and rough plaster). Each stage also exports a valid **IFC4** file for the
+main pipeline.
+
+`--save-blend` writes a downloadable, self-contained `.blend` per stage (open
+it in Blender on Windows/macOS); cell 10 lists the `.blend` zips.
+
 ## Google Drive persistence & resume
 
 Pass `--mount-drive --drive-root <folder>` to `run_blender_gpu.py` (the notebook
