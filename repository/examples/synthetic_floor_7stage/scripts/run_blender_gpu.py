@@ -56,6 +56,9 @@ from synthetic_floor.presets import (  # noqa: E402
     PRESET_NAMES, DEFAULT_PRESET, apply_gpu_preset, describe_preset,
 )
 from synthetic_floor import paths as P  # noqa: E402
+from synthetic_floor.checkpoint import (  # noqa: E402
+    RESUME_MODES, DEFAULT_RESUME_MODE, filter_stages, write_done_marker,
+)
 from synthetic_floor.layout import build_layout, elements_by_category  # noqa: E402
 from synthetic_floor.stage_controller import select_for_stage  # noqa: E402
 from synthetic_floor.materials import build_material_library  # noqa: E402
@@ -157,6 +160,15 @@ def parse_args() -> argparse.Namespace:
                    help="Skip MP4 encoding step.")
     p.add_argument("--quick", action="store_true",
                    help="Alias for --preset debug.")
+    p.add_argument("--resume", action="store_true",
+                   help="Skip stages whose Blender outputs already exist (alias for --mode resume).")
+    p.add_argument("--force", action="store_true",
+                   help="Delete prior outputs and rerun (alias for --mode force).")
+    p.add_argument("--mode", choices=RESUME_MODES, default=None,
+                   help="Resume policy. Default: 'run' (always rerun).")
+    p.add_argument("--strict-render", action="store_true",
+                   help="Fail loudly if Blender does not produce the expected "
+                        "number of frames or any of the required outputs.")
     p.add_argument("--log-level", default="INFO")
     return p.parse_args()
 
@@ -359,7 +371,23 @@ def main() -> int:
     log.info("device       : %s", args.device)
 
     stage_ids = args.stages or [s.id for s in spec.stages]
-    log.info("stages       : %s", stage_ids)
+    log.info("stages req   : %s", stage_ids)
+
+    # Resolve resume mode: --force/--resume are convenience aliases for --mode.
+    if args.mode is not None:
+        resume_mode = args.mode
+    elif args.force:
+        resume_mode = "force"
+    elif args.resume:
+        resume_mode = "resume"
+    else:
+        resume_mode = DEFAULT_RESUME_MODE
+    log.info("resume mode  : %s", resume_mode)
+    stage_ids, statuses = filter_stages(spec, stage_ids, resume_mode, gpu=True, log=log)
+    log.info("stages run   : %s", stage_ids)
+    if not stage_ids:
+        log.info("nothing to do (all requested stages already complete).")
+        return 0
 
     if not args.skip_prepare:
         log.info("preparing stage assets (BIM + mesh + sidecar) ...")
@@ -424,7 +452,21 @@ def main() -> int:
         )
         if rc != 0:
             log.error("stage %d failed; continuing with the rest.", sid)
+            if args.strict_render:
+                log.error("[strict] aborting because Blender returned non-zero rc.")
+                return 7
             continue
+
+        # Strict-render guard: count actual frames written by Blender.
+        sub = P.stage_blender_subdirs(spec, sid)
+        actual_rgb = len(list(sub["rgb"].glob("frame_*.png"))) if sub["rgb"].exists() else 0
+        if actual_rgb < frames:
+            msg = (f"stage {sid}: Blender wrote {actual_rgb} RGB frames, "
+                   f"expected {frames}")
+            if args.strict_render:
+                log.error("[strict] %s", msg)
+                return 7
+            log.warning("[non-strict] %s", msg)
 
         video_path = None
         if not args.skip_encode:
@@ -434,8 +476,10 @@ def main() -> int:
                 fps=fps,
                 log=log,
             )
+            if args.strict_render and video_path is None:
+                log.error("[strict] stage %d: encode_mp4 returned no file", sid)
+                return 7
 
-        sub = P.stage_blender_subdirs(spec, sid)
         files_by_stage[sid] = {
             "glb": Path(info["glb"]),
             "elements_json": Path(info["elements_json"]),
@@ -447,6 +491,19 @@ def main() -> int:
             "video": video_path,
             "element_metrics_csv": info.get("element_metrics_csv"),
         }
+
+        # Write the .done marker so future --resume runs skip this stage.
+        write_done_marker(spec, sid, payload={
+            "preset": preset_name,
+            "rgb_frame_count": actual_rgb,
+            "expected_frames": frames,
+            "video": str(video_path) if video_path else None,
+            "samples": samples,
+            "resolution": [width, height],
+            "motion_blur": preset.motion_blur,
+            "strict_render": bool(args.strict_render),
+        }, gpu=True)
+
         if ProgressBar:
             pb.update(1)
 
