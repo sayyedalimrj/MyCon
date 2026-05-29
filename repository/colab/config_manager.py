@@ -27,6 +27,24 @@ import yaml
 
 from colab.log_capture import LogBuffer
 
+# ---------------------------------------------------------------------------
+# Execution profiles
+# ---------------------------------------------------------------------------
+#
+# A *profile* is a named bundle of dotted-key overrides applied on top of the
+# canonical ``configs/site01.yaml``. The Colab UI/notebook picks one of:
+#
+#   * ``colab_safe``  — bounded memory, mock VLM, precomputed DA3, no training.
+#                       Always succeeds on a free T4; good for a first run.
+#   * ``colab_gpu``   — full pipeline on a single Colab GPU: real dense/cleanup,
+#                       real local VLM (when provisioned), DA3 precomputed.
+#   * ``production``  — closest to the server contract: no artificial caps and
+#                       quality gates left enabled. Intended for an A100/L4
+#                       high-RAM runtime or an on-prem GPU box.
+#
+# Profiles never edit the base config in place; they feed
+# ``build_effective_config(profile=...)`` which writes ``active.yaml``.
+
 # Colab-safe overrides applied on top of configs/site01.yaml. Keys are dotted
 # paths relative to the YAML root.
 COLAB_SAFE_OVERRIDES: dict[str, Any] = {
@@ -61,6 +79,61 @@ COLAB_SAFE_OVERRIDES: dict[str, Any] = {
     # --- BIM ---
     "bim.fail_on_low_registration_quality": False,
 }
+
+# Full single-GPU Colab run: real dense + cleanup, larger image budget, real
+# local VLM wiring is added separately by provision_vlm() when available.
+COLAB_GPU_OVERRIDES: dict[str, Any] = {
+    "video.normalize_fps": 24,
+    "video.crf": 20,
+    "video.preset": "fast",
+    "keyframes.max_frames_first_run": 240,
+    "dense.max_image_size": 1600,
+    "dense.patch_match_max_image_size": 1600,
+    "dense.fail_on_quality_gate": False,
+    "dense.require_cuda": False,
+    "dense.cuda_preflight": False,
+    "dense.gpu_preflight": False,
+    "dense.require_visible_gpu": False,
+    "dense.adaptive_gpu_profile": True,
+    "cams_gs.execute_training": False,
+    "da3.provider": "precomputed",
+    "da3.fail_if_required_but_unavailable": False,
+    "cleanup.fail_on_quality_gate": False,
+    "cleanup.strict_quality_gate": False,
+    # VLM kept mock here; provision_vlm() flips these to ollama_local when a
+    # real model is successfully pulled.
+    "vlm_qa.provider": "mock",
+    "copilot.vlm.provider": "mock",
+    "copilot.vlm.fallback_to_mock_when_unavailable": True,
+    "copilot.vlm.require_real_vlm": False,
+    "bim.fail_on_low_registration_quality": False,
+}
+
+# Production: leave the canonical server-grade settings mostly untouched. Only
+# disable the hard CUDA preflight (so the same config works on heterogeneous
+# GPUs) and keep mock-fallback on so an unreachable VLM never crashes a run.
+PRODUCTION_OVERRIDES: dict[str, Any] = {
+    "dense.require_cuda": False,
+    "dense.cuda_preflight": False,
+    "copilot.vlm.fallback_to_mock_when_unavailable": True,
+}
+
+PROFILES: dict[str, dict[str, Any]] = {
+    "colab_safe": COLAB_SAFE_OVERRIDES,
+    "colab_gpu": COLAB_GPU_OVERRIDES,
+    "production": PRODUCTION_OVERRIDES,
+}
+
+DEFAULT_PROFILE = "colab_gpu"
+
+
+def profile_overrides(profile: str) -> dict[str, Any]:
+    """Return the dotted-key override bundle for a named profile."""
+    if profile not in PROFILES:
+        raise ValueError(
+            f"unknown profile {profile!r}; choose one of {sorted(PROFILES)}"
+        )
+    return dict(PROFILES[profile])
 
 
 # ---------------------------------------------------------------------------
@@ -119,10 +192,25 @@ def build_effective_config(
     ifc_path: Optional[Path] = None,
     schedule_path: Optional[Path] = None,
     apply_safe_overrides: bool = True,
+    profile: Optional[str] = None,
+    override_dict: Optional[Mapping[str, Any]] = None,
     user_overrides_yaml: Optional[str] = None,
     log: Optional[LogBuffer] = None,
 ) -> dict[str, Any]:
-    """Return the effective YAML data dict (not yet written to disk)."""
+    """Return the effective YAML data dict (not yet written to disk).
+
+    Override precedence (lowest to highest):
+
+    1. ``configs/<base_config_name>`` (canonical config).
+    2. Mandatory project-level rewrites (root/run_id/report paths).
+    3. Inputs (video/ifc/schedule) when supplied.
+    4. The selected execution *profile* (``colab_safe`` / ``colab_gpu`` /
+       ``production``). For backwards compatibility, when ``profile`` is None
+       and ``apply_safe_overrides`` is True we use ``colab_safe``.
+    5. ``override_dict`` — dotted-key overrides supplied programmatically
+       (e.g. the real-VLM wiring returned by ``models.provision_vlm``).
+    6. ``user_overrides_yaml`` — free-form YAML mapping from the UI.
+    """
     base_path = Path(repo_root) / "configs" / base_config_name
     if not base_path.exists():
         raise FileNotFoundError(f"base config not found: {base_path}")
@@ -220,10 +308,22 @@ def build_effective_config(
     if schedule_path is not None:
         _set_dotted(data, "inputs.schedule", str(schedule_path))
 
-    # Colab-safe overrides.
-    if apply_safe_overrides:
-        for k, v in COLAB_SAFE_OVERRIDES.items():
+    # Colab-safe / profile overrides.
+    selected_profile = profile
+    if selected_profile is None and apply_safe_overrides:
+        selected_profile = "colab_safe"
+    if selected_profile is not None:
+        for k, v in profile_overrides(selected_profile).items():
             _set_dotted(data, k, v)
+        if log is not None:
+            log.append(f"[config] applied profile={selected_profile}")
+
+    # Programmatic dotted-key overrides (e.g. real-VLM wiring).
+    if override_dict:
+        for k, v in override_dict.items():
+            _set_dotted(data, k, v)
+        if log is not None:
+            log.append(f"[config] applied {len(override_dict)} programmatic override(s)")
 
     # Free-form user overrides (YAML mapping).
     if user_overrides_yaml and user_overrides_yaml.strip():

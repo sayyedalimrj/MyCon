@@ -1,15 +1,22 @@
-"""Stage orchestration for the Colab Gradio UI.
+"""Stage orchestration for the Colab pipeline (UI + notebook).
 
 We wrap the canonical ``scripts/run_stage.py`` launcher (and the
 ``stage_10_copilot.run_ask`` and ``stage_11_schedule_variance.run_schedule_variance``
-entry points it does not handle) so the UI can:
+entry points it does not handle) so the notebook/UI can:
 
-- Show a curated, ordered stage catalog with safe defaults.
-- Run one stage, a hand-picked subset, or the whole "Colab-safe" pipeline.
-- Stream live stdout/stderr into the Gradio log panel.
-- Run gc + torch.cuda.empty_cache between heavy stages to keep VRAM low.
-- Persist a per-stage status JSON next to the run reports on Drive so the
-  UI can resume after a Colab disconnect.
+- Show a curated, ordered stage catalog with safe defaults *and* a full
+  end-to-end pipeline ordering.
+- Run one stage, a hand-picked subset, or the whole pipeline.
+- Stream live stdout/stderr into a log buffer (and to a per-stage log file
+  on Drive).
+- Run gc + ``torch.cuda.empty_cache`` between heavy stages to keep VRAM low.
+- **Resume**: skip stages that already completed (verified against their
+  declared output artifacts on Drive) via :class:`colab.checkpoint.CheckpointManager`.
+- **Retry**: re-run a failed stage up to ``max_attempts`` times with backoff.
+- **Persist progress**: the checkpoint manifest is written atomically after
+  every state transition so a Colab disconnect mid-run is fully recoverable.
+- **Sync**: flush a :class:`colab.sync.DriveSyncManager` after each stage so
+  local caches are mirrored onto Drive at stage boundaries.
 """
 
 from __future__ import annotations
@@ -20,11 +27,13 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
 from colab import cleanup as _cleanup
+from colab.checkpoint import CheckpointManager
 from colab.log_capture import LogBuffer
 
 
@@ -49,6 +58,15 @@ class StageSpec:
     optional: bool = True
     description: str = ""
     extra_args: list[str] = field(default_factory=list)
+    # Glob patterns (relative to project_root) that should exist after a
+    # successful run. Used by the resume logic to confirm a stage marked "ok"
+    # still has its artifacts on Drive before skipping it.
+    outputs: list[str] = field(default_factory=list)
+    # Stage keys this stage logically depends on (soft, informational).
+    deps: list[str] = field(default_factory=list)
+    # Whether a "complete" result can be reused on resume. Stage 10 (ask) is
+    # a query, not a build step, so it is always re-runnable.
+    resumable: bool = True
 
 
 # Order matches the documented pipeline. Heavy/optional flags come from
@@ -63,6 +81,7 @@ STAGE_CATALOG: list[StageSpec] = [
         heavy=False,
         optional=False,
         description="Normalize the uploaded video to CFR and score every frame.",
+        outputs=["data/normalized/*.mp4", "data/normalized/*metadata*.json"],
     ),
     StageSpec(
         key="stage_02_keyframes",
@@ -72,6 +91,8 @@ STAGE_CATALOG: list[StageSpec] = [
         heavy=False,
         optional=False,
         description="Select keyframes, build the manifest CSV and contact sheet.",
+        outputs=["data/frames/key/*manifest*.csv", "data/frames/key/**/*.csv"],
+        deps=["stage_01_ingest"],
     ),
     StageSpec(
         key="stage_03_colmap",
@@ -80,6 +101,8 @@ STAGE_CATALOG: list[StageSpec] = [
         target="stage_03_colmap",
         heavy=True,
         description="ALIKED+LightGlue (or SIFT fallback) features, sparse mapping.",
+        outputs=["data/sparse/**/cameras.bin", "data/sparse/**/*.bin"],
+        deps=["stage_02_keyframes"],
     ),
     StageSpec(
         key="stage_04_refinement",
@@ -88,6 +111,8 @@ STAGE_CATALOG: list[StageSpec] = [
         target="stage_04_refinement",
         heavy=True,
         description="Final bundle adjustment of the sparse model.",
+        outputs=["data/sparse_refined/**/*.bin"],
+        deps=["stage_03_colmap"],
     ),
     StageSpec(
         key="stage_04_5_cams_gs",
@@ -96,6 +121,8 @@ STAGE_CATALOG: list[StageSpec] = [
         target="stage_04_5_cams_gs",
         heavy=False,
         description="Prepare Nerfstudio dataset; never trains on Colab by default.",
+        outputs=["runs/**/reports/cams_gs_prepare_summary.json"],
+        deps=["stage_04_refinement"],
     ),
     StageSpec(
         key="stage_05_dense",
@@ -104,6 +131,8 @@ STAGE_CATALOG: list[StageSpec] = [
         target="stage_05_dense",
         heavy=True,
         description="PatchMatch stereo + fusion. Cap dense.max_image_size on Colab.",
+        outputs=["data/dense/**/fused.ply"],
+        deps=["stage_04_refinement"],
     ),
     StageSpec(
         key="stage_06_da3_assist",
@@ -112,6 +141,8 @@ STAGE_CATALOG: list[StageSpec] = [
         target="stage_06_da3_assist",
         heavy=True,
         description="Optional DA3 depth assist. Provider=precomputed by default in Colab.",
+        outputs=["runs/**/reports/da3_summary.json"],
+        deps=["stage_05_dense"],
     ),
     StageSpec(
         key="stage_07_cleanup",
@@ -120,6 +151,8 @@ STAGE_CATALOG: list[StageSpec] = [
         target="stage_07_cleanup",
         heavy=True,
         description="Open3D cleanup, mesh + plane extraction on the cleaned cloud.",
+        outputs=["data/clean/**/*.ply", "runs/**/reports/cleanup_summary.json"],
+        deps=["stage_05_dense"],
     ),
     StageSpec(
         key="stage_07_5_vlm_qa",
@@ -127,7 +160,9 @@ STAGE_CATALOG: list[StageSpec] = [
         runner="run_stage",
         target="stage_07_5_vlm_qa",
         heavy=False,
-        description="Pre-BIM visual QA. Uses mock VLM unless explicitly switched.",
+        description="Pre-BIM visual QA. Uses mock VLM unless a real one is provisioned.",
+        outputs=["runs/**/reports/vlm_qa_summary.json", "data/vlm_qa/**/*.json"],
+        deps=["stage_02_keyframes"],
     ),
     StageSpec(
         key="stage_07_6_viewer_export",
@@ -136,6 +171,8 @@ STAGE_CATALOG: list[StageSpec] = [
         target="stage_07_6_viewer_export",
         heavy=False,
         description="Pack viewer-friendly artifacts into exports/viewer/.",
+        outputs=["exports/viewer/**/*"],
+        deps=["stage_02_keyframes"],
     ),
     StageSpec(
         key="stage_07_7_cams_gs_evidence",
@@ -144,6 +181,8 @@ STAGE_CATALOG: list[StageSpec] = [
         target="stage_07_7_cams_gs_evidence",
         heavy=False,
         description="Optional 3DGS evidence; not metric truth.",
+        outputs=["runs/**/reports/cams_gs_evidence_summary.json"],
+        deps=["stage_04_5_cams_gs"],
     ),
     StageSpec(
         key="stage_08_metric_alignment",
@@ -153,6 +192,8 @@ STAGE_CATALOG: list[StageSpec] = [
         heavy=False,
         server_only=True,
         description="Skipped if no metric or visual anchors are available.",
+        outputs=["runs/**/reports/metric_alignment_report.json"],
+        deps=["stage_07_cleanup"],
     ),
     StageSpec(
         key="stage_08_bim_registration",
@@ -163,6 +204,8 @@ STAGE_CATALOG: list[StageSpec] = [
         heavy=True,
         server_only=True,
         description="Coarse + ICP scan-to-BIM registration.",
+        outputs=["runs/**/reports/registration_report.json", "data/bim/aligned/**/*.json"],
+        deps=["stage_07_cleanup"],
     ),
     StageSpec(
         key="stage_09_progress",
@@ -173,6 +216,8 @@ STAGE_CATALOG: list[StageSpec] = [
         heavy=False,
         server_only=True,
         description="Progress only meaningful when Stage 8 quality is defensible.",
+        outputs=["data/bim/metrics/**/element_metrics.csv", "data/bim/metrics/**/*.json"],
+        deps=["stage_08_bim_registration"],
     ),
     StageSpec(
         key="stage_10_copilot",
@@ -181,6 +226,7 @@ STAGE_CATALOG: list[StageSpec] = [
         target="pipeline.stage_10_copilot.run_ask",
         heavy=False,
         description="Ask the local Copilot a question. Requires --question (UI provides it).",
+        resumable=False,
     ),
     StageSpec(
         key="stage_11_schedule_variance",
@@ -190,6 +236,8 @@ STAGE_CATALOG: list[StageSpec] = [
         needs_schedule=True,
         heavy=False,
         description="Schedule + element metrics -> activity progress + variance.",
+        outputs=["runs/**/reports/schedule_variance.json", "runs/**/reports/dashboard_summary.json"],
+        deps=["stage_09_progress"],
     ),
 ]
 
@@ -204,6 +252,49 @@ COLAB_SAFE_DEFAULT_KEYS: tuple[str, ...] = (
     "stage_07_6_viewer_export",
     "stage_11_schedule_variance",
 )
+
+# Full end-to-end reconstruction + BIM + VLM ordering. Stages that lack
+# inputs (no BIM, no anchors) exit 0 with a "skipped" marker, so running the
+# whole list is safe; the heavy SfM/dense stages need a GPU runtime.
+FULL_PIPELINE_KEYS: tuple[str, ...] = (
+    "stage_01_ingest",
+    "stage_02_keyframes",
+    "stage_03_colmap",
+    "stage_04_refinement",
+    "stage_04_5_cams_gs",
+    "stage_05_dense",
+    "stage_06_da3_assist",
+    "stage_07_cleanup",
+    "stage_07_5_vlm_qa",
+    "stage_07_6_viewer_export",
+    "stage_07_7_cams_gs_evidence",
+    "stage_08_metric_alignment",
+    "stage_08_bim_registration",
+    "stage_09_progress",
+    "stage_11_schedule_variance",
+)
+
+
+def outputs_for(key: str) -> Optional[list[str]]:
+    """Return the declared output globs for ``key`` (or None if unknown)."""
+    spec = STAGES_BY_KEY.get(key)
+    if spec is None:
+        return None
+    return list(spec.outputs)
+
+
+def order_stages(keys: list[str]) -> list[str]:
+    """Return ``keys`` reordered to match the canonical full-pipeline order.
+
+    Unknown keys keep their relative order at the end. This makes a hand
+    picked subset run in a sensible dependency order even if the UI passed
+    them in checkbox order.
+    """
+    rank = {k: i for i, k in enumerate(FULL_PIPELINE_KEYS)}
+    extra = [k for k in keys if k not in rank]
+    known = [k for k in keys if k in rank]
+    known.sort(key=lambda k: rank[k])
+    return known + extra
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +312,9 @@ class StageRunResult:
     ok: bool
     log_file: str
     command: list[str]
+    attempts: int = 1
+    skipped: bool = False
+    note: str = ""
 
 
 def _build_command(
@@ -386,6 +480,20 @@ def _stream_subprocess(
         return int(proc.returncode or 0)
 
 
+def _make_env(repo_root: Path, *, hf_cache_dir: Optional[Path] = None) -> dict[str, str]:
+    env = os.environ.copy()
+    pythonpath = str(Path(repo_root).resolve())
+    env["PYTHONPATH"] = (
+        pythonpath + os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else pythonpath
+    )
+    # COLMAP needs an offscreen Qt platform on Colab.
+    env.setdefault("QT_QPA_PLATFORM", "offscreen")
+    if hf_cache_dir is not None:
+        env["HF_HOME"] = str(hf_cache_dir)
+        env["HUGGINGFACE_HUB_CACHE"] = str(Path(hf_cache_dir) / "hub")
+    return env
+
+
 def run_stage(
     *,
     spec: StageSpec,
@@ -399,8 +507,11 @@ def run_stage(
     extra_kv: Optional[dict[str, str]] = None,
     cancel_flag: Optional[threading.Event] = None,
     on_status: Optional[Callable[[str, str], None]] = None,
+    hf_cache_dir: Optional[Path] = None,
+    max_attempts: int = 1,
+    retry_backoff_sec: float = 10.0,
 ) -> StageRunResult:
-    """Run a single stage and stream logs into ``log``."""
+    """Run a single stage (with optional retries) and stream logs into ``log``."""
     started = _dt.datetime.now()
     log.banner(f"RUN {spec.label}")
     if on_status is not None:
@@ -415,24 +526,30 @@ def run_stage(
         log_level=log_level,
         extra_kv=extra_kv,
     )
+    env = _make_env(repo_root, hf_cache_dir=hf_cache_dir)
 
-    env = os.environ.copy()
-    # Make sure the pipeline package can be imported by `python -m ...`.
-    pythonpath = str(Path(repo_root).resolve())
-    env["PYTHONPATH"] = (
-        pythonpath + os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else pythonpath
-    )
-    # COLMAP needs an offscreen Qt platform on Colab.
-    env.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-    rc = _stream_subprocess(
-        command=cmd,
-        cwd=Path(repo_root),
-        env=env,
-        log=log,
-        log_file=log_file,
-        cancel_flag=cancel_flag,
-    )
+    rc = 1
+    attempts = 0
+    for attempt in range(1, max(1, max_attempts) + 1):
+        attempts = attempt
+        if attempt > 1:
+            log.append(
+                f"[run] retry {attempt}/{max_attempts} for {spec.key} "
+                f"after {retry_backoff_sec:.0f}s backoff"
+            )
+            time.sleep(retry_backoff_sec)
+        rc = _stream_subprocess(
+            command=cmd,
+            cwd=Path(repo_root),
+            env=env,
+            log=log,
+            log_file=log_file,
+            cancel_flag=cancel_flag,
+        )
+        if rc == 0:
+            break
+        if cancel_flag is not None and cancel_flag.is_set():
+            break
 
     finished = _dt.datetime.now()
     if cleanup_after:
@@ -440,7 +557,7 @@ def run_stage(
         log.append(f"[cleanup] {summary}")
 
     ok = rc == 0
-    log.append(f"[run] {spec.key} rc={rc} ok={ok}")
+    log.append(f"[run] {spec.key} rc={rc} ok={ok} attempts={attempts}")
     if on_status is not None:
         on_status(spec.key, "ok" if ok else "fail")
 
@@ -453,6 +570,7 @@ def run_stage(
         ok=ok,
         log_file=str(log_file),
         command=cmd,
+        attempts=attempts,
     )
 
 
@@ -470,13 +588,58 @@ def run_stages(
     stop_on_failure: bool = True,
     cancel_flag: Optional[threading.Event] = None,
     on_status: Optional[Callable[[str, str], None]] = None,
+    # --- production additions ---
+    project_root: Optional[Path] = None,
+    run_id: Optional[str] = None,
+    checkpoint: Optional[CheckpointManager] = None,
+    resume: bool = True,
+    max_attempts: int = 1,
+    retry_backoff_sec: float = 10.0,
+    reorder: bool = True,
+    hf_cache_dir: Optional[Path] = None,
+    sync_manager: object = None,
 ) -> list[StageRunResult]:
-    """Run multiple stages in order, persisting status to a JSON checkpoint."""
-    results: list[StageRunResult] = []
-    status_path = Path(reports_dir) / "colab_run_status.json"
-    status_path.parent.mkdir(parents=True, exist_ok=True)
+    """Run multiple stages in order, with checkpoint/resume + retries.
 
-    for key in spec_keys:
+    When ``resume`` is True and a :class:`CheckpointManager` is available
+    (either passed in or constructed from ``project_root``/``run_id``), stages
+    whose recorded status is terminal-ok *and* whose declared output artifacts
+    still exist are skipped. Progress is persisted after every transition, and
+    a registered :class:`colab.sync.DriveSyncManager` is flushed after each
+    stage so local caches reach Drive at stage boundaries.
+    """
+    results: list[StageRunResult] = []
+
+    # Resolve a checkpoint manager.
+    mgr = checkpoint
+    if mgr is None and project_root is not None and run_id is not None:
+        try:
+            mgr = CheckpointManager(
+                project_root=Path(project_root),
+                run_id=run_id,
+                state_path=Path(reports_dir) / "run_state.json",
+                config_path=Path(config_path),
+            )
+        except Exception as exc:  # never let checkpointing break a run
+            log.append(f"[run] checkpoint init failed ({exc}); continuing without resume")
+            mgr = None
+
+    ordered_keys = order_stages(list(spec_keys)) if reorder else list(spec_keys)
+
+    # Compute resume plan.
+    if mgr is not None and resume:
+        plan = mgr.plan_resume(ordered_keys, outputs_for=outputs_for, resume=True)
+        log.append(plan.describe())
+        for key in plan.to_skip:
+            if on_status is not None:
+                on_status(key, "skipped(complete)")
+    else:
+        plan = None
+
+    # Legacy human-readable status file (superseded by run_state.json).
+    legacy_status = Path(reports_dir) / "colab_run_status.json"
+
+    for key in ordered_keys:
         spec = STAGES_BY_KEY.get(key)
         if spec is None:
             log.append(f"[run] unknown stage: {key} (skipping)")
@@ -484,6 +647,37 @@ def run_stages(
         if cancel_flag is not None and cancel_flag.is_set():
             log.append("[run] cancelled before stage start")
             break
+
+        # Skip already-complete stages (resume).
+        if (
+            mgr is not None
+            and resume
+            and spec.resumable
+            and mgr.is_complete(key, output_patterns=outputs_for(key))
+        ):
+            log.append(f"[run] skip {key}: already complete (resume)")
+            results.append(
+                StageRunResult(
+                    key=key,
+                    started_at=_dt.datetime.now().isoformat(),
+                    finished_at=_dt.datetime.now().isoformat(),
+                    duration_sec=0.0,
+                    return_code=0,
+                    ok=True,
+                    log_file="",
+                    command=[],
+                    skipped=True,
+                    note="resume:already_complete",
+                )
+            )
+            continue
+
+        # Soft dependency warning.
+        _warn_unmet_deps(spec, ordered_keys, mgr, log)
+
+        if mgr is not None:
+            mgr.mark_running(key)
+
         result = run_stage(
             spec=spec,
             config_path=config_path,
@@ -495,11 +689,40 @@ def run_stages(
             extra_kv=extra_kv,
             cancel_flag=cancel_flag,
             on_status=on_status,
+            hf_cache_dir=hf_cache_dir,
+            max_attempts=max_attempts,
+            retry_backoff_sec=retry_backoff_sec,
         )
         results.append(result)
-        # Checkpoint after every stage so a Colab disconnect is recoverable.
+
+        # Update checkpoint.
+        if mgr is not None:
+            if result.ok:
+                mgr.mark_ok(
+                    key,
+                    duration_sec=result.duration_sec,
+                    return_code=result.return_code,
+                    output_patterns=outputs_for(key),
+                )
+            else:
+                mgr.mark_failed(
+                    key,
+                    duration_sec=result.duration_sec,
+                    return_code=result.return_code,
+                    error=f"rc={result.return_code} after {result.attempts} attempt(s)",
+                )
+
+        # Flush local caches to Drive at the stage boundary.
+        if sync_manager is not None:
+            try:
+                sync_manager.flush()
+            except Exception as exc:  # pragma: no cover
+                log.append(f"[run] sync flush error: {exc}")
+
+        # Legacy checkpoint (best-effort).
         try:
-            status_path.write_text(
+            legacy_status.parent.mkdir(parents=True, exist_ok=True)
+            legacy_status.write_text(
                 json.dumps(
                     {
                         "config_path": str(config_path),
@@ -511,9 +734,30 @@ def run_stages(
                 encoding="utf-8",
             )
         except OSError as exc:
-            log.append(f"[run] failed to write status file: {exc}")
+            log.append(f"[run] failed to write legacy status file: {exc}")
+
         if not result.ok and stop_on_failure:
             log.append(f"[run] stopping pipeline because {key} failed")
             break
 
     return results
+
+
+def _warn_unmet_deps(
+    spec: StageSpec,
+    run_keys: list[str],
+    mgr: Optional[CheckpointManager],
+    log: LogBuffer,
+) -> None:
+    """Emit a soft warning when a stage's dependencies are not satisfied."""
+    if not spec.deps:
+        return
+    for dep in spec.deps:
+        in_run = dep in run_keys
+        done = mgr is not None and mgr.is_complete(dep, output_patterns=outputs_for(dep))
+        if not in_run and not done:
+            log.append(
+                f"[run] note: {spec.key} usually follows {dep}, which is "
+                "neither in this run nor already complete; the stage may "
+                "skip or run with reduced inputs."
+            )
