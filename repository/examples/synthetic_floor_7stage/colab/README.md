@@ -46,7 +46,21 @@ walls and rough plaster). Each stage also exports a valid **IFC4** file for the
 main pipeline.
 
 `--save-blend` writes a downloadable, self-contained `.blend` per stage (open
-it in Blender on Windows/macOS); cell 10 lists the `.blend` zips.
+it in Blender on Windows/macOS); cell 9 lists the `.blend` zips.
+
+## Frame-level resume & stage selection
+
+- **Frame-level resume:** the renderer renders frames one at a time and writes
+  each immediately, so a disconnect mid-stage only loses the in-flight frame.
+  Re-running skips frames already on disk (and re-renders just the last,
+  possibly-partial one). `render_progress.json` records done/total/%/ETA per
+  stage and the host prints live progress.
+- **Choose the start stage:** `--start-stage N` renders stages `N..7`
+  (set `START_STAGE` in the notebook). It never forces a restart at stage 1.
+- **Choose the example:** set `CONFIG` to one of the four scenes; each has its
+  own output folder.
+- **Continuous sync:** outputs mirror to Drive ~every 60 s and at each stage
+  boundary, all via atomic writes.
 
 ## Google Drive persistence & resume
 

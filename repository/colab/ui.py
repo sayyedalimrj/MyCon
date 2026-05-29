@@ -95,7 +95,7 @@ def build_ui(*, repo_root: Path, log: Optional[LogBuffer] = None):
         if not paths.on_drive:
             log.append("[ui] local fallback (no Drive); background sync disabled")
             return
-        mgr = DriveSyncManager(drive_mount=paths.drive_mount, log=log, interval=120.0)
+        mgr = DriveSyncManager(drive_mount=paths.drive_mount, log=log, interval=60.0)
         mgr.set_remount_callback(lambda: _drive.remount_drive(log=log))
         # Mirror the fast local HF cache onto the persistent Drive HF cache.
         mgr.register(paths.local_hf_cache_dir, paths.hf_cache_dir)
@@ -318,6 +318,10 @@ def build_ui(*, repo_root: Path, log: Optional[LogBuffer] = None):
     def cb_run_full_pipeline(force, log_level, question, resume, max_attempts):
         return _launch(list(_stage_runner.FULL_PIPELINE_KEYS), force, log_level, question, resume, max_attempts)
 
+    def cb_run_from_stage(start_key, force, log_level, question, resume, max_attempts):
+        keys = _stage_runner.keys_from_stage(start_key)
+        return _launch(keys, force, log_level, question, resume, max_attempts)
+
     def cb_cancel_run():
         state.cancel_flag.set()
         log.append("[ui] cancellation requested")
@@ -510,6 +514,16 @@ def build_ui(*, repo_root: Path, log: Optional[LogBuffer] = None):
                 full_run_btn = gr.Button("Run FULL pipeline", variant="primary")
                 cancel_btn = gr.Button("Cancel current run", variant="stop")
 
+            with gr.Row():
+                start_from_in = gr.Dropdown(
+                    choices=list(_stage_runner.FULL_PIPELINE_KEYS),
+                    value=_stage_runner.FULL_PIPELINE_KEYS[0],
+                    label="Start from stage (run this stage -> end)",
+                    info="Choose a stage to resume from instead of restarting at stage 1. "
+                    "With Resume on, earlier and already-finished stages are skipped.",
+                )
+                run_from_btn = gr.Button("Run from selected stage", variant="primary")
+
             run_status = gr.Textbox(label="Run status", lines=2, interactive=False)
             stage_status_table = gr.Dataframe(
                 headers=["key", "label", "status"],
@@ -533,6 +547,11 @@ def build_ui(*, repo_root: Path, log: Optional[LogBuffer] = None):
             full_run_btn.click(
                 cb_run_full_pipeline,
                 inputs=[force_in, log_level_in, question_in, resume_in, attempts_in],
+                outputs=[run_status, log_box, stage_status_table],
+            )
+            run_from_btn.click(
+                cb_run_from_stage,
+                inputs=[start_from_in, force_in, log_level_in, question_in, resume_in, attempts_in],
                 outputs=[run_status, log_box, stage_status_table],
             )
             cancel_btn.click(cb_cancel_run, outputs=[run_status, log_box])

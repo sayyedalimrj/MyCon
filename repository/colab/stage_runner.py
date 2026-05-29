@@ -283,6 +283,20 @@ def outputs_for(key: str) -> Optional[list[str]]:
     return list(spec.outputs)
 
 
+def keys_from_stage(start_key: str, base: tuple[str, ...] = FULL_PIPELINE_KEYS) -> list[str]:
+    """Return the pipeline keys from ``start_key`` to the end (inclusive).
+
+    Lets the UI/notebook *choose which stage to start from* instead of always
+    restarting at stage 1. Combined with ``resume=True`` in :func:`run_stages`,
+    stages before ``start_key`` are skipped entirely and any already-complete
+    stages at/after it are skipped too (resume-from-latest-valid-checkpoint).
+    """
+    keys = list(base)
+    if start_key not in keys:
+        return keys
+    return keys[keys.index(start_key):]
+
+
 def order_stages(keys: list[str]) -> list[str]:
     """Return ``keys`` reordered to match the canonical full-pipeline order.
 

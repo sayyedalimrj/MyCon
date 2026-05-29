@@ -114,6 +114,21 @@ from the first incomplete one. Because the manifest stores *relative* paths and
 verifies artifacts on disk, resume is portable to another device or Drive
 account that received a copy of `projects/<run_id>/`.
 
+## Stage selection (start from any stage)
+
+`run_stages(...)` runs whatever `spec_keys` you pass, in canonical order, and
+with `resume=True` skips stages already complete on Drive. To **start from a
+chosen stage** instead of stage 1, use `keys_from_stage("stage_05_dense")`
+(returns that stage through the end) or the **Start from stage** dropdown on
+Tab 2 of the UI. This does not restart from the beginning; earlier stages are
+left untouched and any already-complete stages are skipped.
+
+## Continuous Drive sync
+
+The background `DriveSyncManager` flushes local caches to Drive **~every 60 s**
+and at every stage boundary, so progress is saved continuously during a run,
+not only at the end. All writes are atomic (temp file + `os.replace`).
+
 ## Real local VLM
 
 `models.provision_vlm()` installs Ollama, starts the server (with

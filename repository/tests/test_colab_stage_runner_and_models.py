@@ -49,6 +49,23 @@ def test_outputs_for_known_and_unknown() -> None:
     assert sr.outputs_for("nope") is None
 
 
+def test_keys_from_stage_selects_tail() -> None:
+    ks = sr.keys_from_stage("stage_05_dense")
+    assert ks[0] == "stage_05_dense"
+    assert "stage_01_ingest" not in ks
+    assert ks[-1] == sr.FULL_PIPELINE_KEYS[-1]
+    # Every returned key is a real catalog stage, in canonical order.
+    assert ks == sr.order_stages(ks)
+
+
+def test_keys_from_stage_unknown_returns_full_pipeline() -> None:
+    assert sr.keys_from_stage("does_not_exist") == list(sr.FULL_PIPELINE_KEYS)
+
+
+def test_keys_from_first_stage_is_full_pipeline() -> None:
+    assert sr.keys_from_stage(sr.FULL_PIPELINE_KEYS[0]) == list(sr.FULL_PIPELINE_KEYS)
+
+
 def test_build_command_run_stage_and_force() -> None:
     spec = sr.STAGES_BY_KEY["stage_01_ingest"]
     cmd = sr._build_command(

@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import re
 import random
 import sys
 import time
@@ -649,7 +651,7 @@ def build_camera(mesh_objs: list, frames: int, fps: int, args: RenderArgs):
 
     Total: 32 waypoints for full spatial coverage.
     """
-    L, W, H = 22.0, 14.0, 3.20
+    L, W, _H = 22.0, 14.0, 3.20
     hold_z = 1.55  # smartphone camera height
 
     # 32 waypoints for comprehensive coverage
@@ -954,6 +956,125 @@ def dump_camera_path(cam_obj, args: RenderArgs, out_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------
+# Frame-level resumable rendering (fine-grained, mid-stage checkpoint)
+# ---------------------------------------------------------------------
+#
+# Instead of one all-or-nothing ``render(animation=True)`` call, we render
+# frame-by-frame. Each frame's PNG/EXR is written immediately by the
+# compositor File Output nodes, so a Colab disconnect mid-stage only loses
+# the single in-flight frame. On the next run we scan the output folder and
+# skip frames that already exist (the canonical Blender resume pattern), so
+# a multi-hour render continues exactly where it stopped. A small
+# ``render_progress.json`` checkpoint is written atomically after every frame
+# for live intra-stage progress.
+
+
+def _render_progress_path(args: "RenderArgs") -> Path:
+    return Path(args.output_dir) / "render_progress.json"
+
+
+def _atomic_write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        with tmp.open("w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2)
+            fh.flush()
+            try:
+                os.fsync(fh.fileno())
+            except OSError:
+                pass
+        os.replace(tmp, path)
+    except OSError as exc:
+        _log(f"WARNING: could not write {path.name}: {exc}")
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def _existing_frame_numbers(rgb_dir: Path, min_bytes: int = 2048) -> set:
+    """Frame indices already rendered (PNG present and non-trivial in size)."""
+    done: set = set()
+    if not rgb_dir.exists():
+        return done
+    for p in rgb_dir.glob("frame_*.png"):
+        try:
+            if p.stat().st_size < min_bytes:
+                continue
+        except OSError:
+            continue
+        m = re.search(r"(\d+)", p.stem)
+        if m:
+            done.add(int(m.group(1)))
+    return done
+
+
+def _write_render_progress(args, *, total, done, last_frame, started, eta_sec, status):
+    _atomic_write_json(_render_progress_path(args), {
+        "schema_version": "synthetic_floor_render_progress.v1",
+        "stage_id": args.stage_id,
+        "status": status,
+        "frames_total": total,
+        "frames_done": done,
+        "percent": round(100.0 * done / max(1, total), 2),
+        "last_frame": last_frame,
+        "elapsed_sec": round(time.time() - started, 1),
+        "eta_sec": round(eta_sec, 1),
+        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    })
+
+
+def render_frames_resumable(args: "RenderArgs") -> int:
+    """Render every frame, skipping frames already on disk. Returns rc."""
+    scene = bpy.context.scene
+    rgb_dir = Path(args.output_dir) / "rgb"
+    total = args.frames
+    start_f, end_f = scene.frame_start, scene.frame_end
+
+    done = _existing_frame_numbers(rgb_dir)
+    # The most-recent existing frame may have been mid-write when the previous
+    # session died, so re-render it to be safe.
+    if done:
+        last_done = max(done)
+        done.discard(last_done)
+    todo = [f for f in range(start_f, end_f + 1) if f not in done]
+    skipped = total - len(todo)
+    if skipped > 0:
+        _log(f"RESUME: {skipped}/{total} frame(s) already rendered; "
+             f"rendering the remaining {len(todo)}.")
+    else:
+        _log(f"Rendering {len(todo)} frame(s) from scratch.")
+
+    started = time.time()
+    log_every = max(1, len(todo) // 25)
+    for i, f in enumerate(todo, 1):
+        scene.frame_set(f)
+        try:
+            bpy.ops.render.render(write_still=False)
+        except Exception as e:  # noqa: BLE001
+            import traceback
+            _log(f"ERROR rendering frame {f}: {e}\n{traceback.format_exc()}")
+            _write_render_progress(args, total=total, done=skipped + i - 1,
+                                   last_frame=f, started=started, eta_sec=0,
+                                   status="error")
+            return 6
+        done_total = skipped + i
+        elapsed = time.time() - started
+        per = elapsed / max(1, i)
+        eta = per * (len(todo) - i)
+        if i == 1 or i % log_every == 0 or i == len(todo):
+            _log(f"[frame] {done_total}/{total} ({100.0 * done_total / total:.1f}%) "
+                 f"frame={f} {per:.1f}s/frame eta={eta / 60:.1f}min")
+        _write_render_progress(args, total=total, done=done_total, last_frame=f,
+                               started=started, eta_sec=eta, status="rendering")
+
+    _write_render_progress(args, total=total, done=total, last_frame=end_f,
+                           started=started, eta_sec=0, status="complete")
+    return 0
+
+
+# ---------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------
 
@@ -1040,15 +1161,13 @@ def main() -> int:
         except Exception as e:
             _log(f"WARNING: could not save .blend: {e}")
 
-    # Render
-    _log("Rendering animation...")
-    try:
-        bpy.ops.render.render(animation=True)
-    except Exception as e:
-        import traceback
-        _log(f"ERROR during render: {e}")
-        _log(traceback.format_exc())
-        return 6
+    # Render frame-by-frame so a mid-stage interruption is resumable: each
+    # frame is written immediately and already-rendered frames are skipped
+    # on the next run.
+    _log("Rendering animation (frame-level resumable)...")
+    rc = render_frames_resumable(args)
+    if rc != 0:
+        return rc
 
     _log(f"Render complete in {time.time() - t0:.1f}s")
 
