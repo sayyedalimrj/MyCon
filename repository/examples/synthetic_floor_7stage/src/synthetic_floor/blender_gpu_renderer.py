@@ -173,7 +173,19 @@ def reset_scene() -> None:
 
 
 def configure_gpu(device_pref: str) -> str:
-    """Enable Cycles GPU. Returns the actual backend used."""
+    """Enable Cycles GPU. Returns the actual backend used.
+
+    Delegates to :func:`synthetic_floor.blender_compat.activate_gpu` so the
+    full backend fall-back chain (OPTIX -> CUDA -> HIP -> METAL -> CPU) is
+    handled in one place. Falls back to a local minimal implementation
+    if the compat module isn't on the import path (very rare).
+    """
+    try:
+        from synthetic_floor.blender_compat import activate_gpu
+        return activate_gpu(device_pref)
+    except ImportError:
+        pass
+
     prefs = bpy.context.preferences.addons["cycles"].preferences
 
     order = ["OPTIX", "CUDA", "CPU"] if device_pref == "OPTIX" else [device_pref, "CUDA", "CPU"]
@@ -670,11 +682,17 @@ def configure_render(args: RenderArgs) -> None:
     scene.cycles.samples = args.samples
     scene.cycles.use_adaptive_sampling = True
     scene.cycles.adaptive_threshold = 0.01
-    scene.cycles.use_denoising = True
+    # Use compat helper so denoiser falls back gracefully on builds
+    # without OIDN bundled.
     try:
-        scene.cycles.denoiser = "OPENIMAGEDENOISE"
-    except TypeError:
-        pass
+        from synthetic_floor.blender_compat import safe_set_denoiser
+        safe_set_denoiser(scene, "OPENIMAGEDENOISE")
+    except ImportError:
+        scene.cycles.use_denoising = True
+        try:
+            scene.cycles.denoiser = "OPENIMAGEDENOISE"
+        except TypeError:
+            pass
     scene.cycles.use_persistent_data = True
     scene.cycles.max_bounces = 4
     scene.cycles.diffuse_bounces = 2
@@ -700,6 +718,16 @@ def configure_render(args: RenderArgs) -> None:
 
 def configure_compositor(args: RenderArgs) -> None:
     """Wire up RGB, Depth (EXR), and Segmentation File Output nodes."""
+    # Use the compatibility helper to set color_mode safely on every
+    # File Output node. Blender 4.2 rejects "BW" on EXR and on PNG
+    # File Output nodes; safe_color_mode() falls back to "RGB".
+    try:
+        from synthetic_floor.blender_compat import set_file_output_color_mode
+    except ImportError:
+        # When blender_gpu_renderer.py is invoked outside the
+        # PYTHONPATH-aware shell (rare), fall through to direct assignment.
+        set_file_output_color_mode = None  # type: ignore[assignment]
+
     scene = bpy.context.scene
     scene.use_nodes = True
 
@@ -723,13 +751,21 @@ def configure_compositor(args: RenderArgs) -> None:
     depth_dir.mkdir(parents=True, exist_ok=True)
     seg_dir.mkdir(parents=True, exist_ok=True)
 
+    def _set_color_mode(node, mode: str) -> None:
+        """Apply a colour mode through the safe helper if available."""
+        if set_file_output_color_mode is not None:
+            set_file_output_color_mode(node, mode)
+        else:
+            # Best-effort fallback: never set BW (Blender 4.2+ rejects it)
+            node.format.color_mode = mode if mode in ("RGB", "RGBA") else "RGB"
+
     # --- RGB (PNG, 8 bit) ----------------------------------------------------
     fo_rgb = nt.nodes.new("CompositorNodeOutputFile")
     fo_rgb.label = "RGB Output"
     fo_rgb.base_path = str(rgb_dir)
     fo_rgb.file_slots[0].path = "frame_"
     fo_rgb.format.file_format = "PNG"
-    fo_rgb.format.color_mode = "RGB"
+    _set_color_mode(fo_rgb, "RGB")
     fo_rgb.format.color_depth = "8"
     nt.links.new(rl.outputs["Image"], fo_rgb.inputs[0])
 
@@ -739,7 +775,7 @@ def configure_compositor(args: RenderArgs) -> None:
     fo_depth.base_path = str(depth_dir)
     fo_depth.file_slots[0].path = "frame_"
     fo_depth.format.file_format = "OPEN_EXR"
-    fo_depth.format.color_mode = "RGB"  # Blender 4.2+ does not support "BW" on EXR File Output
+    _set_color_mode(fo_depth, "RGB")  # EXR rejects "BW" on Blender 4.2+
     fo_depth.format.color_depth = "32"
     nt.links.new(rl.outputs["Depth"], fo_depth.inputs[0])
 
@@ -756,7 +792,7 @@ def configure_compositor(args: RenderArgs) -> None:
     fo_seg.base_path = str(seg_dir)
     fo_seg.file_slots[0].path = "frame_"
     fo_seg.format.file_format = "PNG"
-    fo_seg.format.color_mode = "RGB"  # Blender 4.2+ does not support "BW" on PNG File Output
+    _set_color_mode(fo_seg, "RGB")  # also safe vs. the legacy BW
     fo_seg.format.color_depth = "16"
     nt.links.new(div.outputs[0], fo_seg.inputs[0])
 

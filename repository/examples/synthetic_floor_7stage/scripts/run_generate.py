@@ -21,7 +21,6 @@ import json
 import logging
 import sys
 import time
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -32,6 +31,10 @@ SRC = HERE.parent / "src"
 sys.path.insert(0, str(SRC))
 
 from synthetic_floor.scene_spec import load_scene_spec  # noqa: E402
+from synthetic_floor.presets import (  # noqa: E402
+    PRESET_NAMES, DEFAULT_PRESET, apply_cpu_preset, describe_preset,
+)
+from synthetic_floor import paths as P  # noqa: E402
 from synthetic_floor.layout import build_layout, elements_by_category  # noqa: E402
 from synthetic_floor.stage_controller import select_for_stage, kept_only  # noqa: E402
 from synthetic_floor.materials import build_material_library, save_material_samples  # noqa: E402
@@ -81,7 +84,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--skip-bim", action="store_true")
     p.add_argument("--skip-mesh", action="store_true")
     p.add_argument("--quick", action="store_true",
-                   help="Use a small render resolution and short clips for fast smoke tests.")
+                   help="Alias for --preset debug (small render, short clips).")
+    p.add_argument("--preset", choices=PRESET_NAMES, default=None,
+                   help=f"Quality preset: debug, balanced (default), or hq. "
+                        f"Explicit --width/--height/--duration override the preset.")
     p.add_argument("--width", type=int, default=None)
     p.add_argument("--height", type=int, default=None)
     p.add_argument("--duration", type=float, default=None,
@@ -98,18 +104,16 @@ def main() -> int:
     spec.output.ensure()
     log = setup_logging(spec.output.logs, args.log_level)
 
-    # Optional camera overrides
-    cam_kwargs: dict = {}
-    if args.quick:
-        cam_kwargs.update({"width_px": 480, "height_px": 270, "duration_per_stage_sec": 2.0})
-    if args.width is not None:
-        cam_kwargs["width_px"] = args.width
-    if args.height is not None:
-        cam_kwargs["height_px"] = args.height
-    if args.duration is not None:
-        cam_kwargs["duration_per_stage_sec"] = args.duration
-    if cam_kwargs:
-        spec = replace(spec, camera=replace(spec.camera, **cam_kwargs))
+    # Resolve preset (CLI flags override preset values).
+    preset_name = args.preset or ("debug" if args.quick else DEFAULT_PRESET)
+    log.info("Preset        : %s", describe_preset(preset_name, gpu=False))
+    spec = apply_cpu_preset(
+        spec,
+        preset_name,
+        width=args.width,
+        height=args.height,
+        duration=args.duration,
+    )
 
     log.info("Project       : %s (run_id=%s)", spec.project_name, spec.run_id)
     log.info("Config        : %s", spec.config_path)
@@ -163,7 +167,7 @@ def main() -> int:
 
         # IFC ----------------------------------------------------------------
         if not args.skip_bim:
-            ifc_path = spec.output.bim / f"stage_{sid:02d}.ifc"
+            ifc_path = P.stage_ifc_path(spec, sid)
             try:
                 write_stage_ifc(spec, sid, staged, ifc_path)
                 log.info("  IFC      -> %s (%d bytes)", ifc_path, ifc_path.stat().st_size)
@@ -192,7 +196,7 @@ def main() -> int:
         if not ok_c:
             log.error("Camera path invalid for stage %d", sid)
             return 3
-        cam_json = spec.output.camera / f"stage_{sid:02d}_camera_path.json"
+        cam_json = P.stage_camera_path(spec, sid)
         write_camera_path(spec, sid, poses, cam_json)
         files["camera_path"] = cam_json
 
@@ -216,8 +220,8 @@ def main() -> int:
             log.info("  render: %d frames in %.1fs", len(clean_frames), time.time() - t_render)
 
             if not args.skip_video:
-                video_clean = spec.output.video / f"stage_{sid:02d}_clean.mp4"
-                video_sim = spec.output.video / f"stage_{sid:02d}.mp4"
+                video_clean = P.stage_video_path(spec, sid, clean=True)
+                video_sim = P.stage_video_path(spec, sid)
                 write_mp4(clean_frames, video_clean, fps=spec.camera.fps)
                 write_mp4(sim_frames, video_sim, fps=spec.camera.fps)
                 files["video"] = video_sim
@@ -227,11 +231,11 @@ def main() -> int:
 
             if args.save_frames:
                 from synthetic_floor.video_exporter import write_frames_dir
-                write_frames_dir(sim_frames, spec.output.renders / f"stage_{sid:02d}", prefix=f"frame")
+                write_frames_dir(sim_frames, P.stage_render_dir(spec, sid) / P.stage_tag(sid), prefix=f"frame")
 
             # Save sparse depth + seg as .npz (compact)
             if depth_arrs:
-                depth_npz = spec.output.depth / f"stage_{sid:02d}_depth.npz"
+                depth_npz = P.stage_depth_npz_path(spec, sid)
                 np.savez_compressed(
                     depth_npz,
                     frames=np.array([fi for fi, _ in depth_arrs]),
@@ -240,7 +244,7 @@ def main() -> int:
                 files["depth_npz"] = depth_npz
                 log.info("  Depth    -> %s", depth_npz)
             if seg_arrs:
-                seg_npz = spec.output.segmentation / f"stage_{sid:02d}_seg.npz"
+                seg_npz = P.stage_seg_npz_path(spec, sid)
                 np.savez_compressed(
                     seg_npz,
                     frames=np.array([fi for fi, _ in seg_arrs]),
@@ -250,7 +254,7 @@ def main() -> int:
                 log.info("  Seg      -> %s", seg_npz)
 
             # Save a single keyframe PNG for quick eyeballing
-            keyframe_png = spec.output.renders / f"stage_{sid:02d}_keyframe.png"
+            keyframe_png = P.stage_keyframe_path(spec, sid)
             from PIL import Image
             mid = len(sim_frames) // 2
             Image.fromarray(sim_frames[mid]).save(keyframe_png)
@@ -258,12 +262,12 @@ def main() -> int:
             log.info("  Key      -> %s", keyframe_png)
 
         # Per-stage element metrics CSV (Stage 9 contract)
-        elem_csv = spec.output.manifests / f"stage_{sid:02d}_element_metrics.csv"
+        elem_csv = P.stage_element_metrics_csv(spec, sid)
         write_element_metrics_csv(staged, elem_csv)
         files["element_metrics_csv"] = elem_csv
 
         # Per-stage metadata JSON
-        meta_json = spec.output.manifests / f"stage_{sid:02d}_metadata.json"
+        meta_json = P.stage_metadata_path(spec, sid)
         write_stage_metadata(spec, sid, staged, files, meta_json)
         files["metadata_json"] = meta_json
 
@@ -280,15 +284,15 @@ def main() -> int:
 
     # ---- Dataset-level ------------------------------------------------------
     extras: dict[str, Path] = {}
-    schedule_csv = spec.output.manifests / "schedule.csv"
+    schedule_csv = P.dataset_schedule_csv(spec)
     write_dataset_schedule(spec, elements, schedule_csv)
     extras["schedule_csv"] = schedule_csv
 
-    mapping_csv = spec.output.manifests / "bim_schedule_mapping.csv"
+    mapping_csv = P.dataset_bim_schedule_mapping_csv(spec)
     write_bim_schedule_mapping(spec, elements, mapping_csv)
     extras["bim_schedule_mapping_csv"] = mapping_csv
 
-    manifest = spec.output.manifests / "manifest.json"
+    manifest = P.dataset_manifest_path(spec)
     write_manifest(spec, files_by_stage, extras, manifest)
     extras["manifest"] = manifest
     log.info("Manifest -> %s", manifest)

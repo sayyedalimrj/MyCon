@@ -71,14 +71,26 @@ All outputs land in `examples/synthetic_floor_7stage/output/`.
 
 | Flag | Effect |
 |------|--------|
-| `--quick` | 480×270, 2s clips — fast smoke test |
+| `--preset {debug,balanced,hq}` | Quality preset (default: `balanced`) |
+| `--quick` | Alias for `--preset debug` |
 | `--stages 1 3 7` | Only generate specific stages |
 | `--skip-render` | Skip rendering (BIM + mesh only) |
 | `--skip-bim` | Skip IFC export |
-| `--width N --height N` | Override resolution |
-| `--duration S` | Override per-stage clip length |
+| `--width N --height N` | Override resolution (wins over preset) |
+| `--duration S` | Override per-stage clip length (wins over preset) |
 | `--save-frames` | Also save per-frame PNGs |
 | `--log-level DEBUG` | Verbose logging |
+
+### Quality presets
+
+| Preset | Resolution | Duration / stage | Notes |
+|--------|------------|------------------|-------|
+| `debug`    | 320×180   | 1.0 s | Smoke tests / CI; finishes in seconds |
+| `balanced` | 640×360   | 4.0 s | Default; ~10–15 min full 7-stage run |
+| `hq`       | 1280×720  | 6.0 s | Final figures; ~30+ min full run |
+
+The GPU pipeline below uses the same preset names but tunes Blender Cycles
+parameters (samples, frames, motion blur) instead of the CPU-only knobs.
 
 ## GPU / Colab pipeline (Blender 4.2 LTS)
 
@@ -103,8 +115,12 @@ Quick start (after opening the notebook in Colab with a GPU runtime):
 bash examples/synthetic_floor_7stage/scripts/setup_colab_blender.sh
 PYTHONPATH=examples/synthetic_floor_7stage/src \
     python3 examples/synthetic_floor_7stage/scripts/run_blender_gpu.py \
-        --blender /content/blender/blender --quick
+        --blender /content/blender/blender --preset debug
 ```
+
+The GPU runner accepts `--preset {debug,balanced,hq}` with the same
+override semantics as the CPU pipeline. Explicit flags such as
+`--resolution 1920 1080` or `--samples 256` always win over the preset.
 
 See [`colab/README.md`](colab/README.md) for full docs. The CPU
 pipeline above is unaffected — Blender is **not** a dependency of the
