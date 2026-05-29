@@ -72,6 +72,21 @@ class FloorSpec:
     rooms: Sequence[RoomSpec]
     doors: Sequence[DoorSpec]
     windows: Sequence[WindowSpec]
+    # --- Optional detailed-construction features (default off so the
+    #     original example is byte-for-byte unchanged) -----------------
+    with_site: bool = False               # exterior ground plane around the building
+    site_margin_m: float = 8.0            # how far the ground extends past the walls
+    with_foundation: bool = False         # pad footings / pedestals under columns
+    foundation_depth_m: float = 0.6       # footing thickness below the slab
+    foundation_pad_m: float = 1.2         # square footing footprint
+    with_beams: bool = False              # concrete beams spanning columns under the slab
+    beam_depth_m: float = 0.45            # beam height
+    beam_width_m: float = 0.30            # beam width
+    with_window_frames: bool = False      # visible frame around each window pane
+    window_frame_depth_m: float = 0.12    # frame profile depth/width
+    with_floor_finish: bool = False       # final floor finish layer (tile/wood/epoxy)
+    floor_finish_thickness_m: float = 0.03
+    floor_finish_type: str = "tile"       # informational; drives default material
 
 
 @dataclass(frozen=True)
@@ -282,6 +297,19 @@ def load_scene_spec(config_path: Path, *, base_dir: Path | None = None) -> Scene
         rooms=rooms,
         doors=doors,
         windows=windows,
+        with_site=bool(floor_raw.get("with_site", False)),
+        site_margin_m=float(floor_raw.get("site_margin_m", 8.0)),
+        with_foundation=bool(floor_raw.get("with_foundation", False)),
+        foundation_depth_m=float(floor_raw.get("foundation_depth_m", 0.6)),
+        foundation_pad_m=float(floor_raw.get("foundation_pad_m", 1.2)),
+        with_beams=bool(floor_raw.get("with_beams", False)),
+        beam_depth_m=float(floor_raw.get("beam_depth_m", 0.45)),
+        beam_width_m=float(floor_raw.get("beam_width_m", 0.30)),
+        with_window_frames=bool(floor_raw.get("with_window_frames", False)),
+        window_frame_depth_m=float(floor_raw.get("window_frame_depth_m", 0.12)),
+        with_floor_finish=bool(floor_raw.get("with_floor_finish", False)),
+        floor_finish_thickness_m=float(floor_raw.get("floor_finish_thickness_m", 0.03)),
+        floor_finish_type=str(floor_raw.get("floor_finish_type", "tile")),
     )
 
     stages_raw = raw["stages"]

@@ -1,0 +1,399 @@
+project:
+  name: synthetic_office_room
+  run_id: office_v1
+  description: 'Detailed single office room (22x14m) built over 7 logical construction
+    stages: earthwork+foundation, slab+columns, concrete beams+roof, masonry enclosure,
+    services+rough plaster, doors/windows+paint, and a tiled final floor with a suspended
+    lit ceiling.'
+  random_seed: 101
+floor:
+  length_m: 22.0
+  width_m: 14.0
+  height_m: 3.2
+  slab_thickness_m: 0.22
+  exterior_wall_thickness_m: 0.2
+  interior_wall_thickness_m: 0.0
+  grid:
+    bays_x: 4
+    bays_y: 2
+    column_size_m: 0.45
+  door_opening:
+    width_m: 1.1
+    height_m: 2.2
+  window_opening:
+    width_m: 2.4
+    height_m: 1.8
+    sill_height_m: 0.8
+  rooms: []
+  with_site: true
+  site_margin_m: 8.0
+  with_foundation: true
+  foundation_depth_m: 0.6
+  foundation_pad_m: 1.3
+  with_beams: true
+  beam_depth_m: 0.45
+  beam_width_m: 0.3
+  with_window_frames: true
+  window_frame_depth_m: 0.12
+  with_floor_finish: true
+  floor_finish_thickness_m: 0.03
+  doors:
+  - id: DOOR_MAIN
+    from: EXTERIOR
+    to: INTERIOR
+    side: west
+    offset_m: 2.5
+  windows:
+  - id: WIN_N1
+    facade: north
+    offset_m: 7.0
+  - id: WIN_N2
+    facade: north
+    offset_m: 15.0
+  - id: WIN_E1
+    facade: east
+    offset_m: 7.0
+  - id: WIN_S1
+    facade: south
+    offset_m: 11.0
+  floor_finish_type: tile
+stages:
+- id: 1
+  name: Earthwork & Foundation
+  description: Site cleared and graded; reinforced-concrete pad footings cast on the
+    bare ground. No slab, columns, walls, doors or windows yet.
+  elements:
+    site_ground:
+      completion: 1.0
+      finishing: gravel
+    foundation:
+      completion: 1.0
+      finishing: raw_concrete
+    slab: &id001
+      completion: 0.0
+      finishing: none
+    columns: *id001
+    beams: *id001
+    ceiling_slab: *id001
+    north_wall: *id001
+    east_wall: *id001
+    west_wall: *id001
+    south_wall: *id001
+    overhead_pipes: *id001
+    windows: *id001
+    window_frame: *id001
+    door: *id001
+    floor_finish: *id001
+    ceiling_finish: *id001
+    ceiling_lights: *id001
+- id: 2
+  name: Ground Slab & Columns
+  description: Ground-floor slab poured over the footings; reinforced-concrete columns
+    cast at every grid intersection. Still fully open (no walls/roof).
+  elements:
+    site_ground:
+      completion: 1.0
+      finishing: gravel
+    foundation:
+      completion: 1.0
+      finishing: raw_concrete
+    slab:
+      completion: 1.0
+      finishing: raw_concrete
+    columns:
+      completion: 1.0
+      finishing: raw_concrete
+    beams: *id001
+    ceiling_slab: *id001
+    north_wall: *id001
+    east_wall: *id001
+    west_wall: *id001
+    south_wall: *id001
+    overhead_pipes: *id001
+    windows: *id001
+    window_frame: *id001
+    door: *id001
+    floor_finish: *id001
+    ceiling_finish: *id001
+    ceiling_lights: *id001
+- id: 3
+  name: Concrete Beams & Roof Slab
+  description: 'Downstand concrete beams span the columns in both directions and the
+    roof/ceiling slab is cast: the structural frame is topped out.'
+  elements:
+    site_ground:
+      completion: 1.0
+      finishing: gravel
+    foundation:
+      completion: 1.0
+      finishing: raw_concrete
+    slab:
+      completion: 1.0
+      finishing: raw_concrete
+    columns:
+      completion: 1.0
+      finishing: raw_concrete
+    beams:
+      completion: 1.0
+      finishing: concrete_beam
+    ceiling_slab:
+      completion: 1.0
+      finishing: raw_concrete
+    north_wall: *id001
+    east_wall: *id001
+    west_wall: *id001
+    south_wall: *id001
+    overhead_pipes: *id001
+    windows: *id001
+    window_frame: *id001
+    door: *id001
+    floor_finish: *id001
+    ceiling_finish: *id001
+    ceiling_lights: *id001
+- id: 4
+  name: Masonry Enclosure (openings left)
+  description: Cinderblock perimeter walls built between the columns, leaving rough
+    openings for the door and windows. Door and windows are NOT installed yet.
+  elements:
+    site_ground:
+      completion: 1.0
+      finishing: gravel
+    foundation:
+      completion: 1.0
+      finishing: raw_concrete
+    slab:
+      completion: 1.0
+      finishing: raw_concrete
+    columns:
+      completion: 1.0
+      finishing: raw_concrete
+    beams:
+      completion: 1.0
+      finishing: concrete_beam
+    ceiling_slab:
+      completion: 1.0
+      finishing: raw_concrete
+    north_wall:
+      completion: 1.0
+      finishing: cinderblock
+    east_wall:
+      completion: 1.0
+      finishing: cinderblock
+    west_wall:
+      completion: 1.0
+      finishing: cinderblock
+    south_wall:
+      completion: 1.0
+      finishing: cinderblock
+    overhead_pipes: *id001
+    windows: *id001
+    window_frame: *id001
+    door: *id001
+    floor_finish: *id001
+    ceiling_finish: *id001
+    ceiling_lights: *id001
+- id: 5
+  name: Services & Rough Plaster
+  description: Overhead pipework/conduit installed under the raw ceiling and a base
+    (rough) plaster coat applied to the walls. Openings still empty.
+  elements:
+    site_ground:
+      completion: 1.0
+      finishing: gravel
+    foundation:
+      completion: 1.0
+      finishing: raw_concrete
+    slab:
+      completion: 1.0
+      finishing: raw_concrete
+    columns:
+      completion: 1.0
+      finishing: raw_concrete
+    beams:
+      completion: 1.0
+      finishing: concrete_beam
+    ceiling_slab:
+      completion: 1.0
+      finishing: raw_concrete
+    north_wall:
+      completion: 1.0
+      finishing: rough_plaster
+    east_wall:
+      completion: 1.0
+      finishing: rough_plaster
+    west_wall:
+      completion: 1.0
+      finishing: rough_plaster
+    south_wall:
+      completion: 1.0
+      finishing: rough_plaster
+    overhead_pipes:
+      completion: 1.0
+      finishing: raw_concrete
+    windows: *id001
+    window_frame: *id001
+    door: *id001
+    floor_finish: *id001
+    ceiling_finish: *id001
+    ceiling_lights: *id001
+- id: 6
+  name: Doors, Windows & Paint
+  description: Metal door hung and glazed windows with frames installed in their openings;
+    walls and columns painted. The room is now weather-tight.
+  elements:
+    site_ground:
+      completion: 1.0
+      finishing: gravel
+    foundation:
+      completion: 1.0
+      finishing: raw_concrete
+    slab:
+      completion: 1.0
+      finishing: raw_concrete
+    columns:
+      completion: 1.0
+      finishing: painted_white
+    beams:
+      completion: 1.0
+      finishing: concrete_beam
+    ceiling_slab:
+      completion: 1.0
+      finishing: raw_concrete
+    north_wall:
+      completion: 1.0
+      finishing: painted_white
+    east_wall:
+      completion: 1.0
+      finishing: painted_white
+    west_wall:
+      completion: 1.0
+      finishing: painted_white
+    south_wall:
+      completion: 1.0
+      finishing: painted_white
+    overhead_pipes:
+      completion: 1.0
+      finishing: raw_concrete
+    windows:
+      completion: 1.0
+      finishing: window_glazed
+    window_frame:
+      completion: 1.0
+      finishing: metal_frame
+    door:
+      completion: 1.0
+      finishing: metal_grey
+    floor_finish: *id001
+    ceiling_finish: *id001
+    ceiling_lights: *id001
+- id: 7
+  name: Final Finishes
+  description: Final floor finish laid (floor_tile), suspended ceiling with recessed
+    lights installed, overhead pipes concealed. Fully finished room.
+  elements:
+    site_ground:
+      completion: 1.0
+      finishing: gravel
+    foundation:
+      completion: 1.0
+      finishing: raw_concrete
+    slab:
+      completion: 1.0
+      finishing: raw_concrete
+    columns:
+      completion: 1.0
+      finishing: painted_white
+    beams:
+      completion: 1.0
+      finishing: concrete_beam
+    ceiling_slab: *id001
+    north_wall:
+      completion: 1.0
+      finishing: painted_white
+    east_wall:
+      completion: 1.0
+      finishing: painted_white
+    west_wall:
+      completion: 1.0
+      finishing: painted_white
+    south_wall:
+      completion: 1.0
+      finishing: painted_white
+    overhead_pipes: *id001
+    windows:
+      completion: 1.0
+      finishing: window_glazed
+    window_frame:
+      completion: 1.0
+      finishing: metal_frame
+    door:
+      completion: 1.0
+      finishing: metal_grey
+    floor_finish:
+      completion: 1.0
+      finishing: floor_tile
+    ceiling_finish:
+      completion: 1.0
+      finishing: painted_white
+    ceiling_lights:
+      completion: 1.0
+      finishing: light_fixture
+camera:
+  width_px: 640
+  height_px: 360
+  fps: 30
+  horizontal_fov_deg: 72.0
+  k1: -0.03
+  k2: 0.008
+  hold_height_m: 1.55
+  duration_per_stage_sec: 4.0
+  walk_speed_m_s: 0.7
+  look_at_height_m: 1.5
+  hand_jitter:
+    translation_amplitude_m: 0.014
+    rotation_amplitude_deg: 0.8
+    breathing_period_s: 3.5
+    walking_period_s: 0.58
+    walking_pitch_amp_deg: 0.6
+    walking_yaw_amp_deg: 0.4
+    walking_z_amp_m: 0.014
+  exposure:
+    target_brightness: 0.45
+    adapt_speed: 0.1
+    max_ev_change_per_frame: 0.06
+  noise:
+    iso_equivalent: 250.0
+    read_noise_sigma: 0.014
+    photon_scale: 1.0
+  motion_blur:
+    shutter_fraction: 0.5
+    samples: 4
+  rolling_shutter:
+    row_delay_sec: 0.001
+renderer:
+  backend: software_rasterizer
+  ambient_light: 0.22
+  sun_azimuth_deg: 135.0
+  sun_elevation_deg: 38.0
+  sun_color:
+  - 1.0
+  - 0.96
+  - 0.88
+  sky_color:
+  - 0.55
+  - 0.7
+  - 0.95
+  shadow_softness: 0.25
+  vignette_strength: 0.18
+  emit_material_samples: true
+output:
+  root: output_office
+  bim_dir: bim
+  mesh_dir: mesh
+  renders_dir: renders
+  video_dir: video
+  depth_dir: depth
+  segmentation_dir: segmentation
+  camera_dir: camera
+  manifests_dir: manifests
+  logs_dir: logs

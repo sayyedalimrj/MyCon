@@ -23,11 +23,8 @@ Element categories (matching scene.yaml):
 from __future__ import annotations
 
 import hashlib
-import struct
 from dataclasses import dataclass, field
-from typing import Any, Sequence
-
-import numpy as np
+from typing import Any
 
 from .scene_spec import FloorSpec, SceneSpec
 
@@ -38,8 +35,11 @@ from .scene_spec import FloorSpec, SceneSpec
 
 # All categories that the stage controller knows about.
 ALL_CATEGORIES: tuple[str, ...] = (
+    "site_ground",
+    "foundation",
     "slab",
     "columns",
+    "beams",
     "ceiling_slab",
     "ceiling_finish",
     "overhead_pipes",
@@ -50,7 +50,9 @@ ALL_CATEGORIES: tuple[str, ...] = (
     "west_wall",
     "south_wall",
     "windows",
+    "window_frame",
     "door",
+    "floor_finish",
     "plaster_left_lower",
     "plaster_left_upper",
     "plaster_other",
@@ -126,14 +128,24 @@ def build_layout(spec: SceneSpec) -> list[Element]:
     """
     f = spec.floor
     elements: list[Element] = []
+    if f.with_site:
+        elements.extend(_build_site_ground(f))
+    if f.with_foundation:
+        elements.extend(_build_foundation(f))
     elements.extend(_build_slab(f))
     elements.extend(_build_columns(f))
+    if f.with_beams:
+        elements.extend(_build_beams(f))
     elements.extend(_build_ceiling_slab(f))
     elements.extend(_build_overhead_pipes(f))
     elements.extend(_build_sills(f))
     elements.extend(_build_walls(f))
     elements.extend(_build_door(f))
     elements.extend(_build_windows(f))
+    if f.with_window_frames:
+        elements.extend(_build_window_frames(f))
+    if f.with_floor_finish:
+        elements.extend(_build_floor_finish(f))
     elements.extend(_build_ceiling_finish(f))
     elements.extend(_build_ceiling_lights(f))
     elements.extend(_build_plaster_layers(f))
@@ -271,7 +283,6 @@ def _build_walls(f: FloorSpec) -> list[Element]:
     t = f.exterior_wall_thickness_m
     cs = f.grid.column_size_m / 2
     H = f.height_m
-    bx, by = f.grid.bays_x, f.grid.bays_y
     win = f.window_opening
     door = f.door_opening
 
@@ -590,3 +601,173 @@ def _build_plaster_layers(f: FloorSpec) -> list[Element]:
     ))
 
     return elements
+
+
+# ---------------------------------------------------------------------
+# Detailed-construction builders (only used when enabled in the config)
+# ---------------------------------------------------------------------
+
+
+def _build_site_ground(f: FloorSpec) -> list[Element]:
+    """Exterior ground plane around the building ("outside of the room").
+
+    A large, thin slab of earth/gravel at exterior grade (top flush with
+    the bottom of the floor slab) extending ``site_margin_m`` past every
+    facade. Visible through the door and window openings, giving the
+    interior walkthrough a real "outside" context.
+    """
+    m = f.site_margin_m
+    grade = -f.slab_thickness_m  # top of the ground == underside of the slab
+    return [Element(
+        id="SITE_GROUND_01",
+        ifc_global_id=deterministic_ifc_guid("site_ground|01"),
+        name="Site Ground (exterior grade)",
+        category="site_ground",
+        box_min=(-m, -m, grade - 0.30),
+        box_max=(f.length_m + m, f.width_m + m, grade),
+        metadata={"role": "site", "kind": "exterior_grade"},
+    )]
+
+
+def _build_foundation(f: FloorSpec) -> list[Element]:
+    """Reinforced-concrete pad footings under every column.
+
+    Footings sit below the slab (buried). They are emitted as their own
+    category so the BIM/IFC carries the substructure, and so an early
+    "earthwork & foundation" stage can show them on bare ground before
+    the slab is poured.
+    """
+    bx, by = f.grid.bays_x, f.grid.bays_y
+    pad = f.foundation_pad_m
+    half = pad / 2.0
+    z_top = 0.0                              # flush with slab top in later stages
+    z_bot = -f.slab_thickness_m - f.foundation_depth_m
+    elements: list[Element] = []
+    for ix in range(bx + 1):
+        x = ix * f.length_m / bx
+        for iy in range(by + 1):
+            y = iy * f.width_m / by
+            elements.append(Element(
+                id=_make_id("FOOT", ix, iy),
+                ifc_global_id=deterministic_ifc_guid(f"foot|{ix}|{iy}"),
+                name=f"Pad Footing ({ix},{iy})",
+                category="foundation",
+                box_min=(x - half, y - half, z_bot),
+                box_max=(x + half, y + half, z_top),
+                metadata={"grid_ix": ix, "grid_iy": iy, "role": "structural"},
+            ))
+    return elements
+
+
+def _build_beams(f: FloorSpec) -> list[Element]:
+    """Concrete beams spanning the columns just under the ceiling slab.
+
+    Beams run along every structural grid line in both directions (an
+    orthogonal grid of downstand beams). They sit immediately below the
+    ceiling slab, top flush with the slab underside.
+    """
+    bx, by = f.grid.bays_x, f.grid.bays_y
+    bw = f.beam_width_m
+    half = bw / 2.0
+    z_top = f.height_m
+    z_bot = f.height_m - f.beam_depth_m
+    elements: list[Element] = []
+
+    # Beams along X (one per Y grid line)
+    for iy in range(by + 1):
+        y = iy * f.width_m / by
+        elements.append(Element(
+            id=_make_id("BEAM", "X", iy),
+            ifc_global_id=deterministic_ifc_guid(f"beam|x|{iy}"),
+            name=f"Beam X-line {iy}",
+            category="beams",
+            box_min=(0.0, y - half, z_bot),
+            box_max=(f.length_m, y + half, z_top),
+            metadata={"direction": "x", "grid_iy": iy, "role": "structural"},
+        ))
+    # Beams along Y (one per X grid line)
+    for ix in range(bx + 1):
+        x = ix * f.length_m / bx
+        elements.append(Element(
+            id=_make_id("BEAM", "Y", ix),
+            ifc_global_id=deterministic_ifc_guid(f"beam|y|{ix}"),
+            name=f"Beam Y-line {ix}",
+            category="beams",
+            box_min=(x - half, 0.0, z_bot),
+            box_max=(x + half, f.width_m, z_top),
+            metadata={"direction": "y", "grid_ix": ix, "role": "structural"},
+        ))
+    return elements
+
+
+def _build_window_frames(f: FloorSpec) -> list[Element]:
+    """Visible mullion frame (4 bars: sill, head, 2 jambs) per window.
+
+    The glass pane (``windows`` category) is nearly transparent, so on
+    its own a finished window can read as "no window". A solid frame
+    around each opening makes the installed window unmistakable.
+    """
+    win = f.window_opening
+    t = f.exterior_wall_thickness_m
+    fd = f.window_frame_depth_m
+    half_w = win.width_m / 2.0
+    sill = win.sill_height_m
+    top = sill + win.height_m
+
+    elements: list[Element] = []
+    for w in f.windows:
+        cx = w.offset_m
+        # Frame occupies the wall thickness; we build the 4 border bars in
+        # the plane of the facade.
+        bars: list[tuple[str, tuple, tuple]] = []
+        if w.facade in ("north", "south"):
+            y0 = (f.width_m - t) if w.facade == "north" else 0.0
+            y1 = (f.width_m) if w.facade == "north" else t
+            x_lo, x_hi = cx - half_w, cx + half_w
+            bars = [
+                ("sill", (x_lo, y0, sill - fd), (x_hi, y1, sill)),
+                ("head", (x_lo, y0, top), (x_hi, y1, top + fd)),
+                ("jambL", (x_lo - fd, y0, sill - fd), (x_lo, y1, top + fd)),
+                ("jambR", (x_hi, y0, sill - fd), (x_hi + fd, y1, top + fd)),
+            ]
+        else:  # east / west — wall in the YZ plane
+            x0 = (f.length_m - t) if w.facade == "east" else 0.0
+            x1 = (f.length_m) if w.facade == "east" else t
+            y_lo, y_hi = cx - half_w, cx + half_w
+            bars = [
+                ("sill", (x0, y_lo, sill - fd), (x1, y_hi, sill)),
+                ("head", (x0, y_lo, top), (x1, y_hi, top + fd)),
+                ("jambL", (x0, y_lo - fd, sill - fd), (x1, y_lo, top + fd)),
+                ("jambR", (x0, y_hi, sill - fd), (x1, y_hi + fd, top + fd)),
+            ]
+        for bar_name, bmin, bmax in bars:
+            elements.append(Element(
+                id=_make_id("WINFRAME", w.id, bar_name),
+                ifc_global_id=deterministic_ifc_guid(f"winframe|{w.id}|{bar_name}"),
+                name=f"Window Frame {w.id} {bar_name}",
+                category="window_frame",
+                box_min=bmin,
+                box_max=bmax,
+                metadata={"facade": w.facade, "window_id": w.id, "bar": bar_name},
+            ))
+    return elements
+
+
+def _build_floor_finish(f: FloorSpec) -> list[Element]:
+    """Final floor finish layer over the structural slab (stage 7).
+
+    A thin finish (tile / wood / epoxy depending on the config) covering
+    the interior footprint between the perimeter walls. This is the
+    "different floor in the end" — the raw slab is hidden underneath.
+    """
+    t = f.exterior_wall_thickness_m
+    th = f.floor_finish_thickness_m
+    return [Element(
+        id="FLOOR_FINISH_01",
+        ifc_global_id=deterministic_ifc_guid("floor_finish|01"),
+        name=f"Floor Finish ({f.floor_finish_type})",
+        category="floor_finish",
+        box_min=(t, t, 0.0),
+        box_max=(f.length_m - t, f.width_m - t, th),
+        metadata={"role": "architectural", "finish_type": f.floor_finish_type},
+    )]
