@@ -74,6 +74,9 @@ All outputs land in `examples/synthetic_floor_7stage/output/`.
 | `--preset {debug,balanced,hq}` | Quality preset (default: `balanced`) |
 | `--quick` | Alias for `--preset debug` |
 | `--stages 1 3 7` | Only generate specific stages |
+| `--resume` | Skip stages whose artefacts already exist |
+| `--force` | Delete prior outputs and rerun |
+| `--strict-render` | Fail loudly on missing renders / videos |
 | `--skip-render` | Skip rendering (BIM + mesh only) |
 | `--skip-bim` | Skip IFC export |
 | `--width N --height N` | Override resolution (wins over preset) |
@@ -91,6 +94,46 @@ All outputs land in `examples/synthetic_floor_7stage/output/`.
 
 The GPU pipeline below uses the same preset names but tunes Blender Cycles
 parameters (samples, frames, motion blur) instead of the CPU-only knobs.
+
+### Resume / force / strict-render
+
+Long pipeline runs sometimes die halfway through (Colab disconnects,
+GPU OOM, etc.). Both runners support stage-level resume:
+
+```bash
+# First run dies somewhere in the middle ...
+python3 .../run_generate.py --preset balanced
+# ... Ctrl-C / crash ...
+
+# Pick up where we left off; already-complete stages are skipped:
+python3 .../run_generate.py --preset balanced --resume
+
+# Force a single stage to be regenerated from scratch:
+python3 .../run_generate.py --preset balanced --stages 5 --force
+```
+
+| Flag | Meaning |
+|------|---------|
+| `--resume` | Skip stages whose artefacts already exist on disk (alias for `--mode resume`). |
+| `--force` | Delete prior outputs and rerun (alias for `--mode force`). |
+| `--mode {run,resume,force,redo}` | Explicit selector. Default: `run`. |
+| `--strict-render` | Fail loudly if a render or video step does not produce its expected outputs (no silent fallbacks). Use this for dataset releases. |
+
+A successful stage drops a small `<output>/manifests/stage_NN.done`
+(CPU) or `<output>/blender_renders/stage_NN/.done` (GPU) marker JSON
+that records the preset, frame counts, and elapsed time.
+
+### Running the smoke tests
+
+```bash
+PYTHONPATH=examples/synthetic_floor_7stage/src \
+    python3 examples/synthetic_floor_7stage/tests/run_all.py
+```
+
+The suite covers the path helpers, presets, `metadata_exporter._entry`
+(directories / `None` / missing files), the robust MP4 encoder
+(mixed sizes + corrupt frames), the Blender 4.x compatibility shims,
+and the resume/checkpoint logic. ~40 tests, finishes in <1 s.
 
 ## GPU / Colab pipeline (Blender 4.2 LTS)
 

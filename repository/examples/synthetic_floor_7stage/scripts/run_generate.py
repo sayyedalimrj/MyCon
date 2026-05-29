@@ -35,6 +35,9 @@ from synthetic_floor.presets import (  # noqa: E402
     PRESET_NAMES, DEFAULT_PRESET, apply_cpu_preset, describe_preset,
 )
 from synthetic_floor import paths as P  # noqa: E402
+from synthetic_floor.checkpoint import (  # noqa: E402
+    RESUME_MODES, DEFAULT_RESUME_MODE, filter_stages, write_done_marker,
+)
 from synthetic_floor.layout import build_layout, elements_by_category  # noqa: E402
 from synthetic_floor.stage_controller import select_for_stage, kept_only  # noqa: E402
 from synthetic_floor.materials import build_material_library, save_material_samples  # noqa: E402
@@ -94,6 +97,17 @@ def parse_args() -> argparse.Namespace:
                    help="Override per-stage clip duration (seconds).")
     p.add_argument("--save-frames", action="store_true",
                    help="Also save per-frame PNGs alongside the video.")
+    p.add_argument("--resume", action="store_true",
+                   help="Skip stages whose artefacts already exist (alias for --mode resume).")
+    p.add_argument("--force", action="store_true",
+                   help="Delete prior outputs and rerun (alias for --mode force).")
+    p.add_argument("--mode", choices=RESUME_MODES, default=None,
+                   help="Resume policy. Default: 'run' (always rerun). "
+                        "Use 'resume' to skip already-complete stages, "
+                        "'force' to delete and rerun.")
+    p.add_argument("--strict-render", action="store_true",
+                   help="Fail loudly if a render or video step does not "
+                        "produce its expected outputs (no silent fallbacks).")
     p.add_argument("--log-level", default="INFO")
     return p.parse_args()
 
@@ -148,6 +162,21 @@ def main() -> int:
 
     # ---- Per-stage generation ------------------------------------------------
     stage_ids = args.stages or [s.id for s in spec.stages]
+
+    # Resolve resume mode: --force/--resume are convenience aliases for --mode.
+    if args.mode is not None:
+        resume_mode = args.mode
+    elif args.force:
+        resume_mode = "force"
+    elif args.resume:
+        resume_mode = "resume"
+    else:
+        resume_mode = DEFAULT_RESUME_MODE
+    stage_ids, statuses = filter_stages(spec, stage_ids, resume_mode, gpu=False, log=log)
+    log.info("Resume mode   : %s", resume_mode)
+    log.info("Skipped stages: %s",
+             [s.stage_id for s in statuses if s.complete and resume_mode == "resume"])
+
     stages_to_run = [s for s in spec.stages if s.id in stage_ids]
     log.info("Stages        : %s", [s.id for s in stages_to_run])
 
@@ -219,6 +248,24 @@ def main() -> int:
                     log.info("    rendered frame %3d/%d (%.1fs elapsed)", fi + 1, len(poses), time.time() - t_render)
             log.info("  render: %d frames in %.1fs", len(clean_frames), time.time() - t_render)
 
+            # Strict-render guard: fail loudly if the renderer produced
+            # nothing usable. Without --strict-render we only warn.
+            expected_frames = len(poses)
+            if len(sim_frames) == 0:
+                msg = (f"stage {sid}: renderer produced 0 frames "
+                       f"(expected {expected_frames})")
+                if args.strict_render:
+                    log.error("[strict] %s", msg)
+                    return 7
+                log.warning("[non-strict] %s", msg)
+            elif len(sim_frames) < expected_frames:
+                msg = (f"stage {sid}: renderer produced {len(sim_frames)} "
+                       f"frames, expected {expected_frames}")
+                if args.strict_render:
+                    log.error("[strict] %s", msg)
+                    return 7
+                log.warning("[non-strict] %s", msg)
+
             if not args.skip_video:
                 video_clean = P.stage_video_path(spec, sid, clean=True)
                 video_sim = P.stage_video_path(spec, sid)
@@ -280,7 +327,18 @@ def main() -> int:
             log.error("Some stage %d outputs are missing.", sid)
             return 4
 
-        log.info("  Stage %d done in %.1fs", sid, time.time() - t0)
+        # Write .done marker so future --resume runs can skip this stage.
+        elapsed = time.time() - t0
+        write_done_marker(spec, sid, payload={
+            "preset": preset_name,
+            "elapsed_sec": round(elapsed, 3),
+            "kept_elements": len(kept),
+            "render_done": not args.skip_render,
+            "video_done": not (args.skip_render or args.skip_video),
+            "strict_render": bool(args.strict_render),
+        }, gpu=False)
+
+        log.info("  Stage %d done in %.1fs", sid, elapsed)
 
     # ---- Dataset-level ------------------------------------------------------
     extras: dict[str, Path] = {}
