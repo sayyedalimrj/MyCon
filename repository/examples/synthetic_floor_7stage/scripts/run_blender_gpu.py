@@ -52,6 +52,10 @@ sys.path.insert(0, str(SRC))
 # Reuse the existing CPU pipeline modules to prepare BIM/mesh/elements
 # JSON for each stage. We never call the CPU renderer itself.
 from synthetic_floor.scene_spec import load_scene_spec  # noqa: E402
+from synthetic_floor.presets import (  # noqa: E402
+    PRESET_NAMES, DEFAULT_PRESET, apply_gpu_preset, describe_preset,
+)
+from synthetic_floor import paths as P  # noqa: E402
 from synthetic_floor.layout import build_layout, elements_by_category  # noqa: E402
 from synthetic_floor.stage_controller import select_for_stage  # noqa: E402
 from synthetic_floor.materials import build_material_library  # noqa: E402
@@ -131,16 +135,20 @@ def parse_args() -> argparse.Namespace:
                    help="Path to blender executable; default: /content/blender/blender")
     p.add_argument("--stages", type=int, nargs="*", default=None,
                    help="Subset of stage ids to render (1..7). Default: all.")
-    p.add_argument("--resolution", nargs=2, type=int, default=[1280, 720],
+    p.add_argument("--preset", choices=PRESET_NAMES, default=None,
+                   help="Quality preset: debug, balanced (default), or hq. "
+                        "Explicit --resolution/--samples/--frames override.")
+    p.add_argument("--resolution", nargs=2, type=int, default=None,
                    metavar=("W", "H"))
-    p.add_argument("--samples", type=int, default=128)
+    p.add_argument("--samples", type=int, default=None)
     p.add_argument("--frames", type=int, default=None,
-                   help="Override frames per stage (default: derived from "
-                        "config duration_per_stage_sec * fps).")
-    p.add_argument("--fps", type=int, default=30)
+                   help="Override frames per stage.")
+    p.add_argument("--fps", type=int, default=None)
     p.add_argument("--device", default="OPTIX",
                    choices=("OPTIX", "CUDA", "CPU"))
     p.add_argument("--no-motion-blur", action="store_true")
+    p.add_argument("--motion-blur", action="store_true",
+                   help="Force motion blur ON (overrides preset).")
     p.add_argument("--sun-elevation", type=float, default=38.0)
     p.add_argument("--sun-azimuth", type=float, default=135.0)
     p.add_argument("--skip-prepare", action="store_true",
@@ -148,7 +156,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--skip-encode", action="store_true",
                    help="Skip MP4 encoding step.")
     p.add_argument("--quick", action="store_true",
-                   help="Tiny smoke test: 480x270, 30 frames, 32 samples.")
+                   help="Alias for --preset debug.")
     p.add_argument("--log-level", default="INFO")
     return p.parse_args()
 
@@ -171,7 +179,7 @@ def prepare_stage_assets(spec, stage_ids: list[int], log: logging.Logger) -> dic
     for sid in stage_ids:
         stage = spec.stages[sid - 1]
         staged = select_for_stage(stage, by_cat)
-        ifc_path = spec.output.bim / f"stage_{sid:02d}.ifc"
+        ifc_path = P.stage_ifc_path(spec, sid)
         if not ifc_path.exists():
             try:
                 write_stage_ifc(spec, sid, staged, ifc_path)
@@ -182,7 +190,7 @@ def prepare_stage_assets(spec, stage_ids: list[int], log: logging.Logger) -> dic
 
         # Per-stage element_metrics CSV (Stage-9 contract) -- the GPU
         # renderer doesn't need it, but the rest of the pipeline does.
-        csv_path = spec.output.manifests / f"stage_{sid:02d}_element_metrics.csv"
+        csv_path = P.stage_element_metrics_csv(spec, sid)
         write_element_metrics_csv(staged, csv_path)
 
         out[sid] = {
@@ -211,6 +219,10 @@ def render_stage_with_blender(
     args: argparse.Namespace,
     fps: int,
     frames: int,
+    width: int,
+    height: int,
+    samples: int,
+    motion_blur: bool,
     log: logging.Logger,
 ) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -224,13 +236,13 @@ def render_stage_with_blender(
         "--stage-id", str(stage_id),
         "--frames", str(frames),
         "--fps", str(fps),
-        "--samples", str(args.samples),
-        "--resolution", str(args.resolution[0]), str(args.resolution[1]),
+        "--samples", str(samples),
+        "--resolution", str(width), str(height),
         "--sun-elevation", str(args.sun_elevation),
         "--sun-azimuth", str(args.sun_azimuth),
         "--device", args.device,
     ]
-    if args.no_motion_blur:
+    if not motion_blur:
         cmd.append("--no-motion-blur")
 
     log.info("[stage %d] launching: %s", stage_id, " ".join(cmd))
@@ -309,31 +321,41 @@ def main() -> int:
     args = parse_args()
     spec = load_scene_spec(args.config)
 
-    # Apply --quick / --frames overrides on the camera spec (frames per stage
-    # is what matters for Blender; resolution is passed via CLI).
-    cam_kwargs: dict = {}
-    if args.quick:
-        cam_kwargs.update({"width_px": 480, "height_px": 270, "duration_per_stage_sec": 1.0})
-        args.resolution = [480, 270]
-        args.samples = 32
-    if args.frames is None:
-        if cam_kwargs:
-            duration = cam_kwargs["duration_per_stage_sec"]
-        else:
-            duration = spec.camera.duration_per_stage_sec
-        frames = max(2, int(round(duration * args.fps)))
+    # Resolve preset (CLI flags override preset values).
+    preset_name = args.preset or ("debug" if args.quick else DEFAULT_PRESET)
+    motion_blur: bool | None
+    if args.no_motion_blur:
+        motion_blur = False
+    elif args.motion_blur:
+        motion_blur = True
     else:
-        frames = int(args.frames)
+        motion_blur = None  # inherit from preset
+    preset = apply_gpu_preset(
+        preset_name,
+        resolution=tuple(args.resolution) if args.resolution else None,
+        samples=args.samples,
+        frames=args.frames,
+        fps=args.fps,
+        motion_blur=motion_blur,
+    )
+    # Make the resolved values visible to the rest of main() through
+    # familiar variable names.
+    width, height = preset.width_px, preset.height_px
+    samples = preset.samples
+    frames = preset.frames_per_stage
+    fps = preset.fps
 
     spec.output.ensure()
     log = setup_logging(spec.output.logs, args.log_level)
 
     log.info("=== run_blender_gpu ===")
+    log.info("preset       : %s", describe_preset(preset_name, gpu=True))
     log.info("config       : %s", spec.config_path)
     log.info("output root  : %s", spec.output.root)
-    log.info("resolution   : %dx%d", args.resolution[0], args.resolution[1])
-    log.info("samples      : %d", args.samples)
-    log.info("frames       : %d @ %d fps  (%.1fs/stage)", frames, args.fps, frames / args.fps)
+    log.info("resolution   : %dx%d", width, height)
+    log.info("samples      : %d", samples)
+    log.info("frames       : %d @ %d fps  (%.1fs/stage)", frames, fps, frames / fps)
+    log.info("motion blur  : %s", preset.motion_blur)
     log.info("device       : %s", args.device)
 
     stage_ids = args.stages or [s.id for s in spec.stages]
@@ -346,15 +368,15 @@ def main() -> int:
         prepared = {}
         for sid in stage_ids:
             prepared[sid] = {
-                "glb": spec.output.mesh / f"stage_{sid:02d}.glb",
-                "elements_json": spec.output.mesh / f"stage_{sid:02d}_elements.json",
+                "glb": P.stage_glb_path(spec, sid),
+                "elements_json": P.stage_elements_json_path(spec, sid),
             }
 
     # Dataset-level CSVs (schedule + mapping). These are deterministic
     # and small, regenerate every run.
     elements = build_layout(spec)
-    write_dataset_schedule(spec, elements, spec.output.manifests / "schedule.csv")
-    write_bim_schedule_mapping(spec, elements, spec.output.manifests / "bim_schedule_mapping.csv")
+    write_dataset_schedule(spec, elements, P.dataset_schedule_csv(spec))
+    write_bim_schedule_mapping(spec, elements, P.dataset_bim_schedule_mapping_csv(spec))
 
     # Resolve Blender AFTER preparation so a dry-run that just wants the
     # GLB + sidecar JSON outputs (e.g. for CI / asset inspection) still
@@ -367,7 +389,7 @@ def main() -> int:
         log.info("preparation finished; rendering skipped because Blender is not available.")
         return 0
 
-    blender_renders = spec.output.root / "blender_renders"
+    blender_renders = P.blender_renders_root(spec)
     blender_renders.mkdir(parents=True, exist_ok=True)
 
     # Import the progress bar (non-critical; fallback to plain logging)
@@ -384,7 +406,7 @@ def main() -> int:
         if not Path(info["glb"]).exists():
             log.error("[stage %d] GLB missing: %s", sid, info["glb"])
             continue
-        stage_dir = blender_renders / f"stage_{sid:02d}"
+        stage_dir = P.stage_blender_render_dir(spec, sid)
         rc = render_stage_with_blender(
             blender_exe=blender_exe,
             stage_id=sid,
@@ -392,8 +414,12 @@ def main() -> int:
             elements_json=Path(info["elements_json"]),
             output_dir=stage_dir,
             args=args,
-            fps=args.fps,
+            fps=fps,
             frames=frames,
+            width=width,
+            height=height,
+            samples=samples,
+            motion_blur=preset.motion_blur,
             log=log,
         )
         if rc != 0:
@@ -404,19 +430,20 @@ def main() -> int:
         if not args.skip_encode:
             video_path = encode_mp4(
                 stage_dir / "rgb",
-                spec.output.video / f"stage_{sid:02d}_blender.mp4",
-                fps=args.fps,
+                P.stage_video_path(spec, sid, gpu=True),
+                fps=fps,
                 log=log,
             )
 
+        sub = P.stage_blender_subdirs(spec, sid)
         files_by_stage[sid] = {
             "glb": Path(info["glb"]),
             "elements_json": Path(info["elements_json"]),
             "blender_dir": stage_dir,
-            "rgb_dir": stage_dir / "rgb",
-            "depth_dir": stage_dir / "depth",
-            "seg_dir": stage_dir / "seg",
-            "camera_path": stage_dir / "camera_path.json",
+            "rgb_dir": sub["rgb"],
+            "depth_dir": sub["depth"],
+            "seg_dir": sub["seg"],
+            "camera_path": sub["camera_path"],
             "video": video_path,
             "element_metrics_csv": info.get("element_metrics_csv"),
         }
@@ -425,10 +452,10 @@ def main() -> int:
 
     # Refresh manifest so the new files show up
     extras = {
-        "schedule_csv": spec.output.manifests / "schedule.csv",
-        "bim_schedule_mapping_csv": spec.output.manifests / "bim_schedule_mapping.csv",
+        "schedule_csv": P.dataset_schedule_csv(spec),
+        "bim_schedule_mapping_csv": P.dataset_bim_schedule_mapping_csv(spec),
     }
-    manifest_path = spec.output.manifests / "manifest_blender_gpu.json"
+    manifest_path = P.dataset_manifest_path(spec, gpu=True)
     write_manifest(spec, files_by_stage, extras, manifest_path)
     log.info("manifest -> %s", manifest_path)
     log.info("done.")
