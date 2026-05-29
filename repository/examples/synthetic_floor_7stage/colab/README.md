@@ -15,19 +15,42 @@ using Blender Cycles + GPU (T4/A100) on Google Colab.
 
 ## What the Notebook Does
 
-| Cell | Action | Time |
-|------|--------|------|
-| 1 | Verify GPU + clone repo | 10s |
-| 2 | Install Blender 4.2 LTS | 30-60s |
-| 3 | Install Python deps | 15s |
-| 4 | Quick smoke test (stage 7, debug preset) | 30-60s |
-| 5 | Preview frames + brightness check | instant |
-| 6 | Full 7-stage render (balanced preset) | 15-25 min (T4) |
-| 7 | High quality single stage (30s video) | 10-20 min (T4) |
-| 8 | Side-by-side 7-stage comparison | instant |
-| 9 | Download MP4 videos | instant |
-| 10 | Inspect manifest + camera path | instant |
-| 11 | Download all outputs as ZIP | 10-30s |
+| Cell | Action |
+|------|--------|
+| 1 | Verify GPU, **mount Google Drive**, clone repo, set a stable `RUN_NAME` |
+| 2 | Install Blender 4.2 LTS |
+| 3 | Install Python deps |
+| 4 | Smoke render (stage 7, debug) **synced to Drive + resumable + blank-frame guard** |
+| 5 | Preview a frame + brightness/coverage check |
+| 6 | Full 7-stage render (balanced), resumable |
+| 7 | Resume status from the portable `run_state_blender_gpu.json` |
+| 8 | Inspect manifest + camera path |
+| 9 | Download MP4 videos |
+| 10 | Resilience / resume notes |
+
+## Google Drive persistence & resume
+
+Pass `--mount-drive --drive-root <folder>` to `run_blender_gpu.py` (the notebook
+does this for you). Then:
+
+- Every stage's outputs are mirrored to
+  `MyDrive/MyCon_Colab/synthetic_floor_7stage/<RUN_NAME>/output/` immediately
+  after the stage finishes, and a background daemon flushes partial progress
+  every ~2 minutes. A Colab crash costs at most the current stage.
+- `--resume` pulls prior outputs back from Drive and skips stages that already
+  completed (verified against their artefacts + `.done` markers).
+- A single portable `run_state_blender_gpu.json` summarises every stage's
+  status. Copy/share the run folder to another machine or Drive account, set
+  the same `RUN_NAME`, and the run continues from where it stopped.
+- A stale Drive FUSE mount (after a reconnect) is auto-detected and remounted.
+
+```bash
+PYTHONPATH=examples/synthetic_floor_7stage/src \
+    python3 examples/synthetic_floor_7stage/scripts/run_blender_gpu.py \
+        --blender /content/blender/blender --preset balanced \
+        --mount-drive --drive-root /content/drive/MyDrive/MyCon_Colab/synthetic_floor_7stage/demo \
+        --resume
+```
 
 ## Quality Presets
 
@@ -53,20 +76,33 @@ using Blender Cycles + GPU (T4/A100) on Google Colab.
 --preset balanced --resume
 ```
 
-## Why the Renders Are Bright (Not Black)
+## Why earlier renders were "nothing but light" (and the fix)
 
-The old version produced black frames because:
-1. Windows were solid boxes (light couldn't pass through)
-2. No Light Portals (Cycles couldn't find the sky)
-3. No interior lights (enclosed room = zero illumination)
-4. Low bounce counts (max=4, light died quickly)
+Two compounding bugs made frames come out as a bright, empty scene with no
+floor/columns/walls visible:
 
-The new version fixes all four:
-- Wall openings are **real gaps** in the geometry
-- **Light Portals** at every window (guides importance sampling)
-- **6 Area Lights** (80W warm white) for the finished ceiling
-- **12 bounces** (diffuse=8, glossy=4, transmission=12)
-- **Exposure=1.2** + Filmic for natural brightness
+1. **Coordinate-frame mismatch (the main cause).** The geometry is authored
+   **Z-up** and exported as GLB by trimesh, which writes the vertices
+   verbatim. Blender's glTF importer assumes glTF's **Y-up** convention and
+   rotates the mesh +90 deg about X on import. The room ended up rotated so its
+   *height* landed on Blender's Y axis — far outside the hard-coded camera path,
+   window light portals and ceiling lights. The camera saw almost only the sky.
+2. **Over-exposure.** A `+1.2 EV` "interior boost" on top of a boosted sky blew
+   out whatever little was visible to pure white.
+
+The fix:
+
+- `blender_gpu_renderer.align_to_author_frame()` re-orients the imported
+  geometry back into the authored Z-up frame (computed from the elements
+  sidecar bounding box; see `synthetic_floor/geometry_align.py`), so the
+  camera, portals and lights line up with real geometry again.
+- Exposure is back to neutral (`exposure=0.0`), sky strength `1.0`, sun `3.0`.
+- A **blank-frame guard** (`--strict-render`) fails fast if a frame is almost
+  entirely near-white or has no spatial structure.
+
+The earlier interior-lighting work is retained: window openings are real gaps,
+light portals guide Cycles, stage 7 has 6 ceiling area lights, and bounce
+counts are high for proper indirect illumination.
 
 ## Output Structure
 
@@ -103,6 +139,8 @@ output/
 |---------|----------|
 | "No GPU" error | Runtime → Change runtime type → T4/A100 |
 | Blender download fails | Re-run cell 2; Colab sometimes throttles wget |
+| Bright/blank frames ("nothing but light") | Fixed: geometry is re-oriented to the authored Z-up frame and exposure is neutral. If you still see it, check `blender_render.log` for the `alignment:` line and run with `--strict-render` to fail fast. |
 | Black/dark frames | Check `blender_render.log` — if `rgb=0` frames, the compositor failed |
 | CUDA out of memory | Reduce `--resolution` or `--samples` |
 | Very noisy output | Increase `--samples` to 192 or 256 |
+| Lost work after a disconnect | Re-run with the same `RUN_NAME`; `--resume` restores from Drive |

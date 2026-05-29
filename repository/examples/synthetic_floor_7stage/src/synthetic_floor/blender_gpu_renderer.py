@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import random
 import sys
 import time
@@ -151,6 +150,92 @@ def import_mesh(path: Path) -> list:
     mesh_objs = [o for o in new_objs if o.type == "MESH"]
     _log(f"Imported {len(mesh_objs)} mesh objects from {path.name}")
     return mesh_objs
+
+
+def _world_bbox(mesh_objs: list) -> tuple[list, list]:
+    bmin = [math.inf, math.inf, math.inf]
+    bmax = [-math.inf, -math.inf, -math.inf]
+    for o in mesh_objs:
+        if o.type != "MESH":
+            continue
+        for v in o.bound_box:
+            wp = o.matrix_world @ mathutils.Vector(v)
+            for i in range(3):
+                bmin[i] = min(bmin[i], wp[i])
+                bmax[i] = max(bmax[i], wp[i])
+    return bmin, bmax
+
+
+def _top_level_ancestors(mesh_objs: list) -> list:
+    tops = []
+    seen = set()
+    for o in mesh_objs:
+        t = o
+        while t.parent is not None:
+            t = t.parent
+        if t.name not in seen:
+            seen.add(t.name)
+            tops.append(t)
+    return tops
+
+
+def align_to_author_frame(mesh_objs: list, elements_json: Path | None) -> dict:
+    """Re-orient imported geometry into the authored Z-up frame.
+
+    trimesh writes the GLB vertices verbatim (Z-up), but Blender's glTF
+    importer rotates Y-up->Z-up, which moves our room out of the hard-coded
+    camera/light frame and yields "all sky" renders. We compute the rigid
+    transform back to the authored frame (from the elements sidecar bbox)
+    and apply it to the imported root objects so the camera, window light
+    portals, and ceiling lights line up with real geometry again.
+    """
+    try:
+        from synthetic_floor.geometry_align import (
+            author_bbox_from_elements,
+            compute_alignment,
+        )
+    except Exception as exc:  # pragma: no cover - depends on Blender sys.path
+        _log(f"WARNING: geometry_align unavailable ({exc}); skipping reorientation")
+        return {"mode": "skipped", "needs_change": False}
+
+    bmin, bmax = _world_bbox(mesh_objs)
+    if not all(math.isfinite(v) for v in bmin + bmax):
+        _log("WARNING: could not compute imported bbox; skipping reorientation")
+        return {"mode": "skipped", "needs_change": False}
+
+    author_min = author_max = None
+    if elements_json and Path(elements_json).exists():
+        try:
+            payload = json.loads(Path(elements_json).read_text())
+            ab = author_bbox_from_elements(payload)
+            if ab is not None:
+                author_min, author_max = ab
+        except Exception as exc:
+            _log(f"WARNING: could not read author bbox ({exc}); using heuristic")
+
+    res = compute_alignment(bmin, bmax, author_min=author_min, author_max=author_max)
+    _log(
+        f"alignment: mode={res['mode']} needs_change={res['needs_change']} "
+        f"blender_ext={[round(v,2) for v in res['blender_extents']]} "
+        f"-> result_ext={[round(v,2) for v in res['result_extents']]} "
+        f"author_ext={res['author_extents']}"
+    )
+    if not res["needs_change"]:
+        return res
+
+    M = mathutils.Matrix(res["matrix"])
+    for top in _top_level_ancestors(mesh_objs):
+        top.matrix_world = M @ top.matrix_world
+    try:
+        bpy.context.view_layer.update()
+    except Exception:
+        pass
+    new_min, new_max = _world_bbox(mesh_objs)
+    _log(
+        f"alignment applied: new bbox min={[round(v,2) for v in new_min]} "
+        f"max={[round(v,2) for v in new_max]}"
+    )
+    return res
 
 
 def map_objects_to_elements(mesh_objs: list, elements_json: Path | None) -> dict:
@@ -341,7 +426,7 @@ def setup_world_sky(sun_elevation_deg: float, sun_azimuth_deg: float) -> None:
         nt.nodes.remove(n)
     out = nt.nodes.new("ShaderNodeOutputWorld")
     bg = nt.nodes.new("ShaderNodeBackground")
-    bg.inputs["Strength"].default_value = 1.2  # slightly boosted sky
+    bg.inputs["Strength"].default_value = 1.0  # neutral sky (was 1.2 -> blew out)
     sky = nt.nodes.new("ShaderNodeTexSky")
     sky.sky_type = "NISHITA"
     sky.sun_elevation = math.radians(sun_elevation_deg)
@@ -357,7 +442,7 @@ def setup_world_sky(sun_elevation_deg: float, sun_azimuth_deg: float) -> None:
 
     # Sun light for sharp directional shadows
     sun_data = bpy.data.lights.new("SunLight", type="SUN")
-    sun_data.energy = 5.0
+    sun_data.energy = 3.0
     sun_data.angle = math.radians(0.55)
     sun_obj = bpy.data.objects.new("SunLight", sun_data)
     bpy.context.collection.objects.link(sun_obj)
@@ -724,10 +809,13 @@ def configure_render(args: RenderArgs) -> None:
     scene.frame_start = 1
     scene.frame_end = args.frames
 
-    # Color management: Filmic + exposure boost for interior brightness
+    # Color management: Filmic tone-mapping at neutral exposure. The old
+    # +1.2 EV "interior boost" blew out the sky and washed the frame to pure
+    # white; with the geometry now correctly in frame, sun+sky+ceiling lights
+    # already provide a well-exposed image.
     scene.view_settings.view_transform = "Filmic"
     scene.view_settings.look = "Medium Contrast"
-    scene.view_settings.exposure = 1.2  # brighten interior
+    scene.view_settings.exposure = 0.0
 
 
 def configure_compositor(args: RenderArgs) -> None:
@@ -841,6 +929,12 @@ def main() -> int:
     bpy = _bpy
     mathutils = _mu
 
+    # Make the synthetic_floor package importable inside Blender's Python so
+    # the alignment + GPU helpers load (Blender does not inherit PYTHONPATH).
+    _src = Path(__file__).resolve().parents[1]
+    if str(_src) not in sys.path:
+        sys.path.insert(0, str(_src))
+
     args = _parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     log_file = args.output_dir / "blender_render.log"
@@ -864,6 +958,11 @@ def main() -> int:
     if not mesh_objs:
         _log("ERROR: no mesh objects imported")
         return 3
+
+    # CRITICAL: re-orient the imported geometry back into the authored Z-up
+    # frame. Without this the glTF Y-up import rotates the room out of the
+    # camera frame and every frame is just sky ("nothing but light").
+    align_to_author_frame(mesh_objs, args.elements_json)
 
     mapping = map_objects_to_elements(mesh_objs, args.elements_json)
     assign_materials(mesh_objs, mapping, seed=args.seed)
