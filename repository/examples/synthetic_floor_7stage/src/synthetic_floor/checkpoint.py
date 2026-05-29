@@ -36,9 +36,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Literal
 
@@ -263,5 +264,74 @@ def read_done_marker(spec, stage_id: int, *, gpu: bool = False) -> dict | None:
         return None
     try:
         return json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+# ---------------------------------------------------------------------
+# Portable run-state manifest (cross-device / cross-Drive resume)
+# ---------------------------------------------------------------------
+
+
+def run_state_path(spec, *, gpu: bool = False) -> Path:
+    """Single JSON manifest summarising the whole run's progress.
+
+    Unlike the per-stage ``.done`` markers, this is one file a user can copy
+    to another machine / Drive account to see (and resume) exactly how far a
+    run got. It lives under ``output/manifests/`` so it is part of the Drive
+    mirror.
+    """
+    name = "run_state_blender_gpu.json" if gpu else "run_state_cpu.json"
+    return spec.output.manifests / name
+
+
+def write_run_state(
+    spec,
+    stage_ids: Iterable[int],
+    *,
+    gpu: bool = False,
+    extra: dict | None = None,
+) -> Path:
+    """Aggregate per-stage status + ``.done`` markers into one portable JSON.
+
+    Written atomically (temp file + ``os.replace``) so a reader never sees a
+    half-written manifest even if the process / Colab session dies mid-write.
+    """
+    stages: dict[str, dict] = {}
+    for sid in stage_ids:
+        s = stage_status(spec, sid, gpu=gpu)
+        stages[str(int(sid))] = {
+            "complete": bool(s.complete),
+            "missing": list(s.missing),
+            "extras": s.extras,
+            "done_marker": read_done_marker(spec, sid, gpu=gpu),
+        }
+    body = {
+        "schema_version": "synthetic_floor_run_state.v1",
+        "project_name": getattr(spec, "project_name", ""),
+        "run_id": getattr(spec, "run_id", ""),
+        "gpu": bool(gpu),
+        "updated_at": time.time(),
+        "updated_at_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "output_root": str(spec.output.root),
+        "stages": stages,
+    }
+    if extra:
+        body.update(extra)
+
+    path = run_state_path(spec, gpu=gpu)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(body, indent=2, default=str), encoding="utf-8")
+    os.replace(tmp, path)
+    return path
+
+
+def read_run_state(spec, *, gpu: bool = False) -> dict | None:
+    path = run_state_path(spec, gpu=gpu)
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
