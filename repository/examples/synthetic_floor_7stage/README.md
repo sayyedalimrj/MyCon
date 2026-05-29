@@ -165,6 +165,33 @@ The GPU runner accepts `--preset {debug,balanced,hq}` with the same
 override semantics as the CPU pipeline. Explicit flags such as
 `--resolution 1920 1080` or `--samples 256` always win over the preset.
 
+### Google Drive persistence + resume (Colab)
+
+The GPU runner can mirror everything it produces to Google Drive so a Colab
+disconnect never loses work, and a run can be resumed later (or from another
+device / Drive account):
+
+```bash
+PYTHONPATH=examples/synthetic_floor_7stage/src \
+    python3 examples/synthetic_floor_7stage/scripts/run_blender_gpu.py \
+        --blender /content/blender/blender --preset balanced \
+        --mount-drive \
+        --drive-root /content/drive/MyDrive/MyCon_Colab/synthetic_floor_7stage/demo \
+        --resume --strict-render
+```
+
+`--mount-drive` mounts Drive; outputs are pushed to `--drive-root/output/`
+after every stage (plus a background sync); `--resume` pulls prior outputs
+back and skips already-complete stages. A portable
+`output/manifests/run_state_blender_gpu.json` records every stage's status.
+`--strict-render` fails fast on a blank/over-exposed frame.
+
+> **Note:** a previous version of the GPU renderer produced "nothing but
+> light" frames because the trimesh GLB (authored Z-up) was rotated out of the
+> camera frame by Blender's Y-up glTF import. The renderer now re-orients the
+> mesh into the authored frame (`synthetic_floor/geometry_align.py`) and uses
+> neutral exposure, so the floor, columns, walls and windows render correctly.
+
 See [`colab/README.md`](colab/README.md) for full docs. The CPU
 pipeline above is unaffected — Blender is **not** a dependency of the
 default example.

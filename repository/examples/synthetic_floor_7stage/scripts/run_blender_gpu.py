@@ -32,14 +32,12 @@ If you want to render every stage::
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
 import shutil
 import subprocess
 import sys
 import time
-from dataclasses import replace
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -58,7 +56,9 @@ from synthetic_floor.presets import (  # noqa: E402
 from synthetic_floor import paths as P  # noqa: E402
 from synthetic_floor.checkpoint import (  # noqa: E402
     RESUME_MODES, DEFAULT_RESUME_MODE, filter_stages, write_done_marker,
+    write_run_state,
 )
+from synthetic_floor import colab_sync as CS  # noqa: E402
 from synthetic_floor.layout import build_layout, elements_by_category  # noqa: E402
 from synthetic_floor.stage_controller import select_for_stage  # noqa: E402
 from synthetic_floor.materials import build_material_library  # noqa: E402
@@ -169,6 +169,18 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--strict-render", action="store_true",
                    help="Fail loudly if Blender does not produce the expected "
                         "number of frames or any of the required outputs.")
+    # --- Google Drive persistence / resume ---
+    p.add_argument("--drive-root", type=Path, default=None,
+                   help="Drive folder to mirror outputs into (e.g. "
+                        "/content/drive/MyDrive/MyCon_Colab/synthetic_floor_7stage/<run>). "
+                        "Implies Drive sync; enables cross-session/device resume.")
+    p.add_argument("--mount-drive", action="store_true",
+                   help="Mount Google Drive and auto-resolve --drive-root from the run_id "
+                        "(Colab). Outputs are synced to Drive after every stage.")
+    p.add_argument("--no-drive", action="store_true",
+                   help="Disable all Drive syncing even on Colab.")
+    p.add_argument("--drive-sync-interval", type=float, default=120.0,
+                   help="Background Drive sync period in seconds (default 120).")
     p.add_argument("--log-level", default="INFO")
     return p.parse_args()
 
@@ -325,6 +337,51 @@ def encode_mp4(frames_dir: Path, out_path: Path, fps: int, log: logging.Logger) 
 
 
 # ---------------------------------------------------------------------
+# Frame quality guard (catches "nothing but light" / blank renders)
+# ---------------------------------------------------------------------
+
+
+def check_frame_quality(frames_dir: Path, log: logging.Logger) -> dict | None:
+    """Inspect a representative RGB frame for the "all light / blank" failure.
+
+    Returns ``{"mean","std","white_frac","ok"}`` or ``None`` if it could not
+    inspect. A frame that is almost entirely near-white (or has near-zero
+    spatial variance) means the geometry was not in view / the scene was
+    blown out — exactly the bug the alignment + exposure fixes address.
+    """
+    pngs = sorted(Path(frames_dir).glob("frame_*.png"))
+    if not pngs:
+        return None
+    try:
+        import numpy as np
+        from PIL import Image
+    except Exception:
+        return None
+    mid = pngs[len(pngs) // 2]
+    try:
+        arr = np.asarray(Image.open(mid).convert("RGB"), dtype=np.float32)
+    except Exception:
+        return None
+    lum = arr.mean(axis=2)
+    mean = float(lum.mean())
+    std = float(lum.std())
+    white_frac = float((lum > 250.0).mean())
+    # "Blank" if almost all pixels are near-white, or there is essentially no
+    # spatial structure (a flat colour field).
+    ok = not (white_frac > 0.97 or std < 3.0)
+    report = {"frame": mid.name, "mean": round(mean, 1), "std": round(std, 2),
+              "white_frac": round(white_frac, 3), "ok": ok}
+    if ok:
+        log.info("[quality] %s mean=%.1f std=%.2f white=%.1f%% -> OK",
+                 mid.name, mean, std, white_frac * 100)
+    else:
+        log.warning("[quality] %s mean=%.1f std=%.2f white=%.1f%% -> LOOKS BLANK "
+                    "(geometry off-frame or over-exposed)",
+                    mid.name, mean, std, white_frac * 100)
+    return report
+
+
+# ---------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------
 
@@ -371,7 +428,30 @@ def main() -> int:
     log.info("device       : %s", args.device)
 
     stage_ids = args.stages or [s.id for s in spec.stages]
+    all_stage_ids = list(stage_ids)
     log.info("stages req   : %s", stage_ids)
+
+    # --- Google Drive persistence -------------------------------------------
+    # Mount Drive (Colab) and mirror the whole output tree to Drive so a
+    # disconnect/runtime reset never loses work, and a run can be resumed
+    # from another device or Drive account. We PULL any prior outputs back
+    # BEFORE resume planning so completed stages are detected.
+    drive_mirror = None
+    if not args.no_drive and (args.drive_root is not None or args.mount_drive):
+        if CS.maybe_mount_drive(log=log.info):
+            drive_root = args.drive_root or CS.default_drive_root(spec.run_id)
+            log.info("drive root   : %s", drive_root)
+            drive_mirror = CS.DriveMirror(
+                local_root=spec.output.root,
+                drive_root=drive_root,
+                log=log.info,
+                interval=args.drive_sync_interval,
+            )
+            pulled = drive_mirror.pull()
+            log.info("drive pull   : %s", pulled)
+            drive_mirror.start()
+        else:
+            log.warning("Drive requested but not available; continuing local-only.")
 
     # Resolve resume mode: --force/--resume are convenience aliases for --mode.
     if args.mode is not None:
@@ -387,6 +467,9 @@ def main() -> int:
     log.info("stages run   : %s", stage_ids)
     if not stage_ids:
         log.info("nothing to do (all requested stages already complete).")
+        write_run_state(spec, all_stage_ids, gpu=True, extra={"in_progress": False})
+        if drive_mirror is not None:
+            drive_mirror.stop(final_push=True)
         return 0
 
     if not args.skip_prepare:
@@ -415,6 +498,9 @@ def main() -> int:
     except FileNotFoundError as e:
         log.error("%s", e)
         log.info("preparation finished; rendering skipped because Blender is not available.")
+        write_run_state(spec, all_stage_ids, gpu=True, extra={"in_progress": False})
+        if drive_mirror is not None:
+            drive_mirror.stop(final_push=True)
         return 0
 
     blender_renders = P.blender_renders_root(spec)
@@ -480,6 +566,14 @@ def main() -> int:
                 log.error("[strict] stage %d: encode_mp4 returned no file", sid)
                 return 7
 
+        # Guard against the "nothing but light" failure: a frame that is
+        # almost entirely near-white / has no spatial structure means the
+        # geometry was off-frame or the scene was blown out.
+        quality = check_frame_quality(stage_dir / "rgb", log)
+        if args.strict_render and quality is not None and not quality["ok"]:
+            log.error("[strict] stage %d: render looks blank (%s)", sid, quality)
+            return 7
+
         files_by_stage[sid] = {
             "glb": Path(info["glb"]),
             "elements_json": Path(info["elements_json"]),
@@ -502,7 +596,18 @@ def main() -> int:
             "resolution": [width, height],
             "motion_blur": preset.motion_blur,
             "strict_render": bool(args.strict_render),
+            "frame_quality": quality,
         }, gpu=True)
+
+        # Persist progress to Drive immediately (per-stage), plus a portable
+        # run-state manifest so the run can be resumed from another device.
+        write_run_state(spec, all_stage_ids, gpu=True,
+                        extra={"preset": preset_name, "in_progress": True})
+        if drive_mirror is not None:
+            try:
+                drive_mirror.push()
+            except Exception as exc:  # pragma: no cover
+                log.warning("drive push after stage %d failed: %s", sid, exc)
 
         if ProgressBar:
             pb.update(1)
@@ -515,6 +620,16 @@ def main() -> int:
     manifest_path = P.dataset_manifest_path(spec, gpu=True)
     write_manifest(spec, files_by_stage, extras, manifest_path)
     log.info("manifest -> %s", manifest_path)
+
+    # Final portable run-state + Drive flush so everything is on Drive.
+    write_run_state(spec, all_stage_ids, gpu=True,
+                    extra={"preset": preset_name, "in_progress": False})
+    if drive_mirror is not None:
+        try:
+            drive_mirror.stop(final_push=True)
+            log.info("drive: final sync complete -> %s", drive_mirror.drive_root)
+        except Exception as exc:  # pragma: no cover
+            log.warning("final drive push failed: %s", exc)
     log.info("done.")
     return 0
 
