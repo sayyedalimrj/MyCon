@@ -1,100 +1,137 @@
-"""Per-stage element selection.
+"""Stage controller — filters elements by construction stage.
 
-For each stage we map the configured ``completion`` ratio to a concrete
-deterministic *subset* of elements. The selection rule for each
-category is simple and reproducible:
+Given the full layout (all elements, all categories) and a stage spec
+from ``scene.yaml``, this module decides:
 
-    keep round(completion * len(elements)) elements,
-    in their natural order.
+- Which elements are **visible** at a given stage.
+- What **finishing** material each visible element should display.
 
-Because the natural order is itself deterministic, the same subset is
-produced every time. This module also attaches the configured
-``finishing`` string to every kept element so the renderer/IFC builder
-can pick the right material.
+The logic is simple: for each category defined in the stage's
+``elements`` dict, if ``completion >= threshold`` the element is kept.
+A completion of 0.0 hides the entire category. A completion of 1.0
+shows all elements.  Fractional completions (e.g. 0.7 for partial
+masonry) show a proportional subset of elements in that category.
+
+The finishing string is attached to each kept element as
+``element.metadata["finishing"]`` so the renderer / material library
+can look it up.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import Any, Mapping
 
-from .layout import CATEGORIES, Element
+from .layout import Element
 from .scene_spec import StageSpec
 
 
-@dataclass(frozen=True)
-class StagedElement:
-    element: Element
-    completion: float
-    finishing: str
-    status: str  # "likely_completed" | "partially_observed" | "not_evidenced"
-
-
-def _status_for_completion(c: float) -> str:
-    """Map a completion ratio to the canonical Stage 9 status string.
-
-    The mapping deliberately mirrors the one in
-    ``pipeline/stage_11_schedule_variance/activity_rollup.py``::
-
-        likely_completed   = fully built
-        partially_observed = partly built / scaffolding visible
-        not_evidenced      = not built or not visible
-    """
-    if c >= 0.9999:
-        return "likely_completed"
-    if c >= 0.25:
-        return "partially_observed"
-    return "not_evidenced"
+# Minimum completion for an element to be visible.
+_VISIBLE_THRESHOLD = 0.01
 
 
 def select_for_stage(
     stage: StageSpec,
-    elements_by_cat: dict[str, list[Element]],
-) -> list[StagedElement]:
-    """Return the deterministic set of elements present at this stage."""
-    out: list[StagedElement] = []
-    for cat in CATEGORIES:
-        info = stage.elements.get(cat, {"completion": 0.0, "finishing": "raw_concrete"})
-        completion = float(info.get("completion", 0.0))
-        finishing = str(info.get("finishing", "raw_concrete"))
-        bucket = elements_by_cat.get(cat, [])
-        n_keep = int(round(completion * len(bucket)))
-        # Stable selection: take the first n_keep elements in the order
-        # they appear in the layout (which is itself deterministic).
-        kept = bucket[:n_keep]
-        # The "status" we emit depends on whether THIS specific element
-        # is fully built (kept) or not (skipped). We still want to
-        # report the un-kept elements in element_metrics so the rest of
-        # the pipeline can compute progress; we mark them not_evidenced
-        # when kept = 0 of N, partially_observed when 0 < kept < N, and
-        # likely_completed when kept = N. Per-element granularity is
-        # better than per-category granularity for the rest of the
-        # pipeline, so individual kept elements get likely_completed
-        # and individual skipped elements get not_evidenced.
-        for e in kept:
-            out.append(StagedElement(
-                element=e,
-                completion=1.0,
-                finishing=finishing,
-                status="likely_completed",
-            ))
-        # If the category is partly built (0 < c < 1) then the *missing*
-        # half is reported as partially_observed (some scaffolding is
-        # visible on site). If the category is 0% complete the missing
-        # elements are reported as not_evidenced.
-        per_elem_missing_status = (
-            "partially_observed" if 0.0 < completion < 1.0 else "not_evidenced"
-        )
-        for e in bucket[n_keep:]:
-            out.append(StagedElement(
-                element=e,
-                completion=0.0,
-                finishing=finishing,
-                status=per_elem_missing_status,
-            ))
-    return out
+    elements_by_category: dict[str, list[Element]],
+) -> list[Element]:
+    """Return the elements visible at the given stage.
+
+    Parameters
+    ----------
+    stage:
+        The stage spec (from scene.yaml), containing the ``elements``
+        dict with ``{category: {completion, finishing}}``.
+    elements_by_category:
+        The full layout grouped by category (output of
+        ``layout.elements_by_category``).
+
+    Returns
+    -------
+    A flat list of :class:`StagedElement` instances that are visible at
+    this stage.  Each element has its ``metadata["finishing"]``
+    updated to the stage-specific finishing value.
+    """
+    kept: list[StagedElement] = []
+
+    for category, cat_elements in elements_by_category.items():
+        stage_info = stage.elements.get(category)
+        if stage_info is None:
+            continue
+
+        completion = float(stage_info.get("completion", 0.0))
+        finishing = str(stage_info.get("finishing", "none"))
+
+        if completion < _VISIBLE_THRESHOLD:
+            continue
+
+        if finishing == "none":
+            continue
+
+        n_total = len(cat_elements)
+        n_keep = max(1, int(round(completion * n_total)))
+        n_keep = min(n_keep, n_total)
+
+        for elem in cat_elements[:n_keep]:
+            updated_meta = dict(elem.metadata)
+            updated_meta["finishing"] = finishing
+            updated_meta["stage_completion"] = completion
+            updated_elem = Element(
+                id=elem.id,
+                ifc_global_id=elem.ifc_global_id,
+                name=elem.name,
+                category=elem.category,
+                box_min=elem.box_min,
+                box_max=elem.box_max,
+                metadata=updated_meta,
+            )
+            kept.append(StagedElement(updated_elem))
+
+    return kept
 
 
-def kept_only(staged: Iterable[StagedElement]) -> list[StagedElement]:
-    """Return only the elements that are physically present at this stage."""
-    return [s for s in staged if s.completion >= 0.5]
+class StagedElement:
+    """Backward-compatible wrapper for the old IFC builder.
+
+    The old code expected ``s.element`` to access the underlying Element.
+    Now that select_for_stage returns Elements directly, this wrapper
+    just delegates attribute access.
+    """
+
+    def __init__(self, element: Element):
+        self.element = element
+
+    @property
+    def category(self) -> str:
+        return self.element.category
+
+    @property
+    def finishing(self) -> str:
+        return self.element.metadata.get("finishing", "raw_concrete")
+
+    @property
+    def completion(self) -> float:
+        return float(self.element.metadata.get("stage_completion", 1.0))
+
+    @property
+    def status(self) -> str:
+        c = self.completion
+        if c >= 1.0:
+            return "complete"
+        elif c >= 0.5:
+            return "partial"
+        else:
+            return "started"
+
+
+def kept_only(staged_elements) -> list:
+    """Unwrap StagedElements or pass Elements through (backward compat).
+
+    If the input is already a list of Elements, wraps them in
+    StagedElement so old callers (ifc_builder) that do `s.element`
+    still work.
+    """
+    if not staged_elements:
+        return []
+    if isinstance(staged_elements[0], StagedElement):
+        return staged_elements
+    # Wrap plain Elements
+    return [StagedElement(e) for e in staged_elements]

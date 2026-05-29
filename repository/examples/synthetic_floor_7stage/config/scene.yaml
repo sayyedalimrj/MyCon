@@ -1,337 +1,383 @@
 # =====================================================================
-# Synthetic Floor (7 Stages) - Master Configuration
-# ---------------------------------------------------------------------
-# This single file controls EVERYTHING about the example dataset:
-#   - the floor's geometric layout
-#   - the seven construction stages
+# Synthetic Floor (7 Stages) – Master Configuration
+# =====================================================================
+# This file controls EVERYTHING about the example dataset:
+#   - the floor's geometric layout (a single 22×14m room)
+#   - the seven construction stages (open frame → fully finished)
 #   - the camera and smartphone simulation parameters
 #   - the renderer settings
 #   - the output paths
 #
-# All units are SI (meters, seconds, radians) unless explicitly noted.
-# All coordinates use a right-handed system with +Z up.
-# The origin (0, 0, 0) is the south-west corner of the slab on the
-# ground level.
+# All units are SI (meters, seconds, radians) unless noted.
+# Coordinate system: right-handed, +Z up.
+# Origin (0,0,0) is the south-west corner of the slab at floor level.
 #
-# The whole pipeline is deterministic: the random_seed below controls
-# every stochastic element (camera jitter, texture noise, etc.).
+# The pipeline is 100% deterministic. random_seed controls everything.
 # =====================================================================
 
 project:
-  # Name of the dataset; appears in manifests and IFC headers.
   name: synthetic_floor_7stage
-  # Numeric run identifier - bump this if you regenerate everything.
-  run_id: "v1"
-  # Human-readable description used in IFC project header.
-  description: "Synthetic single-floor building, 7 construction stages."
-  # ALL random numbers in the pipeline derive from this seed.
+  run_id: "v2"
+  description: >
+    Single 22×14m room simulating progressive construction over 7
+    stages: from bare structural frame with open perimeters through
+    cinderblock enclosure, plastering, door/window installation,
+    to a fully finished white interior with recessed ceiling lights.
   random_seed: 42
 
 # ---------------------------------------------------------------------
 # 1) Floor geometry
 # ---------------------------------------------------------------------
-# A simple rectangular floor with a regular structural grid.
-# Length (X), Width (Y), Height (Z) in meters.
+# A single large rectangular room (no internal partitions).
+# 22m long (X, east-west), 14m wide (Y, north-south), 3.2m high.
+#
+# Perimeter walls are built progressively (cinderblock infill between
+# structural pillars). The structural frame (pillars + slab) is present
+# from stage 1.
+#
+# Wall naming convention (viewed from inside, looking outward):
+#   - SOUTH wall: front facade (Y = 0)
+#   - NORTH wall: back facade  (Y = 14)
+#   - WEST wall:  left side    (X = 0)
+#   - EAST wall:  right side   (X = 22)
+
 floor:
-  length_m: 18.0      # X axis (east-west)
-  width_m: 12.0       # Y axis (north-south)
-  height_m: 3.0       # Z axis (slab top to slab bottom of next floor)
-  slab_thickness_m: 0.20
-  exterior_wall_thickness_m: 0.25
-  interior_wall_thickness_m: 0.12
-  # Structural column grid. Columns are placed at every grid intersection.
+  length_m: 22.0          # X axis (east-west)
+  width_m: 14.0           # Y axis (north-south)
+  height_m: 3.20          # floor to ceiling
+  slab_thickness_m: 0.22  # reinforced concrete floor slab
+  exterior_wall_thickness_m: 0.20  # cinderblock infill
+  interior_wall_thickness_m: 0.0   # no internal partitions
+  # Structural grid: pillars at grid intersections
   grid:
-    bays_x: 3         # number of bays along X (=> 4 column lines)
-    bays_y: 2         # number of bays along Y (=> 3 column lines)
-    column_size_m: 0.40   # square cross-section side length
-  # Door opening (used for both exterior main door and interior doors).
+    bays_x: 4            # 5 pillar lines along X (at 0, 5.5, 11, 16.5, 22)
+    bays_y: 2            # 3 pillar lines along Y (at 0, 7, 14)
+    column_size_m: 0.45  # square cross-section
+  # Door opening (one door on the left/west wall)
   door_opening:
-    width_m: 0.90
-    height_m: 2.10
-  # Window opening (consistent for every exterior window).
+    width_m: 1.00
+    height_m: 2.20
+  # Window openings (back/north wall gets 2, right/east wall gets 1).
+  # These are LARGE openings — light pours in through them.
   window_opening:
-    width_m: 1.40
-    height_m: 1.20
-    sill_height_m: 0.95   # height of the bottom of the window above the slab top
-  # Internal layout: rectangular rooms defined by SW + NE corners (XY).
-  # The floor is partitioned into a corridor and 6 rooms.
-  # NOTE: Interior walls are inferred from these room boundaries.
-  rooms:
-    - id: ROOM_01
-      name: "Office A"
-      sw: [0.0,  0.0]
-      ne: [6.0,  5.5]
-    - id: ROOM_02
-      name: "Office B"
-      sw: [6.0,  0.0]
-      ne: [12.0, 5.5]
-    - id: ROOM_03
-      name: "Meeting Room"
-      sw: [12.0, 0.0]
-      ne: [18.0, 5.5]
-    - id: CORRIDOR
-      name: "Corridor"
-      sw: [0.0,  5.5]
-      ne: [18.0, 7.5]
-    - id: ROOM_04
-      name: "Office C"
-      sw: [0.0,  7.5]
-      ne: [6.0,  12.0]
-    - id: ROOM_05
-      name: "Office D"
-      sw: [6.0,  7.5]
-      ne: [12.0, 12.0]
-    - id: ROOM_06
-      name: "Storage"
-      sw: [12.0, 7.5]
-      ne: [18.0, 12.0]
-  # Doors connect rooms to the corridor or the outside.
-  # (room_a, room_b) gives the two rooms separated by the door.
-  # offset_m is the door's center along the shared wall (measured from
-  # the SW corner of room_a's shared edge, in meters).
+    width_m: 2.40         # 2.4m wide windows
+    height_m: 1.80        # 1.8m tall
+    sill_height_m: 0.80   # sill 80cm above floor (low sill, lots of light)
+  # No internal rooms — single open space.
+  rooms: []
+  # One door on the west (left) wall.
   doors:
     - id: DOOR_MAIN
       from: EXTERIOR
-      to: CORRIDOR
-      side: south        # south = wall at Y=0.0 (front facade); we put the main door in the corridor's SW area via the front facade
-      offset_m: 9.0      # along the corridor's south wall (front of building)
-    - id: DOOR_R01
-      from: CORRIDOR
-      to: ROOM_01
-      side: shared
-      offset_m: 3.0
-    - id: DOOR_R02
-      from: CORRIDOR
-      to: ROOM_02
-      side: shared
-      offset_m: 3.0
-    - id: DOOR_R03
-      from: CORRIDOR
-      to: ROOM_03
-      side: shared
-      offset_m: 3.0
-    - id: DOOR_R04
-      from: CORRIDOR
-      to: ROOM_04
-      side: shared
-      offset_m: 3.0
-    - id: DOOR_R05
-      from: CORRIDOR
-      to: ROOM_05
-      side: shared
-      offset_m: 3.0
-    - id: DOOR_R06
-      from: CORRIDOR
-      to: ROOM_06
-      side: shared
-      offset_m: 3.0
-  # Exterior windows. Each window sits on one of the four exterior facades.
-  # 'facade' is south (Y=0), north (Y=W), west (X=0) or east (X=L).
-  # 'offset_m' is the window center along the facade from the SW-most
-  # end (south/north => measured along X; west/east => measured along Y).
+      to: INTERIOR
+      side: west
+      offset_m: 2.5       # 2.5m from the SW corner along the west facade
+  # Three exterior windows: 2 on back (north), 1 on right (east).
   windows:
-    - { id: WIN_S1, facade: south, offset_m: 3.0  }
-    - { id: WIN_S2, facade: south, offset_m: 6.0  }
-    - { id: WIN_S3, facade: south, offset_m: 12.0 }
-    - { id: WIN_S4, facade: south, offset_m: 15.0 }
-    - { id: WIN_N1, facade: north, offset_m: 3.0  }
-    - { id: WIN_N2, facade: north, offset_m: 9.0  }
-    - { id: WIN_N3, facade: north, offset_m: 15.0 }
-    - { id: WIN_W1, facade: west,  offset_m: 6.0  }
-    - { id: WIN_E1, facade: east,  offset_m: 6.0  }
+    - { id: WIN_N1, facade: north, offset_m: 7.0  }   # north wall, centered at X=7
+    - { id: WIN_N2, facade: north, offset_m: 15.0 }   # north wall, centered at X=15
+    - { id: WIN_E1, facade: east,  offset_m: 7.0  }   # east wall, centered at Y=7
 
 # ---------------------------------------------------------------------
 # 2) Construction stages
 # ---------------------------------------------------------------------
-# All seven stages share the same geometry. What changes from one
-# stage to the next is the COMPLETION RATIO of each element category
-# and the FINISHING SURFACE of walls and floors.
+# The 7 stages simulate real construction progression for a single
+# room going from bare structural frame to a fully finished interior.
 #
-# completion: 0.0 means the element is invisible at this stage,
-#             1.0 means it is fully present.
-# finishing : a string identifier picked up by the material library:
-#             "raw_concrete" | "rough_plaster" | "fine_plaster" | "painted"
-# Stage 1 = bare structure; Stage 7 = fully completed interior.
+# Key progression:
+#   Stage 1: bare structure (columns + slab) + partial sill masonry
+#   Stage 2: back (north) wall cinderblock with 2 window openings
+#   Stage 3: left (west) wall partial masonry + rough door opening
+#   Stage 4: full perimeter enclosure (all cinderblock walls done)
+#   Stage 5: partial rendering/plastering (left wall lower half)
+#   Stage 6: full left wall plaster + metal door installed
+#   Stage 7: all walls plastered + painted white, windows installed,
+#             finished ceiling with recessed lights
+#
+# Categories redefined for this room:
+#   slab:           floor slab (always present from stage 1)
+#   columns:        structural pillars (always present)
+#   ceiling_slab:   raw concrete ceiling (visible stages 1-6, hidden stage 7)
+#   ceiling_finish: finished dropped ceiling (stage 7 only)
+#   north_wall:     back wall cinderblock infill
+#   east_wall:      right wall cinderblock infill
+#   west_wall:      left wall cinderblock infill
+#   south_wall:     front wall cinderblock infill (never gets windows)
+#   sill_north:     low masonry sill on north wall (stage 1 only)
+#   sill_east:      low masonry sill on east wall (stage 1 only)
+#   windows:        window frame + glass (stage 7 only)
+#   door:           metal door panel (stage 6-7)
+#   plaster_left_lower:   half-height plaster on left wall (stage 5+)
+#   plaster_left_upper:   upper plaster on left wall (stage 6+)
+#   plaster_other:        plaster on remaining walls (stage 7)
+#   ceiling_lights: recessed square fixtures (stage 7 only)
+#   overhead_pipes: visible pipes under raw ceiling (stages 1-6)
+
 stages:
   - id: 1
-    name: "Structural Skeleton"
-    description: "Slab + columns only."
+    name: "Structural Frame + Sills"
+    description: >
+      Exposed RC skeleton: slab, ceiling slab, pillars, overhead pipes.
+      Partial low masonry sills on back (north) and right (east) walls
+      (~1m high). Left and south perimeters completely open.
     elements:
-      slab:           { completion: 1.0, finishing: raw_concrete }
-      columns:        { completion: 1.0, finishing: raw_concrete }
-      exterior_walls: { completion: 0.0, finishing: raw_concrete }
-      interior_walls: { completion: 0.0, finishing: raw_concrete }
-      windows:        { completion: 0.0, finishing: raw_concrete }
-      doors:          { completion: 0.0, finishing: raw_concrete }
-      ceiling:        { completion: 0.0, finishing: raw_concrete }
-      floor_finish:   { completion: 0.0, finishing: raw_concrete }
-      baseboards:     { completion: 0.0, finishing: raw_concrete }
-      fixtures:       { completion: 0.0, finishing: raw_concrete }
+      slab:               { completion: 1.0, finishing: raw_concrete }
+      columns:            { completion: 1.0, finishing: raw_concrete }
+      ceiling_slab:       { completion: 1.0, finishing: raw_concrete }
+      overhead_pipes:     { completion: 1.0, finishing: raw_concrete }
+      sill_north:         { completion: 1.0, finishing: cinderblock }
+      sill_east:          { completion: 1.0, finishing: cinderblock }
+      north_wall:         { completion: 0.0, finishing: cinderblock }
+      east_wall:          { completion: 0.0, finishing: cinderblock }
+      west_wall:          { completion: 0.0, finishing: cinderblock }
+      south_wall:         { completion: 0.0, finishing: cinderblock }
+      windows:            { completion: 0.0, finishing: none }
+      door:               { completion: 0.0, finishing: none }
+      ceiling_finish:     { completion: 0.0, finishing: none }
+      ceiling_lights:     { completion: 0.0, finishing: none }
+      plaster_left_lower: { completion: 0.0, finishing: none }
+      plaster_left_upper: { completion: 0.0, finishing: none }
+      plaster_other:      { completion: 0.0, finishing: none }
 
   - id: 2
-    name: "Partial Exterior Walls"
-    description: "About half of the exterior masonry has been built."
+    name: "Back Wall Framing"
+    description: >
+      North (back) wall cinderblock laid floor-to-ceiling between pillars,
+      creating 2 distinct window openings. Sills are now incorporated
+      into the full-height wall. East sill unchanged. Left & south open.
     elements:
-      slab:           { completion: 1.0, finishing: raw_concrete }
-      columns:        { completion: 1.0, finishing: raw_concrete }
-      exterior_walls: { completion: 0.5, finishing: raw_concrete }
-      interior_walls: { completion: 0.0, finishing: raw_concrete }
-      windows:        { completion: 0.0, finishing: raw_concrete }
-      doors:          { completion: 0.0, finishing: raw_concrete }
-      ceiling:        { completion: 0.0, finishing: raw_concrete }
-      floor_finish:   { completion: 0.0, finishing: raw_concrete }
-      baseboards:     { completion: 0.0, finishing: raw_concrete }
-      fixtures:       { completion: 0.0, finishing: raw_concrete }
+      slab:               { completion: 1.0, finishing: raw_concrete }
+      columns:            { completion: 1.0, finishing: raw_concrete }
+      ceiling_slab:       { completion: 1.0, finishing: raw_concrete }
+      overhead_pipes:     { completion: 1.0, finishing: raw_concrete }
+      sill_north:         { completion: 0.0, finishing: cinderblock }  # absorbed into full wall
+      sill_east:          { completion: 1.0, finishing: cinderblock }
+      north_wall:         { completion: 1.0, finishing: cinderblock }
+      east_wall:          { completion: 0.0, finishing: cinderblock }
+      west_wall:          { completion: 0.0, finishing: cinderblock }
+      south_wall:         { completion: 0.0, finishing: cinderblock }
+      windows:            { completion: 0.0, finishing: none }
+      door:               { completion: 0.0, finishing: none }
+      ceiling_finish:     { completion: 0.0, finishing: none }
+      ceiling_lights:     { completion: 0.0, finishing: none }
+      plaster_left_lower: { completion: 0.0, finishing: none }
+      plaster_left_upper: { completion: 0.0, finishing: none }
+      plaster_other:      { completion: 0.0, finishing: none }
 
   - id: 3
-    name: "Full Exterior Walls + Window Openings"
-    description: "All exterior walls built; window cut-outs visible."
+    name: "Left Wall Masonry Initiation"
+    description: >
+      West (left) wall cinderblock begins between pillars. Defines a
+      rough doorway opening on far left. Masonry is uneven/incomplete
+      at top. East sill still low, south still open.
     elements:
-      slab:           { completion: 1.0, finishing: raw_concrete }
-      columns:        { completion: 1.0, finishing: raw_concrete }
-      exterior_walls: { completion: 1.0, finishing: raw_concrete }
-      interior_walls: { completion: 0.0, finishing: raw_concrete }
-      windows:        { completion: 0.0, finishing: raw_concrete }
-      doors:          { completion: 0.0, finishing: raw_concrete }
-      ceiling:        { completion: 0.0, finishing: raw_concrete }
-      floor_finish:   { completion: 0.0, finishing: raw_concrete }
-      baseboards:     { completion: 0.0, finishing: raw_concrete }
-      fixtures:       { completion: 0.0, finishing: raw_concrete }
+      slab:               { completion: 1.0, finishing: raw_concrete }
+      columns:            { completion: 1.0, finishing: raw_concrete }
+      ceiling_slab:       { completion: 1.0, finishing: raw_concrete }
+      overhead_pipes:     { completion: 1.0, finishing: raw_concrete }
+      sill_north:         { completion: 0.0, finishing: cinderblock }
+      sill_east:          { completion: 1.0, finishing: cinderblock }
+      north_wall:         { completion: 1.0, finishing: cinderblock }
+      east_wall:          { completion: 0.0, finishing: cinderblock }
+      west_wall:          { completion: 0.7, finishing: cinderblock }  # partial height
+      south_wall:         { completion: 0.0, finishing: cinderblock }
+      windows:            { completion: 0.0, finishing: none }
+      door:               { completion: 0.0, finishing: none }
+      ceiling_finish:     { completion: 0.0, finishing: none }
+      ceiling_lights:     { completion: 0.0, finishing: none }
+      plaster_left_lower: { completion: 0.0, finishing: none }
+      plaster_left_upper: { completion: 0.0, finishing: none }
+      plaster_other:      { completion: 0.0, finishing: none }
 
   - id: 4
-    name: "Partial Interior Walls + Door Openings"
-    description: "Half of the interior partitions are erected with door openings."
+    name: "Perimeter Enclosure Complete"
+    description: >
+      All four walls completed floor-to-ceiling in raw cinderblock.
+      All rough openings finalized: 1 door (west), 2 windows (north),
+      1 large window (east). Room is fully enclosed but raw/unfinished.
     elements:
-      slab:           { completion: 1.0, finishing: raw_concrete }
-      columns:        { completion: 1.0, finishing: raw_concrete }
-      exterior_walls: { completion: 1.0, finishing: rough_plaster }
-      interior_walls: { completion: 0.5, finishing: raw_concrete }
-      windows:        { completion: 0.0, finishing: raw_concrete }
-      doors:          { completion: 0.0, finishing: raw_concrete }
-      ceiling:        { completion: 0.0, finishing: raw_concrete }
-      floor_finish:   { completion: 0.0, finishing: raw_concrete }
-      baseboards:     { completion: 0.0, finishing: raw_concrete }
-      fixtures:       { completion: 0.0, finishing: raw_concrete }
+      slab:               { completion: 1.0, finishing: raw_concrete }
+      columns:            { completion: 1.0, finishing: raw_concrete }
+      ceiling_slab:       { completion: 1.0, finishing: raw_concrete }
+      overhead_pipes:     { completion: 1.0, finishing: raw_concrete }
+      sill_north:         { completion: 0.0, finishing: cinderblock }
+      sill_east:          { completion: 0.0, finishing: cinderblock }  # absorbed into east_wall
+      north_wall:         { completion: 1.0, finishing: cinderblock }
+      east_wall:          { completion: 1.0, finishing: cinderblock }
+      west_wall:          { completion: 1.0, finishing: cinderblock }
+      south_wall:         { completion: 1.0, finishing: cinderblock }
+      windows:            { completion: 0.0, finishing: none }
+      door:               { completion: 0.0, finishing: none }
+      ceiling_finish:     { completion: 0.0, finishing: none }
+      ceiling_lights:     { completion: 0.0, finishing: none }
+      plaster_left_lower: { completion: 0.0, finishing: none }
+      plaster_left_upper: { completion: 0.0, finishing: none }
+      plaster_other:      { completion: 0.0, finishing: none }
 
   - id: 5
-    name: "Full Interior Walls + Doors Partially Installed"
-    description: "All partitions are up; about half of the doors are installed; some glass."
+    name: "Partial Rendering"
+    description: >
+      A base coat of smooth white plaster applied to the LOWER HALF
+      of the west (left) wall only. All other walls, ceiling, and
+      right/back walls remain raw cinderblock.
     elements:
-      slab:           { completion: 1.0, finishing: raw_concrete }
-      columns:        { completion: 1.0, finishing: rough_plaster }
-      exterior_walls: { completion: 1.0, finishing: rough_plaster }
-      interior_walls: { completion: 1.0, finishing: rough_plaster }
-      windows:        { completion: 0.5, finishing: rough_plaster }
-      doors:          { completion: 0.5, finishing: raw_wood }
-      ceiling:        { completion: 0.5, finishing: raw_concrete }
-      floor_finish:   { completion: 0.0, finishing: raw_concrete }
-      baseboards:     { completion: 0.0, finishing: raw_concrete }
-      fixtures:       { completion: 0.0, finishing: raw_concrete }
+      slab:               { completion: 1.0, finishing: raw_concrete }
+      columns:            { completion: 1.0, finishing: raw_concrete }
+      ceiling_slab:       { completion: 1.0, finishing: raw_concrete }
+      overhead_pipes:     { completion: 1.0, finishing: raw_concrete }
+      sill_north:         { completion: 0.0, finishing: cinderblock }
+      sill_east:          { completion: 0.0, finishing: cinderblock }
+      north_wall:         { completion: 1.0, finishing: cinderblock }
+      east_wall:          { completion: 1.0, finishing: cinderblock }
+      west_wall:          { completion: 1.0, finishing: cinderblock }
+      south_wall:         { completion: 1.0, finishing: cinderblock }
+      windows:            { completion: 0.0, finishing: none }
+      door:               { completion: 0.0, finishing: none }
+      ceiling_finish:     { completion: 0.0, finishing: none }
+      ceiling_lights:     { completion: 0.0, finishing: none }
+      plaster_left_lower: { completion: 1.0, finishing: plaster_base }
+      plaster_left_upper: { completion: 0.0, finishing: none }
+      plaster_other:      { completion: 0.0, finishing: none }
 
   - id: 6
-    name: "Rough Finishing"
-    description: "Plaster + ceiling done; partial paint and floor finish."
+    name: "Full Left Wall Render + Door"
+    description: >
+      White render completed floor-to-ceiling on the west (left) wall.
+      A solid grey metal door is installed in the doorway. Back and
+      right walls remain raw cinderblock. Ceiling raw concrete + pipes.
     elements:
-      slab:           { completion: 1.0, finishing: fine_plaster }
-      columns:        { completion: 1.0, finishing: fine_plaster }
-      exterior_walls: { completion: 1.0, finishing: fine_plaster }
-      interior_walls: { completion: 1.0, finishing: fine_plaster }
-      windows:        { completion: 1.0, finishing: fine_plaster }
-      doors:          { completion: 0.75, finishing: raw_wood }
-      ceiling:        { completion: 1.0, finishing: fine_plaster }
-      floor_finish:   { completion: 0.5, finishing: tile }
-      baseboards:     { completion: 0.5, finishing: raw_wood }
-      fixtures:       { completion: 0.25, finishing: painted }
+      slab:               { completion: 1.0, finishing: raw_concrete }
+      columns:            { completion: 1.0, finishing: raw_concrete }
+      ceiling_slab:       { completion: 1.0, finishing: raw_concrete }
+      overhead_pipes:     { completion: 1.0, finishing: raw_concrete }
+      sill_north:         { completion: 0.0, finishing: cinderblock }
+      sill_east:          { completion: 0.0, finishing: cinderblock }
+      north_wall:         { completion: 1.0, finishing: cinderblock }
+      east_wall:          { completion: 1.0, finishing: cinderblock }
+      west_wall:          { completion: 1.0, finishing: cinderblock }
+      south_wall:         { completion: 1.0, finishing: cinderblock }
+      windows:            { completion: 0.0, finishing: none }
+      door:               { completion: 1.0, finishing: metal_grey }
+      ceiling_finish:     { completion: 0.0, finishing: none }
+      ceiling_lights:     { completion: 0.0, finishing: none }
+      plaster_left_lower: { completion: 1.0, finishing: painted_white }
+      plaster_left_upper: { completion: 1.0, finishing: painted_white }
+      plaster_other:      { completion: 0.0, finishing: none }
 
   - id: 7
-    name: "Fully Completed Interior"
-    description: "Painted, doors installed, glazing in, floor and baseboards complete."
+    name: "Final Finishes"
+    description: >
+      All remaining cinderblock walls plastered and painted white.
+      White-framed glazed windows installed in all 3 openings.
+      Finished flat white ceiling with 6 recessed square light fixtures.
+      Overhead pipes concealed. Metal door remains. Floor unchanged.
     elements:
-      slab:           { completion: 1.0, finishing: painted }
-      columns:        { completion: 1.0, finishing: painted }
-      exterior_walls: { completion: 1.0, finishing: painted }
-      interior_walls: { completion: 1.0, finishing: painted }
-      windows:        { completion: 1.0, finishing: painted }
-      doors:          { completion: 1.0, finishing: painted_wood }
-      ceiling:        { completion: 1.0, finishing: painted }
-      floor_finish:   { completion: 1.0, finishing: tile }
-      baseboards:     { completion: 1.0, finishing: painted_wood }
-      fixtures:       { completion: 1.0, finishing: painted }
+      slab:               { completion: 1.0, finishing: raw_concrete }
+      columns:            { completion: 1.0, finishing: painted_white }
+      ceiling_slab:       { completion: 0.0, finishing: none }          # hidden by ceiling_finish
+      overhead_pipes:     { completion: 0.0, finishing: none }          # hidden by ceiling
+      sill_north:         { completion: 0.0, finishing: none }
+      sill_east:          { completion: 0.0, finishing: none }
+      north_wall:         { completion: 1.0, finishing: painted_white }
+      east_wall:          { completion: 1.0, finishing: painted_white }
+      west_wall:          { completion: 1.0, finishing: painted_white }
+      south_wall:         { completion: 1.0, finishing: painted_white }
+      windows:            { completion: 1.0, finishing: window_glazed }
+      door:               { completion: 1.0, finishing: metal_grey }
+      ceiling_finish:     { completion: 1.0, finishing: painted_white }
+      ceiling_lights:     { completion: 1.0, finishing: light_fixture }
+      plaster_left_lower: { completion: 1.0, finishing: painted_white }
+      plaster_left_upper: { completion: 1.0, finishing: painted_white }
+      plaster_other:      { completion: 1.0, finishing: painted_white }
 
 # ---------------------------------------------------------------------
 # 3) Camera and smartphone simulation
 # ---------------------------------------------------------------------
 camera:
-  # Output video resolution (16:9). 640x360 keeps render time
-  # manageable on CPU while still looking convincingly HD. Increase to
-  # 960x540, 1280x720 or 1920x1080 for higher fidelity at the cost of
-  # much longer render time. (At 640x360 a full 7-stage run takes
-  # roughly 8-15 minutes on a modern laptop CPU.)
   width_px: 640
   height_px: 360
   fps: 30
-  # ~28mm-equivalent on full frame. 65 deg horizontal FOV is typical
-  # of modern smartphone main cameras.
-  horizontal_fov_deg: 65.0
-  # Mild barrel distortion (Brown-Conrady k1, k2). A slightly negative
-  # k1 produces the soft outward bend smartphones usually show after
-  # de-distortion.
-  k1: -0.04
-  k2: 0.01
-  # Camera ergonomic height when held by a walking person (eye / chest).
+  # ~26mm equivalent on full-frame (typical smartphone main camera)
+  horizontal_fov_deg: 72.0
+  k1: -0.03
+  k2: 0.008
+  # Camera held at chest height by a walking person
   hold_height_m: 1.55
-  # Per-stage clip duration (seconds). Total frames = duration * fps.
-  duration_per_stage_sec: 3.0
-  # Path planner settings.
-  walk_speed_m_s: 0.85          # comfortable indoor walking speed
-  look_at_height_m: 1.55        # height of the LookAt target
+  # Clip duration per stage for CPU pipeline (GPU uses --frames flag)
+  duration_per_stage_sec: 4.0
+  walk_speed_m_s: 0.70        # slow walk inside a construction site
+  look_at_height_m: 1.50
   hand_jitter:
-    translation_amplitude_m: 0.012   # small bobbing on each axis
-    rotation_amplitude_deg: 0.7      # small yaw/pitch/roll wobble
-    breathing_period_s: 3.5          # slow breathing oscillation
-    walking_period_s: 0.55           # gait step period
-    walking_pitch_amp_deg: 0.6       # gait pitch
-    walking_yaw_amp_deg: 0.4         # gait yaw
-    walking_z_amp_m: 0.012           # gait vertical bob
+    translation_amplitude_m: 0.014
+    rotation_amplitude_deg: 0.8
+    breathing_period_s: 3.5
+    walking_period_s: 0.58
+    walking_pitch_amp_deg: 0.6
+    walking_yaw_amp_deg: 0.4
+    walking_z_amp_m: 0.014
   exposure:
-    target_brightness: 0.45     # mean target brightness (0..1)
-    adapt_speed: 0.10           # 0..1, how fast the meter reacts
+    target_brightness: 0.45
+    adapt_speed: 0.10
     max_ev_change_per_frame: 0.06
   noise:
-    iso_equivalent: 200.0       # higher = more noise
-    read_noise_sigma: 0.012     # per-channel additive Gaussian
-    photon_scale: 1.0           # multiplier on shot noise
+    iso_equivalent: 250.0
+    read_noise_sigma: 0.014
+    photon_scale: 1.0
   motion_blur:
-    shutter_fraction: 0.5       # shutter open for 1/(2*fps) seconds
-    samples: 4                  # number of sub-samples per output frame
+    shutter_fraction: 0.5
+    samples: 4
   rolling_shutter:
-    # A simple top-to-bottom row delay producing slight skew when the
-    # camera pans quickly. 0.0 disables it.
     row_delay_sec: 0.001
 
 # ---------------------------------------------------------------------
-# 4) Renderer
+# 4) Renderer (CPU software rasterizer fallback)
 # ---------------------------------------------------------------------
 renderer:
-  # The repo-internal Python software rasterizer is the default. It
-  # works in any environment (no Blender, no GPU). Feel free to swap
-  # the backend by editing scripts/run_generate.py.
   backend: software_rasterizer
-  ambient_light: 0.18
+  ambient_light: 0.22
   sun_azimuth_deg: 135.0
   sun_elevation_deg: 38.0
   sun_color: [1.00, 0.96, 0.88]
   sky_color: [0.55, 0.70, 0.95]
   shadow_softness: 0.25
-  vignette_strength: 0.22
-  # Render textured material samples for spot inspection. Optional.
+  vignette_strength: 0.18
   emit_material_samples: true
 
 # ---------------------------------------------------------------------
-# 5) Output paths
+# 5) Blender GPU renderer settings
 # ---------------------------------------------------------------------
-# All output paths are RELATIVE to the example folder. The runner
-# resolves them against examples/synthetic_floor_7stage/output.
+# These are defaults used by blender_gpu_renderer.py. They can be
+# overridden via CLI flags (--samples, --resolution, etc.).
+blender:
+  # Cycles light path bounces — CRITICAL for interior rendering.
+  # Interior scenes need high bounces so light from the sky/sun can
+  # bounce off walls and illuminate the whole room.
+  max_bounces: 12
+  diffuse_bounces: 8
+  glossy_bounces: 4
+  transmission_bounces: 12
+  transparent_max_bounces: 12
+  volume_bounces: 0
+  # Exposure: slightly bright to simulate smartphone auto-exposure
+  # in a construction environment (cameras overexpose slightly indoors).
+  exposure: 1.2
+  # Sun settings
+  sun_energy: 5.0
+  sun_angle_deg: 0.55
+  # Sky texture strength
+  sky_strength: 1.2
+  # Light portals at window openings (critical for noise reduction)
+  use_light_portals: true
+  # Interior ceiling lights for stage 7
+  ceiling_light_energy: 80.0       # watts per fixture
+  ceiling_light_color: [1.0, 0.97, 0.92]  # warm white
+  ceiling_light_count: 6
+  # Denoiser
+  denoiser: OPENIMAGEDENOISE
+
+# ---------------------------------------------------------------------
+# 6) Output paths
+# ---------------------------------------------------------------------
 output:
   root: output
   bim_dir: bim
