@@ -1,174 +1,174 @@
 # Colab Workflow — Running MyCon on Google Colab
 
 This document is the user-facing companion to `MyCon_Colab_Pipeline.ipynb`
-(at the repo root) and the helper package under `colab/`. It is aimed at
-non-experts who want to run the pipeline against their own video without
-deploying the full server stack.
+(at the repo root) and the helper package under `colab/`. It targets users who
+want to run the pipeline against their own video on a Colab GPU, with outputs
+that **survive disconnects** and runs that **resume automatically**.
 
 ## TL;DR
 
 1. Open `MyCon_Colab_Pipeline.ipynb` in Colab.
 2. Set **Runtime → GPU (T4 or better)** and **High-RAM** if available.
-3. Run cells **0 → 4** in order. The Gradio UI will launch in cell 4.
+3. Run cells **0 → 4** in order. Cell 2 installs everything; cell 3 mounts Drive
+   and starts the background sync daemon; cell 4 launches the Gradio UI.
 4. In the Gradio UI:
-   1. Tab **1. Project & Inputs**: pick a run id, mount Drive, upload a
-      video (and optional IFC + schedule), then click **Save inputs &
-      write effective config**.
-   2. Tab **2. Run Pipeline**: click **Run Colab-safe default subset**
-      to verify everything works end-to-end (Stages 1, 2, 7.5, 7.6, 11).
-   3. Tab **3. Artifacts & Downloads**: refresh the artifact list and
-      build a zip bundle for Drive.
-5. After the safe run succeeds, you can opt into heavier stages
-   (Stage 3 sparse, 5 dense, 7 cleanup, 8 BIM) one by one — each one is
-   independent and can be re-run.
+   1. **1. Project & Inputs**: pick a **Run ID** and an **execution profile**,
+      upload a video (and optional IFC + schedule), click **Save inputs**.
+   2. **4. Environment, Models & Cleanup** (optional): click **Provision real
+      local VLM** to install Ollama + Qwen-VL so Stages 7.5/10 use real vision.
+   3. **2. Run Pipeline**: tick **Resume**, then click **Run FULL pipeline**
+      (or **Run Colab-safe subset** for a quick sanity check).
+   4. **3. Artifacts & Downloads**: refresh and build a zip bundle.
+5. If Colab disconnects, re-run cells 1–4 with the **same Run ID** — finished
+   stages are skipped and the run continues.
 
 ## Architecture
 
-The notebook itself is intentionally thin: it just installs deps,
-mounts Drive, sets up the project tree, and launches `colab.ui.build_ui`.
-All real work is dispatched as subprocesses to the existing pipeline
-runners.
+The notebook is thin: it bootstraps the environment, mounts Drive, sets up the
+project tree, and launches `colab.ui.build_ui` (or the headless API). All real
+work is dispatched as subprocesses to the existing pipeline runners.
 
 ```
-   ┌──────────────────────────┐
-   │  MyCon_Colab_Pipeline.ipynb  │  (cells 0–8)
-   └──────────────┬───────────┘
+   ┌──────────────────────────────┐
+   │  MyCon_Colab_Pipeline.ipynb       │  (cells 0–8)
+   └──────────────┬───────────────┘
                   │ uses
                   ▼
-   ┌──────────────────────────┐
-   │  colab/ (this package)        │
-   │   environment / drive /       │
-   │   config_manager / log /      │
-   │   stage_runner / artifacts /  │
-   │   cleanup / ui                │
-   └──────────────┬───────────┘
-                  │ subprocess: python -m pipeline.stage_*  /  scripts/run_stage.py
+   ┌──────────────────────────────┐
+   │  colab/ (this package)            │
+   │   environment / drive / sync /    │
+   │   checkpoint / models /           │
+   │   config_manager / log_capture /  │
+   │   stage_runner / artifacts /      │
+   │   cleanup / ui                    │
+   └──────────────┬───────────────┘
+                  │ subprocess: scripts/run_stage.py  /  python -m pipeline.stage_*
                   ▼
-   ┌──────────────────────────┐
-   │  pipeline.stage_*       │  (unchanged)
-   └──────────────────────────┘
+   ┌──────────────────────────────┐
+   │  pipeline.stage_*           │  (unchanged)
+   └──────────────────────────────┘
 ```
+
+## Execution profiles
+
+Pick one on Tab 1 (or set `PROFILE` in the headless cells):
+
+| Profile | Use when |
+| --- | --- |
+| `colab_safe` | First run / free T4. Bounded memory, mock VLM, no training; always succeeds. |
+| `colab_gpu` *(default)* | Full single-GPU reconstruction (real dense + cleanup); real VLM if provisioned. |
+| `production` | A100/L4 high-RAM or on-prem GPU; server-grade settings, no artificial caps. |
 
 ## Persistent project layout on Drive
 
-For run id `<RID>` (default: `YYYY-MM-DD_HHMMSS_colab`):
+For run id `<RID>`:
 
 ```
 MyDrive/MyCon_Colab/projects/<RID>/
-    configs/active.yaml          ← the YAML config every stage reads
-    uploads/                     ← raw uploads (video.mp4, model.ifc, schedule.csv)
-    data/                        ← pipeline data tree (frames, sfm, dense, clean, bim, ...)
-    runs/<RID>/reports/          ← per-stage JSON summaries (sparse_stats.json, dense_summary.json, ...)
-    runs/<RID>/logs/             ← per-stage .log files (mirrored stdout/stderr)
-    exports/                     ← zipped bundles built from the UI Tab 3
+    configs/active.yaml                  ← effective config every stage reads
+    uploads/                             ← raw uploads (video.mp4, model.ifc, schedule.csv)
+    data/                                ← pipeline data tree (frames, sfm, dense, clean, bim, ...)
+    runs/<RID>/reports/run_state.json    ← checkpoint/resume manifest
+    runs/<RID>/reports/*.json            ← per-stage JSON summaries
+    runs/<RID>/logs/*.log                ← per-stage subprocess logs (mirrored line-by-line)
+    exports/                             ← zipped bundles built from the UI Tab 3
+    model_cache/                         ← persistent models (Ollama via OLLAMA_MODELS)
+    hf_cache/                            ← persistent Hugging Face cache (mirrored from local scratch)
 ```
 
-Everything the pipeline writes is on Drive, so disconnects only cost
-you wall-clock time on the currently-running stage.
+Everything the pipeline writes is on Drive, so disconnects only cost wall-clock
+time on the currently-running stage. Heavy caches are written to a fast local
+scratch (`/content/mycon_scratch/<RID>/`) and mirrored to Drive every ~2 min by
+`colab.sync.DriveSyncManager`, which also re-mounts Drive if the FUSE mount goes
+stale after a reconnect.
+
+## Checkpoint / resume
+
+`colab.checkpoint.CheckpointManager` writes `run_state.json` atomically after
+every stage transition (running → ok/failed/skipped). On resume, a stage is
+skipped only when:
+
+1. its recorded status is `ok` (or `skipped`), **and**
+2. its declared output artifacts still exist on Drive.
+
+So a manifest that says "ok" but whose artifacts were lost/partially-synced
+forces a clean re-run of that stage. To resume:
+
+- **Same machine after a disconnect:** re-run the notebook with the **same**
+  `RUN_ID`.
+- **Another device / Drive account:** copy or share
+  `MyDrive/MyCon_Colab/projects/<RID>/` to the new Drive, set the same `RUN_ID`,
+  and run. The config and manifest travel with the folder.
+
+Per-stage **retries** (default 2 attempts with backoff) handle transient
+failures (e.g. a flaky download) without manual intervention.
 
 ## Effective config — what we override
 
-We always start from `configs/site01.yaml` (the canonical, fully
-validated config) and then apply, in order:
+We always start from `configs/site01.yaml` (the canonical, validated config),
+then apply, in order:
 
-1. **Mandatory project-level rewrites**
-   - `project.name` ← run id
-   - `project.run_id` ← run id
-   - `project.root` ← `<project_root>` on Drive
-   - `paths.*_report_json` etc. → re-anchored to `runs/<run_id>/...`
-2. **Inputs** (only when the user provides them)
-   - `inputs.video`, `inputs.ifc`, `inputs.schedule`
-3. **Colab-safe defaults** (when the *Apply Colab-safe defaults*
-   checkbox is on)
-   - `dense.max_image_size: 1024`, `dense.fail_on_quality_gate: false`,
-     `dense.require_cuda: false`
-   - `da3.provider: precomputed`, `da3.fail_if_required_but_unavailable: false`
-   - `vlm_qa.provider: mock`, `copilot.vlm.provider: mock`,
-     `copilot.vlm.fallback_to_mock_when_unavailable: true`
-   - `cams_gs.execute_training: false`
-   - `cleanup.fail_on_quality_gate: false`,
-     `bim.fail_on_low_registration_quality: false`
-4. **Free-form user overrides** — a YAML mapping from the UI textbox.
-   Deep-merged over the result of steps 1–3.
+1. **Mandatory project-level rewrites** — `project.name/run_id/root`, report
+   paths re-anchored to `runs/<RID>/...`.
+2. **Inputs** — `inputs.video/ifc/schedule` (only when provided).
+3. **Execution profile** — `colab_safe` / `colab_gpu` / `production`.
+4. **Programmatic overrides** — e.g. the real-VLM wiring from
+   `models.provision_vlm` (switches `copilot.vlm.provider` to `ollama_local`).
+5. **Free-form user overrides** — a YAML mapping from the UI textbox.
 
-The final config is written to `configs/active.yaml` on Drive and
-validated through `pipeline.common.config.load_config()` so a syntactic
-or semantic error is reported before any stage actually runs.
+The final config is written to `configs/active.yaml` and validated through
+`pipeline.common.config.load_config()` before any stage runs.
 
-## Stage catalog & safe defaults
+## Automated dependency & model setup
 
-See `colab/README.md` for the full table. The Gradio "Run Colab-safe
-default subset" button runs:
+- `environment.bootstrap_environment()` installs apt packages (ffmpeg, colmap,
+  zstd, aria2, ...), pins `numpy<2`, installs `requirements-core` +
+  `requirements-da3` + the UI deps (all with retries), and validates each layer.
+- `models.provision_vlm()` installs Ollama, starts the server with
+  `OLLAMA_MODELS` on Drive (so the model is reused after a reconnect), pulls a
+  Qwen-VL model, and returns the config overrides for the real local VLM.
+- `models.ensure_hf_model()` pre-downloads Hugging Face snapshots (resumable)
+  into the Drive-backed cache.
 
+## Stages
+
+The Gradio "Run Colab-safe subset" button runs:
 `stage_01_ingest → stage_02_keyframes → stage_07_5_vlm_qa →
 stage_07_6_viewer_export → stage_11_schedule_variance`.
 
-These five stages have no external dependencies (no real BIM, no
-metric anchors, no real VLM endpoint, no GPU pressure beyond the
-ingest/keyframes layer) so they always succeed on free Colab.
+"Run FULL pipeline" runs the canonical end-to-end ordering (Stages 1 → 11).
+Stages that lack inputs (no real BIM, no anchors) exit 0 with a `skipped`
+marker, so the full run is safe; heavy SfM/dense stages need a GPU runtime. Any
+hand-picked subset is auto-reordered into canonical order before running.
 
-For a richer run, add stages in this order:
+## Logs & progress
 
-- `stage_03_colmap` (sparse SfM, GPU recommended).
-- `stage_04_refinement` (cheap once Stage 3 succeeded).
-- `stage_05_dense` (cap `dense.max_image_size: 800` first time).
-- `stage_07_cleanup` (Open3D cleanup + mesh + planes).
-- `stage_08_metric_alignment` / `stage_08_bim_registration` /
-  `stage_09_progress` — only when you have a real BIM and metric or
-  visual anchors.
-- `stage_10_copilot` — copilot ask. The UI exposes a `question` textbox.
-- `stage_06_da3_assist` — only when you actually have DA3 depth maps.
-
-## Logs
-
-Three places will show progress:
-
-1. The **Live log** panel on Tab 2 of the Gradio UI (auto-refreshes
-   every 3 s via `gr.Timer`).
-2. The notebook's stdout if you used the manual cells in Section 5.
-3. `<project_root>/runs/<run_id>/logs/<stage_key>.log` on Drive — the
-   exact subprocess stdout/stderr, mirrored line by line.
-
-A `runs/<run_id>/reports/colab_run_status.json` checkpoint is written
-after every stage so a session that disconnects mid-run can be inspected
-("how far did we get?") without re-running.
+1. The **Live log** panel on Tab 2 (auto-refreshes every 3 s).
+2. `runs/<RID>/logs/<stage>.log` on Drive — exact subprocess stdout/stderr.
+3. `runs/<RID>/reports/run_state.json` — machine-readable per-stage status
+   (also rendered in the Tab 2 "Stage status" table).
 
 ## Memory hygiene
 
-`colab.cleanup.free_memory()` runs after every stage:
-
-```python
-gc.collect()
-if torch.cuda.is_available():
-    torch.cuda.synchronize()
-    torch.cuda.empty_cache()
-    torch.cuda.ipc_collect()
-```
-
-The Tab 4 *Free GPU/CPU memory now* button calls the same function on
-demand. Use it before launching Stage 5 / 7 / 8 if Tab 4's *Show disk
-usage* shows residual GPU usage from a prior stage.
+`colab.cleanup.free_memory()` runs after every stage (`gc.collect()` +
+`torch.cuda.empty_cache()` + `ipc_collect()`), and the Tab 4 buttons let you
+free memory or force a Drive sync on demand.
 
 ## Known caveats
 
-- **Free Colab disconnects after ~12 h.** Re-run cells 0–4 in a fresh
-  session and continue; outputs are on Drive.
-- **`opencv-python-headless` vs `opencv-python`**: the requirements
-  pin `opencv-python-headless` to keep installs minimal; it is enough
-  for the Stage 1/2 frame quality and Stage 7 ops the pipeline uses.
-- **Stage 5 (dense) on free T4** can OOM at the default
-  `max_image_size: 1024`. Drop to `800` (or `640`) in the config
-  overrides textbox.
-- **Stage 8b/9** require a real BIM IFC + matched scan; on Colab they
-  will often log `skipped_insufficient_anchors` and exit 0.
-- **Stage 10 (VLM ask)** uses the **mock** provider by default. Real
-  Qwen 3-VL needs Ollama or a vLLM endpoint reachable from the Colab
-  runtime; this is documented in `docs/qwen_vlm_laptop_to_server_plan.md`.
+- **Free Colab disconnects after ~12 h.** Re-attach and resume; outputs are on
+  Drive.
+- **Stage 5 (dense) on a free T4** can OOM at large `dense.max_image_size`; use
+  `colab_safe` or set `dense.max_image_size: 800` in the overrides textbox.
+- **Stage 8b/9** need a real BIM IFC + matched scan; otherwise they exit 0 with
+  a `skipped` marker.
+- **Real VLM** requires the Ollama provision step; without it the deterministic
+  mock answers (the pipeline never blocks on the VLM).
 
 ## Re-generating the notebook
 
-The notebook is generated from `colab/_build_notebook.py` for
-deterministic diffs. To rebuild after editing a cell:
+The notebook is generated from `colab/_build_notebook.py` for deterministic
+diffs:
 
 ```bash
 python3 colab/_build_notebook.py

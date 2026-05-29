@@ -21,6 +21,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -28,12 +29,16 @@ from typing import Optional
 from colab.log_capture import LogBuffer
 
 # Order matters: requirements-core pins numpy<2 which open3d/opencv assume.
+# ``zstd`` is required by the Ollama installer; ``aria2`` accelerates large
+# model/asset downloads when present.
 APT_PACKAGES = [
     "ffmpeg",
     "colmap",
     "libgl1",
     "libglib2.0-0",
     "git-lfs",
+    "zstd",
+    "aria2",
 ]
 
 # Gradio + Jupyter widgets are not in any requirements*.txt because they
@@ -126,17 +131,34 @@ def is_colab() -> bool:
 # ---------------------------------------------------------------------------
 
 
-def install_apt_packages(*, log: Optional[LogBuffer] = None) -> StepResult:
+def install_apt_packages(
+    *, log: Optional[LogBuffer] = None, attempts: int = 2
+) -> StepResult:
     if shutil.which("apt-get") is None:
         return StepResult("apt", False, "apt-get not available (not a Debian/Ubuntu host)")
-    rc_update = _stream_run(["apt-get", "-qq", "update"], log=log, timeout=600)
+    rc_update = 1
+    for attempt in range(1, attempts + 1):
+        rc_update = _stream_run(["apt-get", "-qq", "update"], log=log, timeout=600)
+        if rc_update == 0:
+            break
+        if log is not None:
+            log.append(f"[apt] update failed (attempt {attempt}/{attempts}); retrying")
+        time.sleep(3)
     if rc_update != 0:
         return StepResult("apt-update", False, f"apt-get update returned {rc_update}")
-    rc_install = _stream_run(
-        ["apt-get", "-qq", "install", "-y", "--no-install-recommends", *APT_PACKAGES],
-        log=log,
-        timeout=900,
-    )
+
+    rc_install = 1
+    for attempt in range(1, attempts + 1):
+        rc_install = _stream_run(
+            ["apt-get", "-qq", "install", "-y", "--no-install-recommends", *APT_PACKAGES],
+            log=log,
+            timeout=1200,
+        )
+        if rc_install == 0:
+            break
+        if log is not None:
+            log.append(f"[apt] install failed (attempt {attempt}/{attempts}); retrying")
+        time.sleep(3)
     return StepResult(
         "apt-install",
         rc_install == 0,
@@ -150,10 +172,28 @@ def install_apt_packages(*, log: Optional[LogBuffer] = None) -> StepResult:
 
 
 def _pip_install(
-    args: list[str], *, log: Optional[LogBuffer] = None, timeout: int = 1800
+    args: list[str],
+    *,
+    log: Optional[LogBuffer] = None,
+    timeout: int = 1800,
+    attempts: int = 3,
 ) -> int:
+    """Run ``pip install`` with retries (transient PyPI/network failures)."""
     cmd = [sys.executable, "-m", "pip", "install", "--quiet", *args]
-    return _stream_run(cmd, log=log, timeout=timeout)
+    rc = 1
+    for attempt in range(1, attempts + 1):
+        rc = _stream_run(cmd, log=log, timeout=timeout)
+        if rc == 0:
+            return 0
+        if attempt < attempts:
+            delay = 4 * attempt
+            if log is not None:
+                log.append(
+                    f"[pip] install failed rc={rc} (attempt {attempt}/{attempts}); "
+                    f"retrying in {delay}s: {' '.join(args)}"
+                )
+            time.sleep(delay)
+    return rc
 
 
 def install_python_dependencies(
@@ -246,3 +286,82 @@ def format_validation(results: list[StepResult]) -> str:
         mark = "OK " if r.ok else "FAIL"
         rows.append(f"[{mark}] {r.name:22s} {r.detail}")
     return "\n".join(rows)
+
+
+
+# ---------------------------------------------------------------------------
+# GPU detection + one-call bootstrap
+# ---------------------------------------------------------------------------
+
+
+def detect_gpu() -> dict[str, str]:
+    """Return a small dict describing the GPU without importing torch."""
+    info: dict[str, str] = {"available": "no", "name": "", "memory_mb": ""}
+    if shutil.which("nvidia-smi") is None:
+        return info
+    try:
+        out = subprocess.check_output(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=20,
+        ).strip()
+    except Exception:  # pragma: no cover - depends on host
+        return info
+    if not out:
+        return info
+    first = out.splitlines()[0]
+    parts = [p.strip() for p in first.split(",")]
+    info["available"] = "yes"
+    info["name"] = parts[0] if parts else ""
+    if len(parts) > 1:
+        info["memory_mb"] = parts[1]
+    return info
+
+
+def bootstrap_environment(
+    repo_root: Path,
+    *,
+    install_apt: bool = True,
+    install_da3: bool = True,
+    install_ui: bool = True,
+    log: Optional[LogBuffer] = None,
+) -> dict[str, object]:
+    """Install everything the pipeline needs in one idempotent call.
+
+    Returns a structured summary so the notebook can render a single status
+    table and decide whether the environment is healthy enough to proceed.
+    """
+    summary: dict[str, object] = {}
+    if log is not None:
+        log.banner("Environment bootstrap")
+        gpu = detect_gpu()
+        log.append(f"[env] gpu: {gpu}")
+        summary["gpu"] = gpu
+
+    apt_result: Optional[StepResult] = None
+    if install_apt:
+        apt_result = install_apt_packages(log=log)
+        summary["apt"] = {"ok": apt_result.ok, "detail": apt_result.detail}
+
+    py_results = install_python_dependencies(
+        repo_root, install_da3=install_da3, install_ui=install_ui, log=log
+    )
+    summary["python"] = [{"name": r.name, "ok": r.ok, "detail": r.detail} for r in py_results]
+
+    validation = validate_environment(log=log)
+    summary["validation"] = [
+        {"name": r.name, "ok": r.ok, "detail": r.detail} for r in validation
+    ]
+
+    # The environment is "ok" if the core probes and python install passed.
+    py_ok = all(r.ok for r in py_results if r.name in {"requirements-core", "numpy-pin"})
+    core_probe_ok = all(
+        r.ok for r in validation if r.name in {"numpy", "yaml", "cv2", "PIL"}
+    )
+    summary["ok"] = bool(py_ok and core_probe_ok)
+    return summary
