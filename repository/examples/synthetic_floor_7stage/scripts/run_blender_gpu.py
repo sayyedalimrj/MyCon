@@ -37,6 +37,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -182,8 +183,11 @@ def parse_args() -> argparse.Namespace:
                         "(Colab). Outputs are synced to Drive after every stage.")
     p.add_argument("--no-drive", action="store_true",
                    help="Disable all Drive syncing even on Colab.")
-    p.add_argument("--drive-sync-interval", type=float, default=120.0,
-                   help="Background Drive sync period in seconds (default 120).")
+    p.add_argument("--drive-sync-interval", type=float, default=60.0,
+                   help="Background Drive sync period in seconds (default 60).")
+    p.add_argument("--start-stage", type=int, default=None, metavar="N",
+                   help="Render stages N..7 (e.g. --start-stage 5). Ignored if "
+                        "--stages is given. Combine with --resume to continue.")
     p.add_argument("--log-level", default="INFO")
     return p.parse_args()
 
@@ -276,7 +280,34 @@ def render_stage_with_blender(
 
     log.info("[stage %d] launching: %s", stage_id, " ".join(cmd))
     t0 = time.time()
+
+    # Live intra-stage progress: the renderer writes render_progress.json
+    # after every frame. Tail it so the user sees frame-level progress (and
+    # an ETA) instead of a silent multi-hour stage.
+    progress_file = output_dir / "render_progress.json"
+    stop = threading.Event()
+
+    def _monitor() -> None:
+        import json as _json
+        last = -1
+        while not stop.wait(15.0):
+            try:
+                d = _json.loads(progress_file.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            done = d.get("frames_done", 0)
+            if done != last:
+                last = done
+                log.info("[stage %d] progress: %s/%s frames (%.1f%%) eta=%.1fmin status=%s",
+                         stage_id, done, d.get("frames_total", "?"),
+                         d.get("percent", 0.0), d.get("eta_sec", 0.0) / 60.0,
+                         d.get("status", "?"))
+
+    mon = threading.Thread(target=_monitor, name=f"progress-{stage_id}", daemon=True)
+    mon.start()
     proc = subprocess.run(cmd, capture_output=True, text=True)
+    stop.set()
+    mon.join(timeout=2)
     dt = time.time() - t0
     log.info("[stage %d] blender exited rc=%d in %.1fs", stage_id, proc.returncode, dt)
 
@@ -463,6 +494,9 @@ def main() -> int:
     log.info("device       : %s", args.device)
 
     stage_ids = args.stages or [s.id for s in spec.stages]
+    if not args.stages and args.start_stage is not None:
+        stage_ids = [s.id for s in spec.stages if s.id >= int(args.start_stage)]
+        log.info("start-stage=%d -> rendering stages %s", args.start_stage, stage_ids)
     all_stage_ids = list(stage_ids)
     log.info("stages req   : %s", stage_ids)
 
