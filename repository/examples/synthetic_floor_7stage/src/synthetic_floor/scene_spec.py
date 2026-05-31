@@ -223,6 +223,17 @@ class RendererSpec:
     shadow_softness: float
     vignette_strength: float
     emit_material_samples: bool
+    # --- physically-based lighting / tone-mapping (GPU Blender path) ---
+    world_strength: float = 0.35       # ambient sky fill; low => deep shadows, not flat
+    sun_energy: float = 2.8            # key light intensity
+    exposure: float = -0.20            # EV bias applied after Filmic
+    view_transform: str = "Filmic"     # tone-mapping operator
+    view_look: str = "Medium High Contrast"
+    use_fast_gi: bool = True           # Cycles fast-GI / AO approximation
+    ao_factor: float = 0.55            # ambient-occlusion strength (contact shadows)
+    ao_distance: float = 1.2           # AO sampling distance (m)
+    # --- parallel rendering ---
+    parallel_workers_count: int = 1    # concurrent Blender processes per stage
 
 
 @dataclass(frozen=True)
@@ -421,6 +432,15 @@ def load_scene_spec(config_path: Path, *, base_dir: Path | None = None) -> Scene
         shadow_softness=float(rend_raw["shadow_softness"]),
         vignette_strength=float(rend_raw["vignette_strength"]),
         emit_material_samples=bool(rend_raw["emit_material_samples"]),
+        world_strength=float(rend_raw.get("world_strength", 0.35)),
+        sun_energy=float(rend_raw.get("sun_energy", 2.8)),
+        exposure=float(rend_raw.get("exposure", -0.20)),
+        view_transform=str(rend_raw.get("view_transform", "Filmic")),
+        view_look=str(rend_raw.get("view_look", "Medium High Contrast")),
+        use_fast_gi=bool(rend_raw.get("use_fast_gi", True)),
+        ao_factor=float(rend_raw.get("ao_factor", 0.55)),
+        ao_distance=float(rend_raw.get("ao_distance", 1.2)),
+        parallel_workers_count=int(rend_raw.get("parallel_workers_count", 1)),
     )
 
     out_paths = OutputPaths.resolve(base, raw["output"])

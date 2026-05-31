@@ -17,7 +17,6 @@ Useful flags:
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import sys
 import time
@@ -44,7 +43,7 @@ from synthetic_floor.materials import build_material_library, save_material_samp
 from synthetic_floor.ifc_builder import write_stage_ifc  # noqa: E402
 from synthetic_floor.mesh_builder import write_stage_meshes  # noqa: E402
 from synthetic_floor.camera_path import plan_camera_path  # noqa: E402
-from synthetic_floor.renderer import render_stage, render_seg_color  # noqa: E402
+from synthetic_floor.renderer import render_stage  # noqa: E402
 from synthetic_floor.smartphone_sim import SmartphoneSimulator  # noqa: E402
 from synthetic_floor.video_exporter import write_mp4  # noqa: E402
 from synthetic_floor.metadata_exporter import (  # noqa: E402
@@ -82,6 +81,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--config", type=Path, default=HERE.parent / "config" / "scene.yaml")
     p.add_argument("--stages", type=int, nargs="*", default=None,
                    help="Subset of stage ids to generate (1..7). Default: all.")
+    p.add_argument("--start-stage", type=int, default=None, metavar="N",
+                   help="Generate stages N..7 (or N..--end-stage).")
+    p.add_argument("--end-stage", type=int, default=None, metavar="M",
+                   help="With --start-stage, generate the inclusive range N..M.")
+    p.add_argument("--stage-only", type=int, default=None, metavar="X",
+                   help="Generate exactly one stage X (overrides --stages/--start-stage).")
     p.add_argument("--skip-render", action="store_true")
     p.add_argument("--skip-video", action="store_true")
     p.add_argument("--skip-bim", action="store_true")
@@ -89,8 +94,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--quick", action="store_true",
                    help="Alias for --preset debug (small render, short clips).")
     p.add_argument("--preset", choices=PRESET_NAMES, default=None,
-                   help=f"Quality preset: debug, balanced (default), or hq. "
-                        f"Explicit --width/--height/--duration override the preset.")
+                   help="Quality preset: debug, balanced (default), or hq. "
+                        "Explicit --width/--height/--duration override the preset.")
     p.add_argument("--width", type=int, default=None)
     p.add_argument("--height", type=int, default=None)
     p.add_argument("--duration", type=float, default=None,
@@ -162,6 +167,13 @@ def main() -> int:
 
     # ---- Per-stage generation ------------------------------------------------
     stage_ids = args.stages or [s.id for s in spec.stages]
+    if args.stage_only is not None:
+        stage_ids = [int(args.stage_only)]
+        log.info("stage-only    : %d", args.stage_only)
+    elif not args.stages and args.start_stage is not None:
+        end = int(args.end_stage) if args.end_stage is not None else max(s.id for s in spec.stages)
+        stage_ids = [s.id for s in spec.stages if args.start_stage <= s.id <= end]
+        log.info("stage range   : %d..%d -> %s", args.start_stage, end, stage_ids)
 
     # Resolve resume mode: --force/--resume are convenience aliases for --mode.
     if args.mode is not None:
@@ -278,7 +290,7 @@ def main() -> int:
 
             if args.save_frames:
                 from synthetic_floor.video_exporter import write_frames_dir
-                write_frames_dir(sim_frames, P.stage_render_dir(spec, sid) / P.stage_tag(sid), prefix=f"frame")
+                write_frames_dir(sim_frames, P.stage_render_dir(spec, sid) / P.stage_tag(sid), prefix="frame")
 
             # Save sparse depth + seg as .npz (compact)
             if depth_arrs:

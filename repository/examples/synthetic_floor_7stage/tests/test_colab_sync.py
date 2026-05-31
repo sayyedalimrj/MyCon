@@ -91,5 +91,32 @@ class TestRunStateManifest(unittest.TestCase):
         self.assertEqual(leftovers, [])
 
 
+    def test_delta_sync_skips_identical_content_despite_mtime_drift(self):
+        import os
+        import tempfile as _tf
+        import time as _time
+        from synthetic_floor import colab_sync as CS
+        with _tf.TemporaryDirectory() as d:
+            root = Path(d)
+            src = root / "dsrc"
+            dst = root / "ddst"
+            src.mkdir()
+            dst.mkdir()
+            (src / "a.bin").write_bytes(b"payload" * 200)
+            first = CS.mirror_tree(src, dst, use_hash=True)
+            self.assertEqual(first["copied"], 1)
+            # Drift the dst timestamp but keep identical content -> must NOT re-copy.
+            old = _time.time() - 100000
+            os.utime(dst / "a.bin", (old, old))
+            second = CS.mirror_tree(src, dst, use_hash=True)
+            self.assertEqual(second["copied"], 0)
+            self.assertEqual(second["skipped"], 1)
+            # Change content (same length) -> must copy.
+            (src / "a.bin").write_bytes(b"PAYLOAD" * 200)
+            os.utime(dst / "a.bin", (old, old))
+            third = CS.mirror_tree(src, dst, use_hash=True)
+            self.assertEqual(third["copied"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()

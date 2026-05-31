@@ -170,3 +170,55 @@ def test_detailed_example_construction_sequence(cfg: str) -> None:
     c7 = _cats_at(spec, by, 7)
     assert "floor_finish" not in c6 and "floor_finish" in c7
     assert "ceiling_lights" in c7
+
+
+
+# ---------------------------------------------------------------------------
+# Config-driven lighting, parallel workers, delta-sync (this PR)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("cfg", _DETAILED_CONFIGS + ["scene.yaml"])
+def test_renderer_lighting_and_parallel_config_exposed(cfg: str) -> None:
+    """HDR/AO/exposure + parallel worker params must be read from the YAML."""
+    from synthetic_floor.scene_spec import load_scene_spec
+
+    spec = load_scene_spec(_CONFIG_DIR / cfg)
+    r = spec.renderer
+    assert 0.0 < r.world_strength <= 1.0          # low ambient fill -> deep shadows
+    assert r.sun_energy > 0.0
+    assert r.exposure <= 0.0                        # never the old blown-out boost
+    assert 0.0 <= r.ao_factor <= 1.0
+    assert r.parallel_workers_count >= 1
+    assert r.view_transform == "Filmic"
+    # Human eye-level walking height (not floating near the ceiling).
+    assert 1.5 <= spec.camera.hold_height_m <= 1.75
+
+
+def test_worker_frame_partition_is_disjoint_and_complete() -> None:
+    from synthetic_floor.blender_gpu_renderer import _worker_frames
+
+    todo = list(range(1, 23))
+    for n in (1, 2, 3, 5):
+        parts = [_worker_frames(todo, i, n) for i in range(n)]
+        assert sorted(sum(parts, [])) == todo, f"workers={n} not a partition"
+        assert max(len(p) for p in parts) - min(len(p) for p in parts) <= 1
+
+
+def test_delta_sync_skips_identical_content() -> None:
+    import os
+    import time as _time
+
+    from synthetic_floor import colab_sync as CS
+
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        src, dst = root / "s", root / "t"
+        src.mkdir()
+        dst.mkdir()
+        (src / "f.bin").write_bytes(b"x" * 4096)
+        assert CS.mirror_tree(src, dst, use_hash=True)["copied"] == 1
+        old = _time.time() - 50000
+        os.utime(dst / "f.bin", (old, old))  # drift mtime, identical content
+        out = CS.mirror_tree(src, dst, use_hash=True)
+        assert out["copied"] == 0 and out["skipped"] == 1

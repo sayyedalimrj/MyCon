@@ -189,6 +189,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--start-stage", type=int, default=None, metavar="N",
                    help="Render stages N..7 (e.g. --start-stage 5). Ignored if "
                         "--stages is given. Combine with --resume to continue.")
+    p.add_argument("--end-stage", type=int, default=None, metavar="M",
+                   help="With --start-stage, render the inclusive range N..M.")
+    p.add_argument("--stage-only", type=int, default=None, metavar="X",
+                   help="Render exactly one stage X (overrides --stages/--start-stage).")
+    p.add_argument("--workers", type=int, default=None, metavar="N",
+                   help="Concurrent Blender processes per stage (parallel frame "
+                        "rendering). Overrides renderer.parallel_workers_count. "
+                        "Keep at 1-2 on a single T4 to avoid OOM; raise for CPU/big GPUs.")
     p.add_argument("--log-level", default="INFO")
     return p.parse_args()
 
@@ -257,9 +265,11 @@ def render_stage_with_blender(
     motion_blur: bool,
     log: logging.Logger,
     camera_poses_path: "Path | None" = None,
+    renderer_spec=None,
+    worker_count: int = 1,
 ) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
-    cmd = [
+    base_cmd = [
         blender_exe, "-b",
         "--python", str(RENDERER_SCRIPT),
         "--",
@@ -276,18 +286,29 @@ def render_stage_with_blender(
         "--device", args.device,
     ]
     if camera_poses_path is not None:
-        cmd += ["--camera-poses", str(camera_poses_path)]
+        base_cmd += ["--camera-poses", str(camera_poses_path)]
     if not motion_blur:
-        cmd.append("--no-motion-blur")
+        base_cmd.append("--no-motion-blur")
     if getattr(args, "save_blend", False):
-        cmd.append("--save-blend")
+        base_cmd.append("--save-blend")
+    # Config-driven physically-based lighting / tone-mapping.
+    if renderer_spec is not None:
+        base_cmd += [
+            "--world-strength", str(renderer_spec.world_strength),
+            "--sun-energy", str(renderer_spec.sun_energy),
+            "--exposure", str(renderer_spec.exposure),
+            "--view-look", str(renderer_spec.view_look),
+            "--ao-factor", str(renderer_spec.ao_factor),
+            "--ao-distance", str(renderer_spec.ao_distance),
+        ]
+        if not renderer_spec.use_fast_gi:
+            base_cmd.append("--no-fast-gi")
 
-    log.info("[stage %d] launching: %s", stage_id, " ".join(cmd))
+    worker_count = max(1, int(worker_count))
     t0 = time.time()
 
-    # Live intra-stage progress: the renderer writes render_progress.json
-    # after every frame. Tail it so the user sees frame-level progress (and
-    # an ETA) instead of a silent multi-hour stage.
+    # Live intra-stage progress monitor (reads render_progress.json, which all
+    # workers update with the global on-disk frame count).
     progress_file = output_dir / "render_progress.json"
     stop = threading.Event()
 
@@ -309,20 +330,46 @@ def render_stage_with_blender(
 
     mon = threading.Thread(target=_monitor, name=f"progress-{stage_id}", daemon=True)
     mon.start()
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+
+    if worker_count == 1:
+        log.info("[stage %d] launching Blender: %s", stage_id, " ".join(base_cmd))
+        proc = subprocess.run(base_cmd, capture_output=True, text=True)
+        stop.set()
+        mon.join(timeout=2)
+        (output_dir / "blender_stdout.log").write_text(proc.stdout, encoding="utf-8")
+        (output_dir / "blender_stderr.log").write_text(proc.stderr, encoding="utf-8")
+        rc = proc.returncode
+        if rc != 0:
+            tail = "\n".join((proc.stdout + proc.stderr).splitlines()[-25:])
+            log.error("[stage %d] blender failed:\n%s", stage_id, tail)
+        log.info("[stage %d] blender exited rc=%d in %.1fs", stage_id, rc, time.time() - t0)
+        return rc
+
+    # --- parallel: spawn N headless Blender workers on disjoint frame subsets ---
+    log.info("[stage %d] launching %d concurrent Blender workers (strided frames)",
+             stage_id, worker_count)
+    procs = []
+    handles = []
+    for wi in range(worker_count):
+        wcmd = base_cmd + ["--worker-index", str(wi), "--worker-count", str(worker_count)]
+        out_fh = (output_dir / f"blender_worker{wi}.log").open("w", encoding="utf-8")
+        p = subprocess.Popen(wcmd, stdout=out_fh, stderr=subprocess.STDOUT)
+        procs.append(p)
+        handles.append(out_fh)
+        log.info("[stage %d]   worker %d/%d pid=%s", stage_id, wi + 1, worker_count, p.pid)
+    rcs = []
+    for wi, p in enumerate(procs):
+        rcs.append(p.wait())
+        handles[wi].close()
     stop.set()
     mon.join(timeout=2)
-    dt = time.time() - t0
-    log.info("[stage %d] blender exited rc=%d in %.1fs", stage_id, proc.returncode, dt)
-
-    # Always persist Blender's stdout/stderr alongside the outputs
-    (output_dir / "blender_stdout.log").write_text(proc.stdout, encoding="utf-8")
-    (output_dir / "blender_stderr.log").write_text(proc.stderr, encoding="utf-8")
-    if proc.returncode != 0:
-        # Surface the last few lines for quick inspection
-        tail = "\n".join((proc.stdout + proc.stderr).splitlines()[-25:])
-        log.error("[stage %d] blender failed:\n%s", stage_id, tail)
-    return proc.returncode
+    rc = max(rcs) if rcs else 1
+    nonzero = [i for i, c in enumerate(rcs) if c != 0]
+    if nonzero:
+        log.error("[stage %d] workers %s returned non-zero (rcs=%s)", stage_id, nonzero, rcs)
+    log.info("[stage %d] %d workers finished rc=%d in %.1fs",
+             stage_id, worker_count, rc, time.time() - t0)
+    return rc
 
 
 # ---------------------------------------------------------------------
@@ -498,11 +545,17 @@ def main() -> int:
     log.info("device       : %s", args.device)
 
     stage_ids = args.stages or [s.id for s in spec.stages]
-    if not args.stages and args.start_stage is not None:
-        stage_ids = [s.id for s in spec.stages if s.id >= int(args.start_stage)]
-        log.info("start-stage=%d -> rendering stages %s", args.start_stage, stage_ids)
+    if args.stage_only is not None:
+        stage_ids = [int(args.stage_only)]
+        log.info("stage-only=%d", args.stage_only)
+    elif not args.stages and args.start_stage is not None:
+        end = int(args.end_stage) if args.end_stage is not None else max(s.id for s in spec.stages)
+        stage_ids = [s.id for s in spec.stages if args.start_stage <= s.id <= end]
+        log.info("stage range %d..%d -> %s", args.start_stage, end, stage_ids)
     all_stage_ids = list(stage_ids)
-    log.info("stages req   : %s", stage_ids)
+    worker_count = int(args.workers) if args.workers else int(getattr(spec.renderer, "parallel_workers_count", 1))
+    worker_count = max(1, worker_count)
+    log.info("stages req   : %s | parallel workers/stage = %d", stage_ids, worker_count)
 
     # --- Google Drive persistence -------------------------------------------
     # Mount Drive (Colab) and mirror the whole output tree to Drive so a
@@ -622,6 +675,8 @@ def main() -> int:
             motion_blur=preset.motion_blur,
             log=log,
             camera_poses_path=cam_poses_path,
+            renderer_spec=spec.renderer,
+            worker_count=worker_count,
         )
         if rc != 0:
             log.error("stage %d failed; continuing with the rest.", sid)

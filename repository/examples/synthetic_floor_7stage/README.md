@@ -250,6 +250,63 @@ the Blender presets (`FINISHING_PRESETS`) drive procedural **bump + roughness
 variation** nodes so concrete/cinderblock/beams read as unpolished as-cast
 surfaces. The over-bright paint/plaster were also tamed to avoid blow-out.
 
+### HDR lighting, Filmic tone-mapping & ambient occlusion
+
+The render is no longer a flat, blown-out "glowing white void". Lighting is now
+config-driven (`renderer.*` in the YAML) and physically motivated:
+
+- **Low ambient sky fill** (`world_strength` ≈ 0.35) so the sun is the key
+  light and shadows are deep — a full-strength sky is what washed the scene flat.
+- **HDR Nishita sky + sun** key light (`sun_energy`), **Filmic** tone-mapping
+  (`view_transform` / `view_look`, default *Medium High Contrast*) and a modest
+  negative **exposure** (`exposure` ≈ −0.2 EV) so highlights roll off instead of
+  clipping to white.
+- **Ambient occlusion / fast-GI** (`use_fast_gi`, `ao_factor`, `ao_distance`)
+  for contact shadows that ground the geometry.
+
+| `renderer` key | Meaning |
+|---|---|
+| `world_strength` | ambient sky fill (low = deep shadows) |
+| `sun_energy` | sun key-light intensity |
+| `exposure` | EV bias after Filmic (≤ 0) |
+| `view_transform` / `view_look` | tone-mapping operator + contrast |
+| `use_fast_gi` / `ao_factor` / `ao_distance` | ambient-occlusion contact shadows |
+| `parallel_workers_count` | concurrent Blender processes per stage |
+
+### Targeted stage execution
+
+Both runners support isolated / ranged stage execution (no more all-or-nothing):
+
+```bash
+# one stage only
+... run_blender_gpu.py --config <cfg> --stage-only 5
+# an inclusive range
+... run_blender_gpu.py --config <cfg> --start-stage 3 --end-stage 6
+# from a stage to the end, resuming finished ones
+... run_blender_gpu.py --config <cfg> --start-stage 5 --resume
+```
+
+`run_generate.py` (CPU) accepts the same `--stage-only` / `--start-stage` /
+`--end-stage` flags.
+
+### Parallel rendering (saturate CPU/GPU)
+
+`--workers N` (or `renderer.parallel_workers_count`) spawns N headless Blender
+processes per stage, each rendering a **disjoint strided subset** of the frames
+into the same folder (independent frame files, no locking). Because completed
+frames are skipped, this composes with frame-level resume.
+
+> **OOM safety:** on a single free T4 keep `--workers 1` (2 at most); each
+> Cycles process holds its own GPU memory. Raise it for CPU rendering, an
+> A100/L4 with headroom, or a multi-GPU box.
+
+### Delta-sync to Drive
+
+Resuming on a new machine no longer re-uploads everything. `DriveMirror.pull()`
+uses a **content-hash delta** (size + mtime, falling back to SHA-1 when
+timestamps drift after a Drive download), so only genuinely new/changed files
+transfer; the same-machine periodic push uses the fast size+mtime delta.
+
 ### Save the Blender project (.blend) for Windows/macOS
 
 `--save-blend` makes the renderer write a self-contained `stage_NN.blend`
