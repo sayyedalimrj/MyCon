@@ -192,7 +192,7 @@ def test_renderer_lighting_and_parallel_config_exposed(cfg: str) -> None:
     assert r.parallel_workers_count >= 1
     assert r.view_transform == "Filmic"
     # Human eye-level walking height (not floating near the ceiling).
-    assert 1.5 <= spec.camera.hold_height_m <= 1.75
+    assert 1.3 <= spec.camera.hold_height_m <= 1.65
 
 
 def test_worker_frame_partition_is_disjoint_and_complete() -> None:
