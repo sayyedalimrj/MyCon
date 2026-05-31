@@ -60,6 +60,7 @@ from synthetic_floor.checkpoint import (  # noqa: E402
     write_run_state,
 )
 from synthetic_floor import colab_sync as CS  # noqa: E402
+from synthetic_floor.camera_path import plan_camera_path, write_camera_poses  # noqa: E402
 from synthetic_floor.layout import build_layout, elements_by_category  # noqa: E402
 from synthetic_floor.stage_controller import select_for_stage  # noqa: E402
 from synthetic_floor.materials import build_material_library  # noqa: E402
@@ -255,6 +256,7 @@ def render_stage_with_blender(
     samples: int,
     motion_blur: bool,
     log: logging.Logger,
+    camera_poses_path: "Path | None" = None,
 ) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
@@ -273,6 +275,8 @@ def render_stage_with_blender(
         "--sun-azimuth", str(args.sun_azimuth),
         "--device", args.device,
     ]
+    if camera_poses_path is not None:
+        cmd += ["--camera-poses", str(camera_poses_path)]
     if not motion_blur:
         cmd.append("--no-motion-blur")
     if getattr(args, "save_blend", False):
@@ -590,6 +594,19 @@ def main() -> int:
             log.error("[stage %d] GLB missing: %s", sid, info["glb"])
             continue
         stage_dir = P.stage_blender_render_dir(spec, sid)
+        # Generate the shared, hyper-realistic camera trajectory for this stage
+        # (same generator the CPU path uses). The renderer keys the camera from
+        # it, so the export looks around / turns / crouches instead of gliding.
+        cam_poses_path = None
+        try:
+            poses = plan_camera_path(spec, stage_id=sid, n_frames=frames)
+            cam_poses_path = write_camera_poses(
+                poses, spec.camera, stage_dir / "camera_poses.json", stage_id=sid)
+            log.info("[stage %d] camera trajectory: %d poses -> %s",
+                     sid, len(poses), cam_poses_path.name)
+        except Exception as exc:  # never block a render on camera planning
+            log.warning("[stage %d] camera pose generation failed (%s); using built-in path",
+                        sid, exc)
         rc = render_stage_with_blender(
             blender_exe=blender_exe,
             stage_id=sid,
@@ -604,6 +621,7 @@ def main() -> int:
             samples=samples,
             motion_blur=preset.motion_blur,
             log=log,
+            camera_poses_path=cam_poses_path,
         )
         if rc != 0:
             log.error("stage %d failed; continuing with the rest.", sid)

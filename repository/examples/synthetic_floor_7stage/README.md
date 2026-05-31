@@ -203,6 +203,53 @@ PYTHONPATH=examples/synthetic_floor_7stage/src \
         --save-blend --mount-drive --resume
 ```
 
+### Hyper-realistic camera operator (shared CPU + GPU)
+
+`src/synthetic_floor/camera_path.py` is the single source of truth for camera
+motion. It models a hand-held human operator rather than a dolly on rails:
+
+- **Look-at is fully decoupled from translation.** The body walks a coverage
+  path while the gaze independently scans left/right, periodically turns
+  ~180 deg to inspect the area behind, and tilts up/down.
+- **Full-coverage, collision-safe pathfinding.** A serpentine that covers the
+  interior is smoothed (centripetal Catmull-Rom) and then strictly clamped
+  inside the walls and pushed out of column footprints — no wall-clipping.
+- **6-DOF verticality.** Scheduled "inspect floor" (crouch) and "inspect
+  ceiling" (rise) maneuvers move the camera on Z with eased motion; the gaze
+  pitches to match.
+- **Physical inertia + micro-mechanics.** Gaze angles are low-pass filtered
+  (a configurable time-constant) and breathing / footstep / high-frequency
+  tremor ride on top.
+
+The host generates this trajectory per stage (`camera_poses.json`) and the
+Blender renderer keys the camera from it (`--camera-poses`), so the **exported
+video matches the CPU dataset exactly**. Every parameter is read from
+`camera.motion` in the YAML (see the table below) — nothing is hardcoded.
+
+| `camera.motion` key | Meaning |
+|---|---|
+| `coverage_lane_spacing_m` | serpentine lane spacing (smaller = denser coverage) |
+| `collision_margin_m` / `column_clearance_m` | keep-out distance from walls / columns |
+| `path_smoothness` | 0 = polyline, 1 = very rounded |
+| `scan_yaw_amplitude_deg` / `scan_period_sec` | horizontal look-around sweep |
+| `turn_around_interval_sec` / `turn_around_duration_sec` | ~180 deg look-behind cadence |
+| `gaze_inertia_tau_sec` | physical smoothing (inertia) of the gaze |
+| `focus_distance_m` | look-at distance |
+| `pitch_scan_amplitude_deg` / `pitch_scan_period_sec` | gentle up/down gaze drift |
+| `vertical_inspect_enabled` | enable crouch/rise maneuvers |
+| `crouch_height_m` / `rise_height_m` | floor-inspect / ceiling-inspect eye heights |
+| `vertical_inspect_interval_sec` / `vertical_inspect_duration_sec` | crouch/rise cadence |
+| `inspect_pitch_deg` | how far the gaze tilts during crouch/rise |
+
+### Physically based materials
+
+Raw concrete is now a physically plausible mid-dark grey (~0.35 albedo)
+instead of the old near-white that clipped to white. `materials._build_concrete`
+generates low-frequency tonal blotches plus high-frequency aggregate grain, and
+the Blender presets (`FINISHING_PRESETS`) drive procedural **bump + roughness
+variation** nodes so concrete/cinderblock/beams read as unpolished as-cast
+surfaces. The over-bright paint/plaster were also tamed to avoid blow-out.
+
 ### Save the Blender project (.blend) for Windows/macOS
 
 `--save-blend` makes the renderer write a self-contained `stage_NN.blend`
