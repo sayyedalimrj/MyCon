@@ -137,7 +137,7 @@ class MotionSpec:
     touching code.
     """
     # --- pathfinding / collision ---
-    coverage_lane_spacing_m: float = 3.0     # serpentine lane spacing (full coverage)
+    coverage_lane_spacing_m: float = 2.2     # serpentine lane spacing (full coverage)
     collision_margin_m: float = 0.65         # keep at least this far from walls
     column_clearance_m: float = 0.45         # extra radius kept around columns
     path_smoothness: float = 0.5             # 0=polyline, 1=very rounded (Catmull-Rom)
@@ -153,7 +153,7 @@ class MotionSpec:
     # --- 6-DOF verticality (crouch to floor / rise to ceiling) ---
     vertical_inspect_enabled: bool = True
     crouch_height_m: float = 0.80            # lowest eye height when inspecting floor
-    rise_height_m: float = 2.15              # highest eye height when inspecting ceiling
+    rise_height_m: float = 1.85              # highest eye height when inspecting ceiling
     vertical_inspect_interval_sec: float = 11.0
     vertical_inspect_duration_sec: float = 4.2
     inspect_pitch_deg: float = 34.0          # look down/up during crouch/rise

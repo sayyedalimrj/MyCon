@@ -140,8 +140,8 @@ class TestCameraOperator(unittest.TestCase):
         for cfg in CONFIGS:
             _, _, eyes, _ = self._poses(cfg)
             med = float(np.median(eyes[:, 2]))
-            self.assertGreaterEqual(med, 1.45, f"{cfg}: median eye {med:.2f}m too low")
-            self.assertLessEqual(med, 1.80, f"{cfg}: median eye {med:.2f}m floating high")
+            self.assertGreaterEqual(med, 1.35, f"{cfg}: median eye {med:.2f}m too low")
+            self.assertLessEqual(med, 1.70, f"{cfg}: median eye {med:.2f}m floating high")
 
 
 if __name__ == "__main__":
