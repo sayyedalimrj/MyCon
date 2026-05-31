@@ -5,17 +5,18 @@ A *preset* is a small dictionary of overrides applied on top of the
 
 ``debug``
     Tiny resolution + few frames + low sample count. Designed for
-    smoke tests and CI -- one full 7-stage GPU run finishes in ~1 min
-    on a T4. Visually noisy; do NOT use for paper figures.
+    smoke tests and CI. Visually noisy and intentionally short; do NOT use for
+    reconstruction checks or paper figures.
 
 ``balanced``
-    Sensible defaults for development and review on Colab T4.
-    Roughly 5-15 minutes for a full 7-stage GPU run.
+    Main reconstruction-review preset for the Blender GPU path. It keeps the
+    review-friendly 960x540 resolution but uses the full 60s / 1800-frame
+    camera tour so the exported video has enough overlap, parallax, and loop
+    closure for the downstream reconstruction pipeline.
 
 ``hq``
     High-quality output for final figures / dataset releases. Larger
-    resolution, more samples, longer clips. ~30+ minutes on T4,
-    ~10-15 min on A100.
+    resolution and more samples, with the same 60s / 1800-frame tour.
 
 Both ``run_generate.py`` (CPU) and ``run_blender_gpu.py`` (GPU)
 expose ``--preset {debug,balanced,hq}`` which calls
@@ -71,9 +72,9 @@ CPU_PRESETS: dict[str, CPUPreset] = {
 }
 
 GPU_PRESETS: dict[str, GPUPreset] = {
-    "debug":    GPUPreset(width_px=480,  height_px=270, samples=32,  frames_per_stage=30,  fps=30, motion_blur=False),
-    "balanced": GPUPreset(width_px=960,  height_px=540, samples=96,  frames_per_stage=120, fps=30, motion_blur=True),
-    "hq":       GPUPreset(width_px=1280, height_px=720, samples=192, frames_per_stage=180, fps=30, motion_blur=True),
+    "debug":    GPUPreset(width_px=480,  height_px=270, samples=32,  frames_per_stage=30,   fps=30, motion_blur=False),
+    "balanced": GPUPreset(width_px=960,  height_px=540, samples=96,  frames_per_stage=1800, fps=30, motion_blur=True),
+    "hq":       GPUPreset(width_px=1280, height_px=720, samples=192, frames_per_stage=1800, fps=30, motion_blur=True),
 }
 
 
