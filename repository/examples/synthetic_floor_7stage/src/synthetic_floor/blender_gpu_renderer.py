@@ -61,6 +61,7 @@ class RenderArgs:
     device: str
     motion_blur: bool
     save_blend: bool = False
+    camera_poses: "Path | None" = None
 
 
 def _parse_args() -> RenderArgs:
@@ -87,6 +88,9 @@ def _parse_args() -> RenderArgs:
     p.add_argument("--save-blend", action="store_true",
                    help="Save a self-contained .blend project next to the render "
                         "(open it in Blender on any OS to inspect/re-render).")
+    p.add_argument("--camera-poses", type=Path, default=None,
+                   help="Path to a camera_poses.json (from camera_path.plan_camera_path) "
+                        "to key the camera per-frame. Falls back to the built-in path.")
     a = p.parse_args(argv)
     return RenderArgs(
         input_mesh=a.input_mesh, elements_json=a.elements_json,
@@ -97,6 +101,7 @@ def _parse_args() -> RenderArgs:
         sun_azimuth_deg=float(a.sun_azimuth),
         seed=int(a.seed), device=a.device, motion_blur=not a.no_motion_blur,
         save_blend=bool(a.save_blend),
+        camera_poses=a.camera_poses,
     )
 
 
@@ -289,31 +294,34 @@ CATEGORY_PASS_INDEX = {
     "unknown": 99,
 }
 
-# finishing -> material properties
+# finishing -> material properties.  Concrete albedo is intentionally LOW
+# (~0.35): real raw structural concrete is a mid-dark grey, not the near-white
+# it used to be. High-frequency bump + roughness variation sell the unpolished,
+# as-cast construction look.
 FINISHING_PRESETS = {
     "raw_concrete": {
-        "color": (0.45, 0.44, 0.42, 1.0), "roughness": 0.92,
-        "metallic": 0.0, "noise_scale": 8.0, "bump": 0.15,
+        "color": (0.36, 0.355, 0.34, 1.0), "roughness": 0.95,
+        "metallic": 0.0, "noise_scale": 14.0, "bump": 0.32, "rough_var": 0.18,
     },
     "concrete_beam": {
-        "color": (0.48, 0.47, 0.45, 1.0), "roughness": 0.90,
-        "metallic": 0.0, "noise_scale": 7.0, "bump": 0.12,
+        "color": (0.38, 0.375, 0.36, 1.0), "roughness": 0.93,
+        "metallic": 0.0, "noise_scale": 11.0, "bump": 0.26, "rough_var": 0.15,
     },
     "cinderblock": {
-        "color": (0.55, 0.52, 0.48, 1.0), "roughness": 0.95,
-        "metallic": 0.0, "noise_scale": 25.0, "bump": 0.25,
+        "color": (0.46, 0.44, 0.41, 1.0), "roughness": 0.96,
+        "metallic": 0.0, "noise_scale": 28.0, "bump": 0.38, "rough_var": 0.14,
     },
     "rough_plaster": {
-        "color": (0.80, 0.79, 0.76, 1.0), "roughness": 0.85,
-        "metallic": 0.0, "noise_scale": 30.0, "bump": 0.10,
+        "color": (0.74, 0.73, 0.70, 1.0), "roughness": 0.88,
+        "metallic": 0.0, "noise_scale": 30.0, "bump": 0.14, "rough_var": 0.10,
     },
     "plaster_base": {
-        "color": (0.88, 0.87, 0.85, 1.0), "roughness": 0.70,
-        "metallic": 0.0, "noise_scale": 40.0, "bump": 0.04,
+        "color": (0.82, 0.81, 0.79, 1.0), "roughness": 0.72,
+        "metallic": 0.0, "noise_scale": 40.0, "bump": 0.05, "rough_var": 0.06,
     },
     "painted_white": {
-        "color": (0.95, 0.94, 0.93, 1.0), "roughness": 0.45,
-        "metallic": 0.0, "noise_scale": 50.0, "bump": 0.02,
+        "color": (0.86, 0.855, 0.84, 1.0), "roughness": 0.48,
+        "metallic": 0.0, "noise_scale": 50.0, "bump": 0.02, "rough_var": 0.04,
     },
     "metal_grey": {
         "color": (0.42, 0.44, 0.46, 1.0), "roughness": 0.35,
@@ -335,28 +343,28 @@ FINISHING_PRESETS = {
     },
     # --- exterior + finishes ---
     "earth": {
-        "color": (0.34, 0.27, 0.20, 1.0), "roughness": 0.98,
-        "metallic": 0.0, "noise_scale": 14.0, "bump": 0.30,
+        "color": (0.30, 0.24, 0.18, 1.0), "roughness": 0.98,
+        "metallic": 0.0, "noise_scale": 14.0, "bump": 0.32, "rough_var": 0.12,
     },
     "gravel": {
-        "color": (0.46, 0.45, 0.43, 1.0), "roughness": 0.97,
-        "metallic": 0.0, "noise_scale": 60.0, "bump": 0.35,
+        "color": (0.40, 0.39, 0.37, 1.0), "roughness": 0.97,
+        "metallic": 0.0, "noise_scale": 60.0, "bump": 0.40, "rough_var": 0.16,
     },
     "floor_tile": {
-        "color": (0.80, 0.79, 0.76, 1.0), "roughness": 0.22,
-        "metallic": 0.0, "noise_scale": 12.0, "bump": 0.02,
+        "color": (0.72, 0.71, 0.68, 1.0), "roughness": 0.22,
+        "metallic": 0.0, "noise_scale": 12.0, "bump": 0.02, "rough_var": 0.05,
     },
     "wood_floor": {
-        "color": (0.55, 0.36, 0.20, 1.0), "roughness": 0.40,
-        "metallic": 0.0, "noise_scale": 18.0, "bump": 0.05,
+        "color": (0.45, 0.30, 0.17, 1.0), "roughness": 0.42,
+        "metallic": 0.0, "noise_scale": 18.0, "bump": 0.06, "rough_var": 0.08,
     },
     "epoxy_floor": {
-        "color": (0.40, 0.42, 0.45, 1.0), "roughness": 0.12,
-        "metallic": 0.0, "noise_scale": 6.0, "bump": 0.01,
+        "color": (0.34, 0.36, 0.39, 1.0), "roughness": 0.14,
+        "metallic": 0.0, "noise_scale": 6.0, "bump": 0.01, "rough_var": 0.03,
     },
     "none": {
-        "color": (0.5, 0.5, 0.5, 1.0), "roughness": 0.8,
-        "metallic": 0.0, "noise_scale": 10.0, "bump": 0.05,
+        "color": (0.42, 0.42, 0.42, 1.0), "roughness": 0.85,
+        "metallic": 0.0, "noise_scale": 10.0, "bump": 0.06, "rough_var": 0.10,
     },
 }
 
@@ -431,6 +439,24 @@ def _make_material(name: str, finishing: str, seed: int):
             nt.links.new(mapping.outputs["Vector"], voronoi.inputs["Vector"])
         nt.links.new(voronoi.outputs["Distance"], bump.inputs["Height"])
         nt.links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+
+    # High-frequency roughness variation (unpolished construction surfaces).
+    rough_var = float(preset.get("rough_var", 0.0))
+    if rough_var > 0.001:
+        rnoise = nt.nodes.new("ShaderNodeTexNoise")
+        rnoise.inputs["Scale"].default_value = max(2.0, noise_scale * 0.8) if noise_scale > 0.1 else 12.0
+        rnoise.inputs["Detail"].default_value = 6.0
+        rnoise.inputs["Roughness"].default_value = 0.7
+        rmap = nt.nodes.new("ShaderNodeMapRange")
+        base_rough = float(preset["roughness"])
+        rmap.inputs["From Min"].default_value = 0.0
+        rmap.inputs["From Max"].default_value = 1.0
+        rmap.inputs["To Min"].default_value = max(0.0, base_rough - rough_var)
+        rmap.inputs["To Max"].default_value = min(1.0, base_rough + rough_var)
+        if noise_scale > 0.1:
+            nt.links.new(mapping.outputs["Vector"], rnoise.inputs["Vector"])
+        nt.links.new(rnoise.outputs["Fac"], rmap.inputs["Value"])
+        nt.links.new(rmap.outputs["Result"], bsdf.inputs["Roughness"])
 
     nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
     return mat
@@ -637,6 +663,65 @@ def _scene_bbox(mesh_objs: list) -> tuple:
                 bx_min[i] = min(bx_min[i], wp[i])
                 bx_max[i] = max(bx_max[i], wp[i])
     return tuple(bx_min), tuple(bx_max)
+
+
+def build_camera_from_poses(args: RenderArgs):
+    """Key the camera per-frame from a camera_poses.json (the shared, hyper-
+    realistic trajectory produced by ``camera_path.plan_camera_path``).
+
+    This is the production path: translation and look-at are fully decoupled,
+    the operator scans the room, turns ~180 deg, crouches/rises, etc. We just
+    replay those poses by setting the camera world matrix each frame and
+    keyframing location + rotation.
+    """
+    data = json.loads(Path(args.camera_poses).read_text())
+    frames = data.get("frames", [])
+    if not frames:
+        raise ValueError("camera_poses.json contained no frames")
+    fov = float(data.get("horizontal_fov_deg", 72.0))
+
+    cam_data = bpy.data.cameras.new("Camera")
+    cam_data.sensor_fit = "HORIZONTAL"
+    cam_data.sensor_width = 36.0
+    cam_data.lens = (cam_data.sensor_width / 2.0) / math.tan(math.radians(fov) / 2.0)
+    cam_data.clip_start = 0.02
+    cam_data.clip_end = 200.0
+    cam_obj = bpy.data.objects.new("Camera", cam_data)
+    bpy.context.collection.objects.link(cam_obj)
+    cam_obj.rotation_mode = "XYZ"
+    scene = bpy.context.scene
+    scene.camera = cam_obj
+    scene.frame_start = 1
+    scene.frame_end = len(frames)
+
+    for k, fr in enumerate(frames):
+        f_idx = k + 1
+        eye = mathutils.Vector(fr["eye"])
+        tgt = mathutils.Vector(fr["target"])
+        up = mathutils.Vector(fr["up"])
+        forward = (tgt - eye)
+        if forward.length < 1e-9:
+            forward = mathutils.Vector((0.0, 1.0, 0.0))
+        forward.normalize()
+        right = forward.cross(up)
+        if right.length < 1e-6:
+            right = forward.cross(mathutils.Vector((0.0, 1.0, 0.0)))
+        right.normalize()
+        up_cam = right.cross(forward)
+        # Blender camera: local -Z is view direction, local +Y is up.
+        m = mathutils.Matrix((
+            (right.x, up_cam.x, -forward.x, eye.x),
+            (right.y, up_cam.y, -forward.y, eye.y),
+            (right.z, up_cam.z, -forward.z, eye.z),
+            (0.0, 0.0, 0.0, 1.0),
+        ))
+        scene.frame_set(f_idx)
+        cam_obj.matrix_world = m
+        cam_obj.keyframe_insert("location", frame=f_idx)
+        cam_obj.keyframe_insert("rotation_euler", frame=f_idx)
+
+    _log(f"Camera keyed from {len(frames)} poses (fov={fov:.1f} deg, lens={cam_data.lens:.1f}mm).")
+    return cam_obj
 
 
 def build_camera(mesh_objs: list, frames: int, fps: int, args: RenderArgs):
@@ -1134,7 +1219,10 @@ def main() -> int:
     setup_ceiling_lights(args.stage_id)
 
     # Camera
-    cam_obj, _, _ = build_camera(mesh_objs, args.frames, args.fps, args)
+    if args.camera_poses and Path(args.camera_poses).exists():
+        cam_obj = build_camera_from_poses(args)
+    else:
+        cam_obj, _, _ = build_camera(mesh_objs, args.frames, args.fps, args)
 
     # Render configuration
     configure_render(args)

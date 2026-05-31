@@ -23,10 +23,9 @@ The materials cover everything the seven stages need:
 
 from __future__ import annotations
 
-import io
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Mapping
 
 import numpy as np
 from PIL import Image, ImageFilter
@@ -85,20 +84,28 @@ def _fbm(shape: tuple[int, int], rng: np.random.Generator,
 
 def _build_concrete(size: int, seed: int) -> Image.Image:
     rng = _seeded_rng(seed)
-    base = 0.62 + 0.18 * _fbm((size, size), rng, octaves=6, base_scale=128)
-    # Add cool tone variations
-    cool = 0.04 * (_fbm((size, size), rng, octaves=3, base_scale=256) - 0.5)
-    r = np.clip(base + cool * 0.6, 0.10, 0.95)
-    g = np.clip(base + cool * 0.7, 0.10, 0.95)
-    b = np.clip(base + cool * 1.2, 0.10, 0.95)
-    # Add small dark specks (aggregate)
-    specks = (rng.random((size, size)) > 0.997).astype(np.float32)
-    r -= specks * 0.4
-    g -= specks * 0.4
-    b -= specks * 0.4
+    # Physically plausible DARK raw concrete (~0.32 albedo), not near-white.
+    # Low-frequency tonal blotches + high-frequency aggregate speckle.
+    low = _fbm((size, size), rng, octaves=4, base_scale=160)
+    high = _fbm((size, size), rng, octaves=6, base_scale=16)   # high-frequency grain
+    base = 0.26 + 0.12 * low + 0.06 * high
+    # Subtle cool cast typical of cured concrete.
+    cool = 0.03 * (_fbm((size, size), rng, octaves=3, base_scale=256) - 0.5)
+    r = np.clip(base + cool * 0.5, 0.10, 0.55)
+    g = np.clip(base + cool * 0.7, 0.10, 0.55)
+    b = np.clip(base + cool * 1.0, 0.10, 0.58)
+    # Dark aggregate specks + a few form-tie / pour stains.
+    specks = (rng.random((size, size)) > 0.992).astype(np.float32)
+    r -= specks * 0.10
+    g -= specks * 0.10
+    b -= specks * 0.10
+    stains = _fbm((size, size), rng, octaves=2, base_scale=6) * 0.05
+    r -= stains
+    g -= stains
+    b -= stains
     arr = np.clip(np.stack([r, g, b], axis=-1), 0.0, 1.0)
     arr = (arr * 255).astype(np.uint8)
-    img = Image.fromarray(arr, mode="RGB").filter(ImageFilter.GaussianBlur(radius=0.3))
+    img = Image.fromarray(arr, mode="RGB").filter(ImageFilter.GaussianBlur(radius=0.25))
     return img
 
 

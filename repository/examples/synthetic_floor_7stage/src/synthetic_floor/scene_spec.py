@@ -129,6 +129,66 @@ class MotionBlurSpec:
 
 
 @dataclass(frozen=True)
+class MotionSpec:
+    """Procedural human-operator camera-motion parameters.
+
+    Every value is read from ``camera.motion`` in the YAML (with the
+    defaults below) so the trajectory can be tuned per scene without
+    touching code.
+    """
+    # --- pathfinding / collision ---
+    coverage_lane_spacing_m: float = 3.0     # serpentine lane spacing (full coverage)
+    collision_margin_m: float = 0.65         # keep at least this far from walls
+    column_clearance_m: float = 0.45         # extra radius kept around columns
+    path_smoothness: float = 0.5             # 0=polyline, 1=very rounded (Catmull-Rom)
+    # --- gaze / look-around (decoupled from translation) ---
+    scan_yaw_amplitude_deg: float = 72.0     # how far the gaze sweeps left/right
+    scan_period_sec: float = 8.5             # period of the slow horizontal scan
+    turn_around_interval_sec: float = 13.0   # how often to look ~180 deg behind
+    turn_around_duration_sec: float = 3.2    # eased duration of a look-behind
+    gaze_inertia_tau_sec: float = 0.55       # smoothing time-constant (physical inertia)
+    focus_distance_m: float = 4.5            # look-at distance along the gaze ray
+    pitch_scan_amplitude_deg: float = 14.0   # gentle up/down gaze drift
+    pitch_scan_period_sec: float = 6.0
+    # --- 6-DOF verticality (crouch to floor / rise to ceiling) ---
+    vertical_inspect_enabled: bool = True
+    crouch_height_m: float = 0.80            # lowest eye height when inspecting floor
+    rise_height_m: float = 2.15              # highest eye height when inspecting ceiling
+    vertical_inspect_interval_sec: float = 11.0
+    vertical_inspect_duration_sec: float = 4.2
+    inspect_pitch_deg: float = 34.0          # look down/up during crouch/rise
+
+    @classmethod
+    def from_raw(cls, raw: "Mapping[str, Any] | None") -> "MotionSpec":
+        raw = dict(raw or {})
+        d = cls()  # defaults
+
+        def g(k, default, cast=float):
+            return cast(raw[k]) if k in raw and raw[k] is not None else default
+
+        return cls(
+            coverage_lane_spacing_m=g("coverage_lane_spacing_m", d.coverage_lane_spacing_m),
+            collision_margin_m=g("collision_margin_m", d.collision_margin_m),
+            column_clearance_m=g("column_clearance_m", d.column_clearance_m),
+            path_smoothness=g("path_smoothness", d.path_smoothness),
+            scan_yaw_amplitude_deg=g("scan_yaw_amplitude_deg", d.scan_yaw_amplitude_deg),
+            scan_period_sec=g("scan_period_sec", d.scan_period_sec),
+            turn_around_interval_sec=g("turn_around_interval_sec", d.turn_around_interval_sec),
+            turn_around_duration_sec=g("turn_around_duration_sec", d.turn_around_duration_sec),
+            gaze_inertia_tau_sec=g("gaze_inertia_tau_sec", d.gaze_inertia_tau_sec),
+            focus_distance_m=g("focus_distance_m", d.focus_distance_m),
+            pitch_scan_amplitude_deg=g("pitch_scan_amplitude_deg", d.pitch_scan_amplitude_deg),
+            pitch_scan_period_sec=g("pitch_scan_period_sec", d.pitch_scan_period_sec),
+            vertical_inspect_enabled=g("vertical_inspect_enabled", d.vertical_inspect_enabled, bool),
+            crouch_height_m=g("crouch_height_m", d.crouch_height_m),
+            rise_height_m=g("rise_height_m", d.rise_height_m),
+            vertical_inspect_interval_sec=g("vertical_inspect_interval_sec", d.vertical_inspect_interval_sec),
+            vertical_inspect_duration_sec=g("vertical_inspect_duration_sec", d.vertical_inspect_duration_sec),
+            inspect_pitch_deg=g("inspect_pitch_deg", d.inspect_pitch_deg),
+        )
+
+
+@dataclass(frozen=True)
 class CameraSpec:
     width_px: int
     height_px: int
@@ -145,6 +205,7 @@ class CameraSpec:
     noise: NoiseSpec
     motion_blur: MotionBlurSpec
     rolling_shutter_row_delay_sec: float
+    motion: MotionSpec = field(default_factory=MotionSpec)
 
     @property
     def aspect(self) -> float:
@@ -346,6 +407,7 @@ def load_scene_spec(config_path: Path, *, base_dir: Path | None = None) -> Scene
         noise=noise,
         motion_blur=blur,
         rolling_shutter_row_delay_sec=float(cam_raw["rolling_shutter"]["row_delay_sec"]),
+        motion=MotionSpec.from_raw(cam_raw.get("motion")),
     )
 
     rend_raw = raw["renderer"]

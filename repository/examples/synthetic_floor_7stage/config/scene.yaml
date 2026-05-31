@@ -294,6 +294,25 @@ stages:
 # 3) Camera and smartphone simulation
 # ---------------------------------------------------------------------
 camera:
+  motion:
+    coverage_lane_spacing_m: 3.0
+    collision_margin_m: 0.65
+    column_clearance_m: 0.45
+    path_smoothness: 0.5
+    scan_yaw_amplitude_deg: 72.0
+    scan_period_sec: 8.5
+    turn_around_interval_sec: 13.0
+    turn_around_duration_sec: 3.2
+    gaze_inertia_tau_sec: 0.55
+    focus_distance_m: 4.5
+    pitch_scan_amplitude_deg: 14.0
+    pitch_scan_period_sec: 6.0
+    vertical_inspect_enabled: true
+    crouch_height_m: 0.8
+    rise_height_m: 2.15
+    vertical_inspect_interval_sec: 11.0
+    vertical_inspect_duration_sec: 4.2
+    inspect_pitch_deg: 34.0
   width_px: 640
   height_px: 360
   fps: 30
