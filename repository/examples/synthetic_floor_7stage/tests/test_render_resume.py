@@ -57,5 +57,17 @@ class TestFrameResume(unittest.TestCase):
             self.assertEqual(todo, [6, 7, 8, 9, 10])
 
 
+    def test_worker_frames_partition_is_disjoint_and_complete(self):
+        import synthetic_floor.blender_gpu_renderer as R
+        todo = list(range(1, 26))
+        for n in (1, 2, 3, 4):
+            parts = [R._worker_frames(todo, i, n) for i in range(n)]
+            flat = sorted(sum(parts, []))
+            self.assertEqual(flat, todo, f"workers={n}: not a partition")
+            # roughly balanced
+            self.assertLessEqual(max(len(p) for p in parts) - min(len(p) for p in parts), 1)
+        self.assertEqual(R._worker_frames(todo, 0, 1), todo)
+
+
 if __name__ == "__main__":
     unittest.main()

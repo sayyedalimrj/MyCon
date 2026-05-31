@@ -62,6 +62,17 @@ class RenderArgs:
     motion_blur: bool
     save_blend: bool = False
     camera_poses: "Path | None" = None
+    # --- physically-based lighting / tone-mapping ---
+    world_strength: float = 0.35
+    sun_energy: float = 2.8
+    exposure: float = -0.20
+    view_look: str = "Medium High Contrast"
+    use_fast_gi: bool = True
+    ao_factor: float = 0.55
+    ao_distance: float = 1.2
+    # --- parallel rendering (strided frame subset for this worker) ---
+    worker_index: int = 0
+    worker_count: int = 1
 
 
 def _parse_args() -> RenderArgs:
@@ -91,6 +102,17 @@ def _parse_args() -> RenderArgs:
     p.add_argument("--camera-poses", type=Path, default=None,
                    help="Path to a camera_poses.json (from camera_path.plan_camera_path) "
                         "to key the camera per-frame. Falls back to the built-in path.")
+    # --- lighting / tone-mapping (config-driven; fixes the blown-out look) ---
+    p.add_argument("--world-strength", type=float, default=0.35)
+    p.add_argument("--sun-energy", type=float, default=2.8)
+    p.add_argument("--exposure", type=float, default=-0.20)
+    p.add_argument("--view-look", default="Medium High Contrast")
+    p.add_argument("--no-fast-gi", action="store_true")
+    p.add_argument("--ao-factor", type=float, default=0.55)
+    p.add_argument("--ao-distance", type=float, default=1.2)
+    # --- parallel rendering: this process renders a strided frame subset ---
+    p.add_argument("--worker-index", type=int, default=0)
+    p.add_argument("--worker-count", type=int, default=1)
     a = p.parse_args(argv)
     return RenderArgs(
         input_mesh=a.input_mesh, elements_json=a.elements_json,
@@ -102,6 +124,15 @@ def _parse_args() -> RenderArgs:
         seed=int(a.seed), device=a.device, motion_blur=not a.no_motion_blur,
         save_blend=bool(a.save_blend),
         camera_poses=a.camera_poses,
+        world_strength=float(a.world_strength),
+        sun_energy=float(a.sun_energy),
+        exposure=float(a.exposure),
+        view_look=str(a.view_look),
+        use_fast_gi=not a.no_fast_gi,
+        ao_factor=float(a.ao_factor),
+        ao_distance=float(a.ao_distance),
+        worker_index=int(a.worker_index),
+        worker_count=max(1, int(a.worker_count)),
     )
 
 
@@ -484,8 +515,15 @@ def assign_materials(mesh_objs: list, mapping: dict, seed: int) -> dict:
 # ---------------------------------------------------------------------
 
 
-def setup_world_sky(sun_elevation_deg: float, sun_azimuth_deg: float) -> None:
-    """Nishita Sky Texture + Sun Light for natural daylight."""
+def setup_world_sky(sun_elevation_deg: float, sun_azimuth_deg: float,
+                    world_strength: float = 0.35, sun_energy: float = 2.8) -> None:
+    """Nishita Sky HDR environment + Sun key light for natural daylight.
+
+    ``world_strength`` is the ambient sky fill. Keeping it LOW (~0.35) is the
+    key to deep, realistic shadows: a full-strength sky floods the interior and
+    produces the flat, blown-out "glowing white void". The sun provides the
+    directional key light and contrast.
+    """
     world = bpy.data.worlds.new("World")
     bpy.context.scene.world = world
     world.use_nodes = True
@@ -494,7 +532,7 @@ def setup_world_sky(sun_elevation_deg: float, sun_azimuth_deg: float) -> None:
         nt.nodes.remove(n)
     out = nt.nodes.new("ShaderNodeOutputWorld")
     bg = nt.nodes.new("ShaderNodeBackground")
-    bg.inputs["Strength"].default_value = 1.0  # neutral sky (was 1.2 -> blew out)
+    bg.inputs["Strength"].default_value = float(world_strength)
     sky = nt.nodes.new("ShaderNodeTexSky")
     sky.sky_type = "NISHITA"
     sky.sun_elevation = math.radians(sun_elevation_deg)
@@ -508,9 +546,9 @@ def setup_world_sky(sun_elevation_deg: float, sun_azimuth_deg: float) -> None:
     nt.links.new(sky.outputs["Color"], bg.inputs["Color"])
     nt.links.new(bg.outputs["Background"], out.inputs["Surface"])
 
-    # Sun light for sharp directional shadows
+    # Sun light for sharp directional shadows (the key light).
     sun_data = bpy.data.lights.new("SunLight", type="SUN")
-    sun_data.energy = 3.0
+    sun_data.energy = float(sun_energy)
     sun_data.angle = math.radians(0.55)
     sun_obj = bpy.data.objects.new("SunLight", sun_data)
     bpy.context.collection.objects.link(sun_obj)
@@ -936,13 +974,25 @@ def configure_render(args: RenderArgs) -> None:
     scene.frame_start = 1
     scene.frame_end = args.frames
 
-    # Color management: Filmic tone-mapping at neutral exposure. The old
-    # +1.2 EV "interior boost" blew out the sky and washed the frame to pure
-    # white; with the geometry now correctly in frame, sun+sky+ceiling lights
-    # already provide a well-exposed image.
+    # Ambient occlusion / fast-GI: adds contact shadows + grounds the scene so
+    # it no longer reads as a flat "glowing void". All config-driven.
+    if args.use_fast_gi:
+        for attr, val in (("use_fast_gi", True), ("ao_factor", args.ao_factor),
+                          ("ao_distance", args.ao_distance),
+                          ("ao_bounces_render", 1), ("ao_bounces", 1)):
+            try:
+                setattr(scene.cycles, attr, val)
+            except (AttributeError, TypeError):
+                pass
+
+    # Color management: HDR -> Filmic tone-mapping with contrast + a modest
+    # negative exposure so highlights roll off instead of clipping to white.
     scene.view_settings.view_transform = "Filmic"
-    scene.view_settings.look = "Medium Contrast"
-    scene.view_settings.exposure = 0.0
+    try:
+        scene.view_settings.look = args.view_look
+    except (TypeError, ValueError):
+        scene.view_settings.look = "Medium High Contrast"
+    scene.view_settings.exposure = float(args.exposure)
 
 
 def configure_compositor(args: RenderArgs) -> None:
@@ -1110,8 +1160,20 @@ def _write_render_progress(args, *, total, done, last_frame, started, eta_sec, s
     })
 
 
+def _worker_frames(todo: list, worker_index: int, worker_count: int) -> list:
+    """Strided partition of the remaining frames for one parallel worker.
+
+    Worker ``i`` of ``n`` renders ``todo[i::n]``. Because every frame is an
+    independent file and already-rendered frames are skipped, N Blender
+    processes can render disjoint frames into the same folder with no locking.
+    """
+    if worker_count <= 1:
+        return todo
+    return todo[worker_index::worker_count]
+
+
 def render_frames_resumable(args: "RenderArgs") -> int:
-    """Render every frame, skipping frames already on disk. Returns rc."""
+    """Render this worker's frames, skipping frames already on disk. Returns rc."""
     scene = bpy.context.scene
     rgb_dir = Path(args.output_dir) / "rgb"
     total = args.frames
@@ -1123,9 +1185,14 @@ def render_frames_resumable(args: "RenderArgs") -> int:
     if done:
         last_done = max(done)
         done.discard(last_done)
-    todo = [f for f in range(start_f, end_f + 1) if f not in done]
-    skipped = total - len(todo)
-    if skipped > 0:
+    all_todo = [f for f in range(start_f, end_f + 1) if f not in done]
+    # In parallel mode, only this worker's strided subset.
+    todo = _worker_frames(all_todo, args.worker_index, args.worker_count)
+    skipped = total - len(all_todo)
+    if args.worker_count > 1:
+        _log(f"WORKER {args.worker_index + 1}/{args.worker_count}: "
+             f"{len(todo)} frame(s) assigned ({skipped} already done globally).")
+    elif skipped > 0:
         _log(f"RESUME: {skipped}/{total} frame(s) already rendered; "
              f"rendering the remaining {len(todo)}.")
     else:
@@ -1144,18 +1211,22 @@ def render_frames_resumable(args: "RenderArgs") -> int:
                                    last_frame=f, started=started, eta_sec=0,
                                    status="error")
             return 6
-        done_total = skipped + i
+        # Count global progress from disk so parallel workers report sensibly.
         elapsed = time.time() - started
         per = elapsed / max(1, i)
         eta = per * (len(todo) - i)
         if i == 1 or i % log_every == 0 or i == len(todo):
-            _log(f"[frame] {done_total}/{total} ({100.0 * done_total / total:.1f}%) "
-                 f"frame={f} {per:.1f}s/frame eta={eta / 60:.1f}min")
-        _write_render_progress(args, total=total, done=done_total, last_frame=f,
-                               started=started, eta_sec=eta, status="rendering")
+            on_disk = len(_existing_frame_numbers(rgb_dir))
+            _log(f"[frame] worker {args.worker_index + 1}/{args.worker_count} "
+                 f"did {i}/{len(todo)}; ~{on_disk}/{total} on disk; "
+                 f"f={f} {per:.1f}s/frame eta={eta / 60:.1f}min")
+            _write_render_progress(args, total=total, done=on_disk, last_frame=f,
+                                   started=started, eta_sec=eta, status="rendering")
 
-    _write_render_progress(args, total=total, done=total, last_frame=end_f,
-                           started=started, eta_sec=0, status="complete")
+    on_disk = len(_existing_frame_numbers(rgb_dir))
+    status = "complete" if on_disk >= total else "worker_done"
+    _write_render_progress(args, total=total, done=on_disk, last_frame=end_f,
+                           started=started, eta_sec=0, status=status)
     return 0
 
 
@@ -1214,7 +1285,8 @@ def main() -> int:
     assign_materials(mesh_objs, mapping, seed=args.seed)
 
     # LIGHTING (the key to not having a black render)
-    setup_world_sky(args.sun_elevation_deg, args.sun_azimuth_deg)
+    setup_world_sky(args.sun_elevation_deg, args.sun_azimuth_deg,
+                    world_strength=args.world_strength, sun_energy=args.sun_energy)
     setup_light_portals(args.elements_json, args.stage_id)
     setup_ceiling_lights(args.stage_id)
 

@@ -372,7 +372,7 @@ camera:
   horizontal_fov_deg: 72.0
   k1: -0.03
   k2: 0.008
-  hold_height_m: 1.55
+  hold_height_m: 1.65
   duration_per_stage_sec: 4.0
   walk_speed_m_s: 0.7
   look_at_height_m: 1.5
@@ -398,6 +398,15 @@ camera:
   rolling_shutter:
     row_delay_sec: 0.001
 renderer:
+  world_strength: 0.35
+  sun_energy: 2.8
+  exposure: -0.2
+  view_transform: Filmic
+  view_look: Medium High Contrast
+  use_fast_gi: true
+  ao_factor: 0.55
+  ao_distance: 1.2
+  parallel_workers_count: 1
   backend: software_rasterizer
   ambient_light: 0.22
   sun_azimuth_deg: 135.0

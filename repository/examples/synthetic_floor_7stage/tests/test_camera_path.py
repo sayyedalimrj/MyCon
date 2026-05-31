@@ -134,5 +134,15 @@ class TestCameraOperator(unittest.TestCase):
             self.assertEqual(list(Path(d).glob(".campose.*")), [])
 
 
+    def test_eye_level_is_human_walking_height(self):
+        # Median eye height must read as a person walking (~1.6-1.7 m), not
+        # floating near the ceiling; crouch/rise are transient excursions.
+        for cfg in CONFIGS:
+            _, _, eyes, _ = self._poses(cfg)
+            med = float(np.median(eyes[:, 2]))
+            self.assertGreaterEqual(med, 1.45, f"{cfg}: median eye {med:.2f}m too low")
+            self.assertLessEqual(med, 1.80, f"{cfg}: median eye {med:.2f}m floating high")
+
+
 if __name__ == "__main__":
     unittest.main()

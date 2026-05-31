@@ -126,27 +126,63 @@ def default_drive_root(
 # ---------------------------------------------------------------------
 
 
-def _needs_copy(src: Path, dst: Path) -> bool:
+def _file_sha1(path: Path, *, block: int = 1024 * 1024) -> str:
+    import hashlib
+    h = hashlib.sha1()
+    try:
+        with Path(path).open("rb") as fh:
+            for chunk in iter(lambda: fh.read(block), b""):
+                h.update(chunk)
+    except OSError:
+        return ""
+    return h.hexdigest()
+
+
+def _needs_copy(src: Path, dst: Path, *, use_hash: bool = False) -> bool:
+    """Delta check: copy only when content actually differs.
+
+    Fast path: missing dst, or different size -> copy. Same size + close mtime
+    -> skip. Same size but mtime drift (the common cross-system case after a
+    Drive download resets timestamps) -> verify by SHA-1 and copy only if the
+    content truly differs, so resuming on a new machine transfers nothing it
+    already has.
+    """
     if not dst.exists():
         return True
     try:
         s, d = src.stat(), dst.stat()
     except OSError:
         return True
-    return s.st_size != d.st_size or s.st_mtime > d.st_mtime + 2
+    if s.st_size != d.st_size:
+        return True
+    if abs(s.st_mtime - d.st_mtime) <= 2:
+        return False
+    if not use_hash:
+        return s.st_mtime > d.st_mtime + 2
+    # Size matches but timestamps drifted -> compare content hashes.
+    return _file_sha1(src) != _file_sha1(dst)
 
 
-def _builtin_mirror(src_dir: Path, dst_dir: Path, log) -> dict:
-    copied = skipped = failed = 0
+def _builtin_mirror(src_dir: Path, dst_dir: Path, log, *, use_hash: bool = False) -> dict:
+    copied = skipped = failed = hashed = 0
+    bytes_copied = 0
     src_dir = Path(src_dir)
     if not src_dir.exists():
-        return {"copied": 0, "skipped": 0, "failed": 0}
+        return {"copied": 0, "skipped": 0, "failed": 0, "bytes_copied": 0}
     for root, _dirs, files in os.walk(src_dir):
         rel = Path(root).relative_to(src_dir)
         for name in files:
+            if name.startswith(".") and name.endswith(".tmp"):
+                continue
             s = Path(root) / name
             d = Path(dst_dir) / rel / name
-            if not _needs_copy(s, d):
+            try:
+                need = _needs_copy(s, d, use_hash=use_hash)
+            except OSError:
+                need = True
+            if use_hash and d.exists():
+                hashed += 1
+            if not need:
                 skipped += 1
                 continue
             try:
@@ -155,23 +191,38 @@ def _builtin_mirror(src_dir: Path, dst_dir: Path, log) -> dict:
                 shutil.copy2(s, tmp)
                 os.replace(tmp, d)
                 copied += 1
+                try:
+                    bytes_copied += s.stat().st_size
+                except OSError:
+                    pass
             except OSError as exc:
                 failed += 1
                 _log(log, f"[drive] mirror failed for {s}: {exc}")
     if copied or failed:
-        _log(log, f"[drive] mirror {src_dir} -> {dst_dir}: copied={copied} skipped={skipped} failed={failed}")
-    return {"copied": copied, "skipped": skipped, "failed": failed}
+        _log(log, f"[drive] delta-mirror {src_dir} -> {dst_dir}: "
+                  f"copied={copied} skipped={skipped} failed={failed} "
+                  f"({bytes_copied / 1024 / 1024:.1f} MB)")
+    return {"copied": copied, "skipped": skipped, "failed": failed,
+            "bytes_copied": bytes_copied}
 
 
-def mirror_tree(src_dir: Path, dst_dir: Path, *, log=None) -> dict:
-    """Incrementally copy new/changed files from ``src_dir`` to ``dst_dir``."""
+def mirror_tree(src_dir: Path, dst_dir: Path, *, log=None, use_hash: bool = False) -> dict:
+    """Incrementally copy new/modified files from ``src_dir`` to ``dst_dir``.
+
+    ``use_hash=True`` performs a content-hash delta (only genuinely changed
+    files transfer, even when timestamps drift on a new system). ``use_hash=False``
+    uses the fast size+mtime delta (good for same-machine periodic sync).
+    """
+    if use_hash:
+        # Hash-verified delta is implemented locally (the repo mirror is mtime-based).
+        return _builtin_mirror(Path(src_dir), Path(dst_dir), log, use_hash=True)
     if _COLAB_SYNC is not None:
         try:
             stats = _COLAB_SYNC.mirror_tree(Path(src_dir), Path(dst_dir))
             return stats.as_dict() if hasattr(stats, "as_dict") else dict(stats)
         except Exception as exc:  # pragma: no cover
             _log(log, f"[drive] repo mirror failed ({exc}); using builtin")
-    return _builtin_mirror(Path(src_dir), Path(dst_dir), log)
+    return _builtin_mirror(Path(src_dir), Path(dst_dir), log, use_hash=False)
 
 
 class DriveMirror:
@@ -185,12 +236,14 @@ class DriveMirror:
         log: Optional[Callable[[str], None]] = None,
         interval: float = 120.0,
         mount: Path = DEFAULT_DRIVE_MOUNT,
+        use_hash: bool = True,
     ) -> None:
         self.local_root = Path(local_root)
         self.drive_root = Path(drive_root)
         self.log = log
         self.interval = interval
         self.mount = Path(mount)
+        self.use_hash = use_hash
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
@@ -205,16 +258,18 @@ class DriveMirror:
     # ----- one-shot transfers -----
 
     def pull(self) -> dict:
-        """Restore any prior outputs from Drive into the local working tree."""
+        """Restore prior outputs from Drive into the local tree (hash-verified delta)."""
         self.ensure_healthy()
         self.local_root.mkdir(parents=True, exist_ok=True)
-        return mirror_tree(self.drive_root, self.local_root, log=self.log)
+        # Cross-system pulls: content-hash delta so identical files are skipped
+        # even though their timestamps were reset by the Drive download.
+        return mirror_tree(self.drive_root, self.local_root, log=self.log, use_hash=self.use_hash)
 
     def push(self) -> dict:
-        """Flush the local working tree onto Drive (incremental)."""
+        """Flush the local tree onto Drive (fast size+mtime delta)."""
         self.ensure_healthy()
         self.drive_root.mkdir(parents=True, exist_ok=True)
-        return mirror_tree(self.local_root, self.drive_root, log=self.log)
+        return mirror_tree(self.local_root, self.drive_root, log=self.log, use_hash=False)
 
     # ----- background daemon -----
 
