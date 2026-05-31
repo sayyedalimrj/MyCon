@@ -1,35 +1,21 @@
-"""Hyper-realistic procedural camera operator + full-coverage pathfinding.
+"""Procedural camera operator + reconstruction-friendly walkthrough planning.
 
-This module is the **single source of truth** for camera motion in the
+This module is the single source of truth for camera motion in the
 synthetic-floor example. Both the CPU software-rasterizer path
 (``run_generate.py``) and the Blender GPU export (``blender_gpu_renderer.py``,
-via a serialized ``camera_poses.json``) consume the poses produced here, so
-the rendered video and the CPU dataset share the exact same trajectory.
+via a serialized ``camera_poses.json``) consume the poses produced here.
 
-Design goals (a believable hand-held human operator, not a robot on rails):
+The planner has two modes:
 
-* **Translation and look-at are fully decoupled.** The body walks a
-  coverage path; the gaze is an independent, inertial signal that scans
-  left/right, periodically turns ~180 deg to inspect the area behind, and
-  tilts up/down to inspect ceiling/floor.
-* **Full-coverage, collision-safe pathfinding.** The walk is generated from
-  the ``SceneSpec`` interior (a serpentine that covers the floor), smoothed
-  with a centripetal Catmull-Rom spline for natural curves, then strictly
-  clamped inside the room (walls) and pushed out of column footprints — no
-  wall-clipping, no out-of-bounds.
-* **6-DOF with verticality.** The eye height is not locked: scheduled
-  "inspect floor" (crouch) and "inspect ceiling" (rise) maneuvers move the
-  camera on Z with eased motion, and the gaze pitches to match.
-* **Physical inertia + micro-mechanics.** Gaze angles are low-pass filtered
-  (a time-constant = inertia), and breathing / footstep / high-frequency
-  micro-jitter ride on top.
+* short smoke-test clips keep the previous coverage-heavy behavior so the fast
+  tests still exercise wall/ceiling/floor/gaze extremes;
+* production-length clips (roughly 60 seconds / 1800 frames) use a
+  reconstruction tour: multiple interior lanes, loop closure, high overlap,
+  controlled parallax, and short floor/ceiling glances without roof-staring or
+  abrupt look-behind spins.
 
-All parameters come from ``camera.motion`` / ``camera.hand_jitter`` in the
-YAML config (see :class:`scene_spec.MotionSpec`) — nothing here is hardcoded.
-
-Coordinates are right-handed **Z-up** (matches the rest of the pipeline and
-the Blender camera convention: ``cam_to_world`` columns are right / up /
-backward / eye).
+Coordinates are right-handed Z-up and match the Blender camera convention:
+``cam_to_world`` columns are right / up / backward / eye.
 """
 
 from __future__ import annotations
@@ -48,6 +34,7 @@ from .scene_spec import CameraSpec, MotionSpec, SceneSpec
 @dataclass(frozen=True)
 class Pose:
     """One camera pose (right-handed, Z-up)."""
+
     eye: np.ndarray         # shape (3,)
     target: np.ndarray      # shape (3,)
     up: np.ndarray          # shape (3,)
@@ -85,7 +72,7 @@ def _smoothstep(x: float) -> float:
 
 
 def _trapezoid_pulse(t: float, start: float, duration: float, ramp_frac: float = 0.35) -> float:
-    """Eased 0->1->0 pulse over [start, start+duration] (ramp-up, hold, ramp-down)."""
+    """Eased 0->1->0 pulse over [start, start+duration]."""
     if duration <= 0:
         return 0.0
     u = (t - start) / duration
@@ -113,7 +100,7 @@ def _inertia_filter(values: np.ndarray, dt: float, tau: float) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------
-# Geometry helpers (collision + coverage)
+# Geometry helpers (collision + paths)
 # ---------------------------------------------------------------------
 
 
@@ -156,7 +143,7 @@ def _avoid_columns(p: np.ndarray, columns: np.ndarray, radius: float,
     if columns.size == 0 or radius <= 0:
         return p
     q = p.copy()
-    for _ in range(4):  # a few relaxation passes
+    for _ in range(4):
         moved = False
         for c in columns:
             d = q[:2] - c
@@ -174,12 +161,16 @@ def _avoid_columns(p: np.ndarray, columns: np.ndarray, radius: float,
 
 
 def _catmull_rom(points: np.ndarray, samples_per_seg: int, smoothness: float) -> np.ndarray:
-    """Centripetal Catmull-Rom spline through ``points`` (rounded, natural)."""
+    """Catmull-Rom-style interpolation blended with linear segments.
+
+    The blend parameter intentionally damps classic Catmull-Rom overshoot. The
+    final collision pass clamps every sampled point back into the safe interior.
+    """
     n = len(points)
     if n < 3 or samples_per_seg < 2:
         return points
     blend = float(min(1.0, max(0.0, smoothness)))
-    pts = np.vstack([points[0], points, points[-1]])  # phantom endpoints
+    pts = np.vstack([points[0], points, points[-1]])
     out = [points[0]]
     for i in range(1, len(pts) - 2):
         p0, p1, p2, p3 = pts[i - 1], pts[i], pts[i + 1], pts[i + 2]
@@ -197,23 +188,30 @@ def _catmull_rom(points: np.ndarray, samples_per_seg: int, smoothness: float) ->
     return np.array(out, dtype=np.float64)
 
 
+def _door_start(spec: SceneSpec, bounds: tuple[float, float, float, float], z: float) -> list[float]:
+    """Start just inside the first configured door, falling back to SW interior."""
+    x0, x1, y0, y1 = bounds
+    start = [x0, y0, z]
+    if not spec.floor.doors:
+        return start
+    door = spec.floor.doors[0]
+    if door.side in ("west", "east"):
+        start[1] = float(np.clip(door.offset_m, y0, y1))
+        start[0] = x0 if door.side == "west" else x1
+    elif door.side in ("south", "north"):
+        start[0] = float(np.clip(door.offset_m, x0, x1))
+        start[1] = y0 if door.side == "south" else y1
+    return start
+
+
 def _coverage_waypoints(spec: SceneSpec, motion: MotionSpec, z: float) -> np.ndarray:
-    """Serpentine lawn-mower path covering the interior, entering at the door."""
+    """Coverage-heavy serpentine path used for short smoke-test clips."""
     x0, x1, y0, y1 = _interior_bounds(spec, motion)
     spacing = max(1.2, motion.coverage_lane_spacing_m)
     n_lanes = max(2, int(round((y1 - y0) / spacing)) + 1)
     y_vals = np.linspace(y0, y1, n_lanes)
 
-    wp: list[list[float]] = []
-    # Enter near the (first) door if one exists, else near a corner.
-    enter_x = x0
-    if spec.floor.doors:
-        d = spec.floor.doors[0]
-        if d.side in ("west", "east"):
-            enter_x = x0 if d.side == "west" else x1
-        # door offset_m is along the facade (y for west/east); start near it
-    wp.append([enter_x, y_vals[0], z])
-
+    wp: list[list[float]] = [_door_start(spec, (x0, x1, y0, y1), z)]
     for k, y in enumerate(y_vals):
         if k % 2 == 0:
             wp.append([x0, y, z])
@@ -221,31 +219,90 @@ def _coverage_waypoints(spec: SceneSpec, motion: MotionSpec, z: float) -> np.nda
         else:
             wp.append([x1, y, z])
             wp.append([x0, y, z])
-    # A final pass back toward the entrance so the loop closes naturally.
     wp.append([(x0 + x1) * 0.5, (y0 + y1) * 0.5, z])
-    wp.append([enter_x, y_vals[0], z])
+    wp.append(_door_start(spec, (x0, x1, y0, y1), z))
     return np.array(wp, dtype=np.float64)
 
 
-def _build_path(spec: SceneSpec, motion: MotionSpec, z: float) -> tuple[np.ndarray, np.ndarray]:
-    """Return (smoothed, collision-safe path points, cumulative arc-length)."""
+def _reconstruction_waypoints(spec: SceneSpec, motion: MotionSpec, z: float) -> np.ndarray:
+    """Production 60s path for SfM/MVS coverage.
+
+    The route makes a dense lawn-mower sweep with five interior lanes, then a
+    short loop-closing center pass. This keeps adjacent frames highly
+    overlapping while giving COLMAP-style reconstruction enough lateral
+    baseline/parallax on the slab, columns, walls, windows, ceiling, and door.
+    """
+    x0, x1, y0, y1 = _interior_bounds(spec, motion)
+    start = _door_start(spec, (x0, x1, y0, y1), z)
+    lane_count = 5
+    y_vals = np.linspace(y0, y1, lane_count)
+    inset = min(1.35, 0.08 * (x1 - x0))
+    left = x0 + inset
+    right = x1 - inset
+    cx, cy = (x0 + x1) * 0.5, (y0 + y1) * 0.5
+
+    wp: list[list[float]] = [start, [left, start[1], z]]
+    for k, y in enumerate(y_vals):
+        if k == 0 and abs(start[1] - y) > 0.4:
+            wp.append([left, y, z])
+        if k % 2 == 0:
+            wp.extend([[left, y, z], [right, y, z]])
+        else:
+            wp.extend([[right, y, z], [left, y, z]])
+
+    # Loop closure and center viewpoints: useful for pose graph stability and
+    # for covering ceiling/floor/columns from a non-wall-hugging baseline.
+    wp.extend([
+        [left, cy, z],
+        [cx, cy, z],
+        [right, cy, z],
+        [cx, cy, z],
+        [left, start[1], z],
+        start,
+    ])
+    return np.array(wp, dtype=np.float64)
+
+
+def _safe_path_from_waypoints(
+    spec: SceneSpec,
+    motion: MotionSpec,
+    raw: np.ndarray,
+    *,
+    samples_per_seg: int,
+) -> tuple[np.ndarray, np.ndarray]:
     bounds = _interior_bounds(spec, motion)
     columns = _column_centers(spec)
     radius = spec.floor.grid.column_size_m * 0.5 + motion.column_clearance_m
-
-    raw = _coverage_waypoints(spec, motion, z)
-    smooth = _catmull_rom(raw, samples_per_seg=10, smoothness=motion.path_smoothness)
-
+    smooth = _catmull_rom(raw, samples_per_seg=samples_per_seg, smoothness=motion.path_smoothness)
     safe = np.array([
         _avoid_columns(_clamp_interior(p, bounds), columns, radius, bounds)
         for p in smooth
     ], dtype=np.float64)
-    safe[:, 2] = z
-
+    safe[:, 2] = raw[0, 2]
     diffs = np.diff(safe, axis=0)
     seg = np.linalg.norm(diffs, axis=1)
     cum = np.concatenate([[0.0], np.cumsum(seg)])
     return safe, cum
+
+
+def _build_path(spec: SceneSpec, motion: MotionSpec, z: float) -> tuple[np.ndarray, np.ndarray]:
+    """Return the legacy short-clip coverage path plus cumulative arc-length."""
+    return _safe_path_from_waypoints(
+        spec,
+        motion,
+        _coverage_waypoints(spec, motion, z),
+        samples_per_seg=10,
+    )
+
+
+def _build_reconstruction_path(spec: SceneSpec, motion: MotionSpec, z: float) -> tuple[np.ndarray, np.ndarray]:
+    """Return the production reconstruction-tour path plus cumulative arc-length."""
+    return _safe_path_from_waypoints(
+        spec,
+        motion,
+        _reconstruction_waypoints(spec, motion, z),
+        samples_per_seg=12,
+    )
 
 
 def _sample_path(path: np.ndarray, cum: np.ndarray, s: float) -> np.ndarray:
@@ -275,15 +332,27 @@ def plan_camera_path(spec: SceneSpec, *, stage_id: int, n_frames: Optional[int] 
     fps = float(cam.fps)
     dt = 1.0 / fps
     duration = n_frames / fps
+    production = duration >= 20.0
 
     # Reproducible-but-distinct jitter per stage.
     rng = np.random.default_rng(spec.random_seed + stage_id * 7919 + 17)
 
-    # --- body path (collision-safe coverage), traversed once over the clip ---
     base_z = cam.hold_height_m
-    path, cum = _build_path(spec, motion, base_z)
+    if production:
+        path, cum = _build_reconstruction_path(spec, motion, base_z)
+    else:
+        path, cum = _build_path(spec, motion, base_z)
     total_len = float(cum[-1])
-    speed = total_len / max(0.5, duration)  # fit the whole path into the clip
+
+    if production:
+        # Finish the reconstruction loop in the export duration, but cap future
+        # config/path changes so the camera cannot silently become a fly-through.
+        speed = min(total_len / max(1.0, duration * 0.97), 1.85)
+        look_ahead_m = 1.45
+    else:
+        # Historical short clips are deliberately coverage-heavy.
+        speed = total_len / max(0.5, duration)
+        look_ahead_m = 0.8
 
     f = spec.floor
     ceil_z = f.height_m
@@ -296,61 +365,104 @@ def plan_camera_path(spec: SceneSpec, *, stage_id: int, n_frames: Optional[int] 
     for i, t in enumerate(ts):
         s = speed * t
         p = _sample_path(path, cum, s)
-        ahead = _sample_path(path, cum, s + 0.8)
+        ahead = _sample_path(path, cum, s + look_ahead_m)
         eyes_xy[i] = p[:2]
         tan = ahead[:2] - p[:2]
         travel_heading[i] = math.atan2(tan[1], tan[0]) if np.linalg.norm(tan) > 1e-6 else (
             travel_heading[i - 1] if i > 0 else 0.0)
     travel_heading = np.unwrap(travel_heading)
 
-    # Scheduled 180-degree look-behind events, distributed across the clip so
-    # even a short stage gets at least one (and long stages get more).
+    # Look-around. Short clips keep the dramatic look-behind test behavior;
+    # production clips use small shoulder checks so pose tracking keeps overlap.
     turn_offset = np.zeros(n_frames)
     if motion.turn_around_interval_sec > 0:
-        n_turns = max(1, int(round(duration / motion.turn_around_interval_sec)))
-        turn_dur = min(motion.turn_around_duration_sec, 0.7 * duration / n_turns)
+        if production:
+            turn_period = max(20.0, motion.turn_around_interval_sec)
+            n_turns = min(3, int(duration // turn_period))
+            turn_dur = min(motion.turn_around_duration_sec, 2.5)
+            turn_amp = math.radians(32.0)
+        else:
+            n_turns = max(1, int(round(duration / motion.turn_around_interval_sec)))
+            turn_dur = min(motion.turn_around_duration_sec, 0.7 * duration / n_turns)
+            turn_amp = math.pi
         for k in range(n_turns):
-            center = duration * (k + 0.5) / n_turns
+            center = duration * (k + 0.5) / max(1, n_turns)
             start = center - turn_dur * 0.5
             sign = 1.0 if (k % 2 == 0) else -1.0
             for i, t in enumerate(ts):
-                turn_offset[i] += sign * math.pi * _trapezoid_pulse(t, start, turn_dur)
+                turn_offset[i] += sign * turn_amp * _trapezoid_pulse(t, start, turn_dur)
 
-    # Slow horizontal scan (look left/right) + gentle vertical scan.
-    scan_yaw = np.deg2rad(motion.scan_yaw_amplitude_deg) * np.sin(
-        2 * np.pi * ts / max(0.5, motion.scan_period_sec) + rng.uniform(0, 2 * np.pi))
-    pitch_scan = np.deg2rad(motion.pitch_scan_amplitude_deg) * np.sin(
-        2 * np.pi * ts / max(0.5, motion.pitch_scan_period_sec) + rng.uniform(0, 2 * np.pi))
+    if production:
+        scan_amp_deg = min(motion.scan_yaw_amplitude_deg, 26.0)
+        scan_period = max(12.0, motion.scan_period_sec)
+        pitch_amp_deg = min(motion.pitch_scan_amplitude_deg, 5.0)
+        pitch_period = max(10.0, motion.pitch_scan_period_sec)
+    else:
+        scan_amp_deg = motion.scan_yaw_amplitude_deg
+        scan_period = max(0.5, motion.scan_period_sec)
+        pitch_amp_deg = motion.pitch_scan_amplitude_deg
+        pitch_period = max(0.5, motion.pitch_scan_period_sec)
 
-    # Scheduled crouch (inspect floor) / rise (inspect ceiling) maneuvers,
-    # distributed across the clip so even a short stage gets BOTH a crouch
-    # and a rise (>=2 episodes, alternating).
+    # Alternating side-looking bias: reconstruction wants wall/column parallax,
+    # but abrupt target jumps are bad. A smooth sine keeps overlap high.
+    side_bias = np.zeros(n_frames)
+    if production:
+        side_bias = np.deg2rad(16.0) * np.sin(2 * np.pi * ts / 18.0)
+
+    scan_yaw = np.deg2rad(scan_amp_deg) * np.sin(
+        2 * np.pi * ts / scan_period + rng.uniform(0, 2 * np.pi))
+    pitch_scan = np.deg2rad(pitch_amp_deg) * np.sin(
+        2 * np.pi * ts / pitch_period + rng.uniform(0, 2 * np.pi))
+
+    # Scheduled floor/ceiling glances. Production keeps these sparse and short:
+    # enough for coverage, not enough to ruin the walkthrough.
     z_macro = np.full(n_frames, base_z)
     inspect_pitch = np.zeros(n_frames)
     if motion.vertical_inspect_enabled and motion.vertical_inspect_interval_sec > 0:
-        n_insp = max(2, int(round(duration / motion.vertical_inspect_interval_sec)))
-        insp_dur = min(motion.vertical_inspect_duration_sec, 0.8 * duration / n_insp)
-        for k in range(n_insp):
-            center = duration * (k + 0.5) / n_insp
-            start = center - insp_dur * 0.5
-            crouch = (k % 2 == 0)
-            target_z = (max(floor_z + 0.3, motion.crouch_height_m) if crouch
-                        else min(ceil_z - 0.3, motion.rise_height_m))
-            pitch_dir = -1.0 if crouch else 1.0
+        if production:
+            n_insp = min(4, max(2, int(duration // max(18.0, motion.vertical_inspect_interval_sec))))
+            centers = np.linspace(0.18 * duration, 0.82 * duration, n_insp)
+            insp_dur = min(motion.vertical_inspect_duration_sec, 2.8)
+            kinds = ["floor", "ceiling", "floor", "ceiling"]
+        else:
+            n_insp = max(2, int(round(duration / motion.vertical_inspect_interval_sec)))
+            centers = [duration * (k + 0.5) / n_insp for k in range(n_insp)]
+            insp_dur = min(motion.vertical_inspect_duration_sec, 0.8 * duration / n_insp)
+            kinds = ["floor" if k % 2 == 0 else "ceiling" for k in range(n_insp)]
+
+        for k, center in enumerate(centers):
+            kind = kinds[k % len(kinds)]
+            start = float(center) - insp_dur * 0.5
+            if production:
+                if kind == "floor":
+                    target_z = max(floor_z + 0.95, min(base_z, motion.crouch_height_m))
+                    pitch_dir = -1.0
+                    pitch_deg = min(motion.inspect_pitch_deg, 22.0)
+                else:
+                    target_z = min(ceil_z - 0.45, motion.rise_height_m, base_z + 0.25)
+                    pitch_dir = 1.0
+                    pitch_deg = min(motion.inspect_pitch_deg * 0.45, 12.0)
+            else:
+                if kind == "floor":
+                    target_z = max(floor_z + 0.3, motion.crouch_height_m)
+                    pitch_dir = -1.0
+                else:
+                    target_z = min(ceil_z - 0.3, motion.rise_height_m)
+                    pitch_dir = 1.0
+                pitch_deg = motion.inspect_pitch_deg
             for i, t in enumerate(ts):
                 w = _trapezoid_pulse(t, start, insp_dur)
                 z_macro[i] = z_macro[i] * (1 - w) + target_z * w
-                inspect_pitch[i] += pitch_dir * np.deg2rad(motion.inspect_pitch_deg) * w
+                inspect_pitch[i] += pitch_dir * np.deg2rad(pitch_deg) * w
 
     # Raw gaze angles, then apply physical inertia (low-pass).
-    yaw_raw = travel_heading + scan_yaw + turn_offset
+    yaw_raw = travel_heading + scan_yaw + side_bias + turn_offset
     pitch_raw = pitch_scan + inspect_pitch
     yaw = _inertia_filter(yaw_raw, dt, motion.gaze_inertia_tau_sec)
     pitch = _inertia_filter(pitch_raw, dt, motion.gaze_inertia_tau_sec)
 
     # --- micro-mechanics (breathing / footstep gait / high-freq tremor) ---
     hj = cam.hand_jitter
-    # band-limited noise: white noise then inertia-smoothed
     noise = rng.normal(0.0, 1.0, size=(n_frames, 6))
     for c in range(6):
         noise[:, c] = _inertia_filter(noise[:, c], dt, 0.18)
@@ -358,6 +470,7 @@ def plan_camera_path(spec: SceneSpec, *, stage_id: int, n_frames: Optional[int] 
     poses: list[Pose] = []
     bounds = _interior_bounds(spec, motion)
     focus = motion.focus_distance_m
+    pitch_limit = math.radians(34.0 if production else 80.0)
     for i, t in enumerate(ts):
         breath = 2 * np.pi * t / max(0.01, hj.breathing_period_s)
         gait = 2 * np.pi * t / max(0.01, hj.walking_period_s)
@@ -378,7 +491,7 @@ def plan_camera_path(spec: SceneSpec, *, stage_id: int, n_frames: Optional[int] 
         pitch_i = pitch[i] + np.deg2rad(hj.walking_pitch_amp_deg) * math.sin(gait + math.pi / 2) \
             + np.deg2rad(0.2) * math.sin(breath) \
             + np.deg2rad(hj.rotation_amplitude_deg) * noise[i, 4]
-        pitch_i = float(np.clip(pitch_i, -math.radians(80), math.radians(80)))
+        pitch_i = float(np.clip(pitch_i, -pitch_limit, pitch_limit))
 
         cp = math.cos(pitch_i)
         dir_vec = np.array([cp * math.cos(yaw_i), cp * math.sin(yaw_i), math.sin(pitch_i)])
