@@ -21,6 +21,12 @@ def finish(a):
     env=effective_env(profile,root)
     env['MAX_JOBS']='2';env['FORCE_CUDA']='1'
     env['PIP_CONSTRAINT']=str(root.parent/(root.name+'_torch_constraints.txt'))
+    log=reports/'finish_preflight.log'
+    requirements=reports/'requirements_remaining.txt'
+    # These packages do not rebuild PyTorch3D and can install while its native build runs.
+    requirements.write_text('\n'.join(x for x in (source/'requirements.txt').read_text().splitlines()
+                                      if 'pytorch3d' not in x.lower())+'\n')
+    run_logged([str(py),'-m','pip','install','--no-build-isolation','-r',str(requirements)],log,env=env,cwd=source)
     if a.pytorch3d_ready_marker:
         deadline=time.monotonic()+a.wait_seconds
         while 'PYTORCH3D_INSTALLED_WITH_CUDA121' not in a.pytorch3d_ready_marker.read_text():
@@ -29,12 +35,15 @@ def finish(a):
             if time.monotonic()>deadline:
                 raise RuntimeError('DEPENDENCY_WAIT_TIMEOUT: preserve existing build and logs')
             time.sleep(5)
-    log=reports/'finish_preflight.log'
-    requirements=reports/'requirements_remaining.txt'
-    # The explicitly built PyTorch3D wheel is already installed; never rebuild it here.
-    requirements.write_text('\n'.join(x for x in (source/'requirements.txt').read_text().splitlines()
-                                      if 'pytorch3d' not in x.lower())+'\n')
-    run_logged([str(py),'-m','pip','install','--no-build-isolation','-r',str(requirements)],log,env=env,cwd=source)
+    # Persist the expensive wheel before later, independent preflight steps can fail.
+    wheel_cache=reports/'verified_wheels';wheel_cache.mkdir(exist_ok=True)
+    if a.pytorch3d_dist:
+        for wheel in a.pytorch3d_dist.glob('*.whl'):
+            dest=wheel_cache/wheel.name
+            if dest.exists():
+                if hashlib.sha256(dest.read_bytes()).digest()!=hashlib.sha256(wheel.read_bytes()).digest():
+                    raise RuntimeError('CACHE_WHEEL_IDENTITY_CHANGED: preserve both')
+            else:shutil.copy2(wheel,dest)
     for ext in ('simple-knn','diff-gaussian-rasterization','fused-ssim'):
         run_logged([str(py),'-m','pip','install','--no-build-isolation',str(source/'submodules'/ext)],
                    log,env=env,cwd=source)
@@ -42,6 +51,8 @@ def finish(a):
     if (rope/'setup.py').is_file():
         run_logged([str(py),'setup.py','build_ext','--inplace'],log,env=env,cwd=rope)
     verify_cuda(py,profile,log,env)
+    for entry in ('train.py','render.py','convert_3dgs.py'):
+        run_logged([str(py),str(source/entry),'--help'],log,env=env,cwd=source,timeout_s=120)
     frames=sorted(a.frames.glob('frame_*.jpg'))
     if len(frames)<30:raise RuntimeError('Full-video frames missing')
     # Two-image inference tests the real checkpoint and import path without any optimization.
@@ -64,14 +75,6 @@ print(json.dumps({'mast3r_two_image_inference':'PASS','points_shape':list(pts.sh
     (root.parent/(root.name+'_installed.json')).write_text(json.dumps(result,indent=2))
     frozen=subprocess.check_output([str(py),'-m','pip','freeze'],env=env,text=True)
     (reports/'pip_freeze.txt').write_text(frozen)
-    wheel_cache=reports/'verified_wheels';wheel_cache.mkdir(exist_ok=True)
-    if a.pytorch3d_dist:
-        for wheel in a.pytorch3d_dist.glob('*.whl'):
-            dest=wheel_cache/wheel.name
-            if dest.exists():
-                if hashlib.sha256(dest.read_bytes()).digest()!=hashlib.sha256(wheel.read_bytes()).digest():
-                    raise RuntimeError('CACHE_WHEEL_IDENTITY_CHANGED: preserve both')
-            else:shutil.copy2(wheel,dest)
     print('FULL_PREFLIGHT_PASSED_NO_TRAINING',flush=True)
 
 
