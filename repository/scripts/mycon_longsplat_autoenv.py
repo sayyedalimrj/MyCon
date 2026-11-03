@@ -82,7 +82,7 @@ def effective_env(profile: dict,envroot: Path) -> dict:
     return d
 
 
-def install(profile: dict,source: Path,root: Path,log: Path) -> dict:
+def install(profile: dict,source: Path,root: Path,log: Path, *, repair_partial: bool=False) -> dict:
     if not (source/'requirements.txt').is_file() or not (source/'submodules/mast3r').is_dir():
         raise RuntimeError('OFFICIAL_NVIDIA_SOURCE_NOT_VERIFIED: install official checkout first')
     torch=profile['torch_version'];vision=profile['torchvision_version']
@@ -100,20 +100,34 @@ def install(profile: dict,source: Path,root: Path,log: Path) -> dict:
         verify_cuda(py,profile,log,effective_env(profile,root))
         print('REUSED_VERIFIED_CUDA_ENV:',py)
         return old
-    if root.exists() and any(root.iterdir()):
-        # Only a derived, receipt-free micromamba environment may be rebuilt;
-        # this is NOT a MyCON capture, NVIDIA source, output or checkpoint.
-        # Preserve its install.log (outside root) and label an interruption.
-        print('REPAIRING_PARTIAL_ISOLATED_PYTHON_ENV; previous install has no verified receipt',flush=True)
-        raise RuntimeError('PARTIAL_ENV_PRESERVED: use a new environment path or explicitly repair packages in place')
+    partial = root.exists() and any(root.iterdir())
+    if partial:
+        if not repair_partial:
+            raise RuntimeError('PARTIAL_ENV_PRESERVED: explicitly repair packages in place or choose a new prefix')
+        if not py.is_file():
+            raise RuntimeError('PARTIAL_ENV_NO_PYTHON: preserve this prefix and choose a new one')
+        # An explicit package repair must not reinstall Torch into an unrelated env.
+        probe = subprocess.run([str(py),'-c',
+            "import sys,torch,json;print(json.dumps([sys.version_info[:2],torch.__version__.split('+')[0],torch.version.cuda]))"],
+            capture_output=True,text=True,check=False)
+        expected_cuda='12.8' if wheel=='cu128' else '12.1'
+        if probe.returncode or json.loads(probe.stdout) != [[3,10],torch,expected_cuda]:
+            raise RuntimeError('PARTIAL_ENV_IDENTITY_MISMATCH: preserve existing environment')
+        print('REPAIRING_PACKAGES_IN_PLACE_NO_DELETION',flush=True)
     mm=micromamba(root.parent/'tools'/'micromamba',log)
     env=effective_env(profile,root)
-    run_logged([str(mm),'create','-y','-p',str(root),'-c','conda-forge',
-                'python=3.10.13','cmake','ninja','pip','setuptools','wheel'],log,env=env)
+    if not partial:
+        run_logged([str(mm),'create','-y','-p',str(root),'-c','conda-forge',
+                    'python=3.10.13','cmake','ninja','pip','setuptools','wheel'],log,env=env)
     # Build CUDA toolkit must support selected physical GPU. Colab images may
     # ship a compiler older than the hardware. Install isolated nvcc, never
     # replace the host Colab CUDA toolkit or corrupt the existing MyCON R4 env.
     version,cuda_home=nvcc_info()
+    local_nvcc=root/'bin/nvcc'
+    if local_nvcc.is_file():
+        compiler=subprocess.run([str(local_nvcc),'--version'],capture_output=True,text=True,check=False)
+        match=re.search(r'release\s+(\d+\.\d+)',compiler.stdout)
+        version=match.group(1) if match else ''
     sm=int(profile['gpu']['sm'])
     minimum=(12,8) if sm>=100 else (11,8) if sm>=89 else (11,0)
     if not version or tuple(map(int,version.split('.'))) != ((12,8) if wheel=='cu128' else (12,1)):
@@ -131,7 +145,19 @@ def install(profile: dict,source: Path,root: Path,log: Path) -> dict:
     # This installs upstream Python deps, including their upstream PyTorch3D
     # Git reference. CUDA extension builds can fail on some GPUs/Colab images;
     # never declare readiness until actual import and CUDA computation pass.
-    run_logged([str(py),'-m','pip','install','-r',str(source/'requirements.txt')],log,env=env,cwd=source,timeout_s=5400)
+    # Build against the installed Torch; PEP517 isolation cannot import it.
+    # Reuse an official prebuilt scatter kernel when available for this wheel.
+    if wheel == 'cu121' and torch == '2.5.1':
+        run_logged([str(py),'-m','pip','install','--only-binary=:all:',
+                    'torch_scatter','-f','https://data.pyg.org/whl/torch-2.5.1+cu121.html'],log,env=env)
+    run_logged([str(py),'-m','pip','install','iopath','fvcore'],log,env=env)
+    requirements = source/'requirements.txt'
+    pinned = root.parent/(root.name+'_requirements.txt')
+    content = requirements.read_text().replace(
+        'git+https://github.com/facebookresearch/pytorch3d.git@stable',
+        'git+https://github.com/facebookresearch/pytorch3d.git@75ebeeaea0908c5527e7b1e305fbc7681382db47')
+    pinned.write_text(content)
+    run_logged([str(py),'-m','pip','install','--no-build-isolation','-r',str(pinned)],log,env=env,cwd=source,timeout_s=5400)
     for ext in ('simple-knn','diff-gaussian-rasterization','fused-ssim'):
         run_logged([str(py),'-m','pip','install','--no-build-isolation',str(source/'submodules'/ext)],
                    log,env=env,cwd=source,timeout_s=3600)
@@ -176,7 +202,8 @@ def main():
     p.add_argument('--nvidia-root',type=Path,required=True)
     p.add_argument('--env-root',type=Path,required=True)
     p.add_argument('--log',type=Path,required=True)
+    p.add_argument('--repair-partial',action='store_true')
     a=p.parse_args()
-    print(json.dumps(install(json.loads(a.profile.read_text()),a.nvidia_root,a.env_root,a.log),indent=2))
+    print(json.dumps(install(json.loads(a.profile.read_text()),a.nvidia_root,a.env_root,a.log,repair_partial=a.repair_partial),indent=2))
 
 if __name__=='__main__':main()
