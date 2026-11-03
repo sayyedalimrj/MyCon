@@ -63,7 +63,7 @@ def test_prepare_state_and_parameter_identity(tmp_path):
 
 
 def test_train_missing_outputs_fails_closed(tmp_path):
-    a=prepare(tmp_path);a.phase='train'
+    a=prepare(tmp_path);a.phase='train';a.approve_new_training=True
     with patch.object(bridge,'invoke',return_value=None):
         with pytest.raises(RuntimeError,match='no model'):
             bridge.run(a)
@@ -74,18 +74,18 @@ def test_train_missing_outputs_fails_closed(tmp_path):
 
 
 def test_3dgs_original_render_and_export_paths_are_separate(tmp_path):
-    a=prepare(tmp_path);a.phase='train'
+    a=prepare(tmp_path);a.phase='train';a.approve_new_training=True
     work=a.workspace/bridge.capture_key(a.video,bridge.digest_file(a.video))
     model=work/'longsplat_model'
     def simulate_train(cmd,*,cwd,log):
-        (model/'point_cloud/iteration_1000').mkdir(parents=True)
-        (model/'point_cloud/iteration_1000/point_cloud.ply').write_bytes(b'x')
-        (model/'cameras_all_train.json').write_text('[]')
+        (model/'point_cloud/iteration_50000').mkdir(parents=True)
+        (model/'point_cloud/iteration_50000/point_cloud.ply').write_bytes(b'x'*2048)
+        (model/'cameras_all_train.json').write_text('['+'{}'*150+']')
     with patch.object(bridge,'invoke',side_effect=simulate_train):
         assert bridge.run(a)==0
     a.phase='render'
     def simulate_render(cmd,*,cwd,log):
-        dest=model/'train/ours_1000'
+        dest=model/'train/ours_50000'
         (dest/'videos').mkdir(parents=True)
         (dest/'depths').mkdir(parents=True)
         (dest/'videos/nvs_rgb.mp4').write_bytes(b'x'*1500)
