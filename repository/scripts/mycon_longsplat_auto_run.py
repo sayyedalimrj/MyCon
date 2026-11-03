@@ -124,7 +124,7 @@ def run(args) -> dict:
         if old.get('archive_sha256')!=captured_sha:raise RuntimeError('RECORDER_SOURCE_CHANGED')
     else:atomic_json(native_dest,native)
     # Upstream always remains a checked-out NVIDIA original, not a copied fork.
-    nvidia_root=local/'NVIDIA_LongSplat'
+    nvidia_root=(getattr(args,'nvidia_root',None) or local/'NVIDIA_LongSplat').expanduser().resolve()
     official=install_nvidia(nvidia_root)
     atomic_json(experiment_root/'nvidia_original_source.json',official)
     # NVIDIA's training utilities otherwise download the multi-GB pretrained
@@ -132,7 +132,7 @@ def run(args) -> dict:
     # receipt for future Colab VMs. This is separate from the Recorder ZIP.
     weights=prepare_weights(nvidia_root,drive/'model_cache'/'nvidia_longsplat_mast3r')
     atomic_json(experiment_root/'pretrained_weight_receipt.json',weights)
-    env_root=local/f"longsplat_py310_sm{h.sm}_{profile['torch_cuda_wheel']}"
+    env_root=(getattr(args,'env_root',None) or local/f"longsplat_py310_sm{h.sm}_{profile['torch_cuda_wheel']}").expanduser().resolve()
     env_log=experiment_root/'logs'/'cuda_install.log'
     env_report=install_env(profile,nvidia_root,env_root,env_log)
     stackenv=effective_env(profile,env_root)
@@ -206,6 +206,8 @@ def main():
     p.add_argument('--capture',type=Path,required=True)
     p.add_argument('--drive-root',type=Path,required=True)
     p.add_argument('--local-root',type=Path,default=Path('/content/MyCON_LongSplat_Work'))
+    p.add_argument('--nvidia-root',type=Path,help='Reuse an existing checkout; still verifies the pinned commit and submodules')
+    p.add_argument('--env-root',type=Path,help='Reuse an existing isolated environment; still verifies its receipt and CUDA kernels')
     p.add_argument('--quality',choices=('quality','conservative'),default='quality')
     p.add_argument('--stop-after',choices=('prepare','train','render','export','geometry','audit'))
     p.add_argument('--plan-only',action='store_true')
