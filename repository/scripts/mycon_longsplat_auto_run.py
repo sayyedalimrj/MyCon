@@ -183,10 +183,12 @@ def run(args) -> dict:
             except (OSError,ValueError):pass
         if 'audit' in phases and not audit:
             raise RuntimeError('QA_REPORT_MISSING: all phases cannot be certified')
-        if audit and all(x.get('status')!='HELDOUT_VIEWS_MEASURED' for x in audit):
-            runstatus['status']='PHASES_DONE_VISUAL_QUALITY_UNVERIFIED'
-        else:
+        if 'audit' not in phases:
+            runstatus['status']='PHASES_COMPLETE_NO_VISUAL_QA'
+        elif audit and all(x.get('status')=='HELDOUT_VIEWS_MEASURED' for x in audit):
             runstatus['status']='PHASES_DONE_VISUAL_QA_MEASURED_NOT_BIM_METRIC'
+        else:
+            runstatus['status']='PHASES_DONE_VISUAL_QUALITY_UNVERIFIED'
         runstatus['bim_metric_validated']=False
         runstatus['unseen_view_correctness_certified']=False
         atomic_json(statusfile,runstatus)

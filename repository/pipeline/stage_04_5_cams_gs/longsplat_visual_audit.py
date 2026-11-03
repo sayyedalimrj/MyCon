@@ -30,6 +30,9 @@ def evaluate_holdout_views(model: Path, iteration: int | None, report_path: Path
     result={'schema':'mycon.longsplat.novel_view_qa.v1','status':status,
             'heldout_pairs':len(records),'psnr_mean_db':psnr,'per_view':records,
             'unobserved_camera_positions_verified':False,
+            'heldout_camera_poses_fitted_by_upstream':True,
+            'independent_surveyed_test_poses':False,
+            'evaluation_protocol':'Withheld image appearance after upstream MASt3R/PnP and photometric test-camera localization; not blind pose evaluation',
             'metric_geometry_verified':False,
             'interpretation':'PSNR on withheld source-camera views is an appearance check, not proof of accurate geometry, pose or all novel viewpoints.'}
     from .longsplat_research import atomic_json
