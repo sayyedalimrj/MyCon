@@ -20,3 +20,13 @@ CUDA installation, actual CUDA kernels, MASt3R loading, training, held-out evalu
 The existing depth-fusion product comes from LongSplat renderer depths. It is a **dependent, nonmetric candidate**, not the independent geometry branch required for final BIM acceptance. Independent image/trajectory geometry and external controls remain necessary.
 
 44 targeted offline tests passed at the first integration commit. Live CUDA outcome must be read from the timestamped Drive diagnostics; this document does not certify GPU kernels or training.
+
+## Additional live evidence
+
+769 full-duration upright frames were extracted at 8 FPS with per-frame SHA256 inventory, and a six-frame contact sheet was visually inspected. The official MASt3R checkpoint was cached on Drive: 2754910614 bytes, SHA256 e28f91b488554653e2b46ddae9c78c1143e0bcb2e27d3e26cdb0b717f1568eb2. Basic PyTorch CUDA allocation and arithmetic passed on the T4. This is not an extension-kernel or training certificate.
+
+The first toolkit attempt exposed another actual failure: a CUDA 12.1 meta-package resolved nvcc 13.3. The installer now pins the NVIDIA version label, nvcc, and cuda-version, then inspects `nvcc --version` before building anything. PyTorch3D is pinned to the stable revision actually resolved by the upstream requirements (75ebeeaea0908c5527e7b1e305fbc7681382db47); builds run against installed Torch without isolated build dependencies.
+
+The original 5346 pose rows contain 2853 positive unique timestamps, 2388 duplicate timestamp groups, and zero groups with conflicting pose/tracking values. The source files were not changed. A bounded, read-only prior-artifact inventory found 24 older model/result files; these remain candidates rather than approved global metric geometry.
+
+45 offline regression tests now pass. A dedicated rasterizer CUDA forward/backward smoke is included; its result must still be read from actual Colab execution before declaring native-stack readiness.

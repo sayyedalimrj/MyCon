@@ -132,10 +132,20 @@ def install(profile: dict,source: Path,root: Path,log: Path, *, repair_partial: 
     minimum=(12,8) if sm>=100 else (11,8) if sm>=89 else (11,0)
     if not version or tuple(map(int,version.split('.'))) != ((12,8) if wheel=='cu128' else (12,1)):
         target='12.8' if sm>=100 else '12.1'
-        run_logged([str(mm),'install','-y','-p',str(root),'-c','nvidia','-c','conda-forge',
-                    'cuda-toolkit='+target],log,env=env)
+        # NVIDIA's old meta-package can otherwise resolve a newer nvcc (13.x).
+        label='cuda-12.8.1' if wheel=='cu128' else 'cuda-12.1.1'
+        run_logged([str(mm),'install','-y','-p',str(root),
+                    '-c','nvidia/label/'+label,'-c','conda-forge','--strict-channel-priority',
+                    'cuda-toolkit='+target,'cuda-nvcc='+target,'cuda-version='+target],log,env=env)
         env['CUDA_HOME']=str(root)
         env['PATH']=str(root/'bin')+':'+env.get('PATH','')
+    # Inspect the binary, never infer compiler compatibility from package names.
+    actual=subprocess.run([str(root/'bin/nvcc') if (root/'bin/nvcc').is_file() else 'nvcc','--version'],
+                          capture_output=True,text=True,check=False,env=env)
+    match=re.search(r'release\s+(\d+\.\d+)',actual.stdout)
+    expected='12.8' if wheel=='cu128' else '12.1'
+    if actual.returncode or not match or match.group(1)!=expected:
+        raise RuntimeError('CUDA_COMPILER_BINARY_MISMATCH: expected '+expected+'; '+actual.stdout[-300:])
     wheels='https://download.pytorch.org/whl/'+wheel
     run_logged([str(py),'-m','pip','install','--index-url',wheels,
                 f'torch=={torch}',f'torchvision=={vision}'],log,env=env)
@@ -194,6 +204,7 @@ torch.cuda.synchronize()
 print(json.dumps({'torch':torch.__version__,'cuda':torch.version.cuda,'sm':c,'extension_cuda_kernels':'PASS'}))
 '''.replace('EXPECTED_SM',str(profile['gpu']['sm']))
     run_logged([str(py),'-c',script],log,env=env,timeout_s=180)
+    run_logged([str(py),str(Path(__file__).with_name('mycon_cuda_raster_smoke.py'))],log,env=env,timeout_s=180)
 
 
 def main():

@@ -25,7 +25,7 @@ def test_toolkit_matches_torch_even_if_host_is_newer(tmp_path,version,needs_inst
     (source/'requirements.txt').write_text('')
     profile={'torch_version':'2.5.1','torchvision_version':'0.20.1','torch_cuda_wheel':'cu121',
              'torch_cuda_arch':'7.5','gpu':{'sm':75}}
-    with patch.object(env,'micromamba',return_value=tmp_path/'micromamba'), patch.object(env,'nvcc_info',return_value=(version,tmp_path/'host')), patch.object(env,'run_logged') as run, patch.object(env,'verify_cuda'):
+    with patch.object(env,'micromamba',return_value=tmp_path/'micromamba'), patch.object(env,'nvcc_info',return_value=(version,tmp_path/'host')), patch.object(env,'run_logged') as run, patch.object(env,'verify_cuda'), patch.object(env.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'Cuda compilation tools, release 12.1, V12.1.105','')):
         env.install(profile,source,tmp_path/'newenv',tmp_path/'log')
     toolkit=[c.args[0] for c in run.call_args_list if 'cuda-toolkit=12.1' in c.args[0]]
     assert bool(toolkit)==needs_install
@@ -39,3 +39,14 @@ def test_new_training_needs_explicit_budget_approval(tmp_path):
         trainer.assert_not_called()
     experiment=a.workspace/bridge.capture_key(a.video,bridge.digest_file(a.video))
     assert not (experiment/'longsplat_model').exists()
+
+
+def test_wrong_compiler_binary_is_refused_even_after_package_install(tmp_path):
+    source=tmp_path/'source';(source/'submodules/mast3r').mkdir(parents=True)
+    (source/'requirements.txt').write_text('')
+    profile={'torch_version':'2.5.1','torchvision_version':'0.20.1','torch_cuda_wheel':'cu121',
+             'torch_cuda_arch':'7.5','gpu':{'sm':75}}
+    with patch.object(env,'micromamba',return_value=tmp_path/'micromamba'), patch.object(env,'nvcc_info',return_value=('13.3',tmp_path/'host')), patch.object(env,'run_logged') as run, patch.object(env.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'Cuda compilation tools, release 13.3, V13.3','')):
+        with pytest.raises(RuntimeError,match='CUDA_COMPILER_BINARY_MISMATCH'):
+            env.install(profile,source,tmp_path/'newenv',tmp_path/'log')
+    assert not any(c.args[0][1:3] == ['-m','pip'] for c in run.call_args_list)

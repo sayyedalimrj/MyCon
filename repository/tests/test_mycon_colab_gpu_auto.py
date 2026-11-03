@@ -153,4 +153,3 @@ def test_deferred_large_video_policy_computes_sha256_when_unpacked(tmp_path):
         out=tmp_path/'native.mp4'
         computed=capture._extract_verified(z,record['video_name'],infos[record['video_full']],rows[record['video_name']],out)
         assert computed==hashlib.sha256(out.read_bytes()).hexdigest()
-
