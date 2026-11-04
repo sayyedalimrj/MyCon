@@ -59,12 +59,17 @@ def verify_longsplat_checkout(root: Path) -> None:
 
 
 def commands(video: Path, source: Path, scene: Path, model: Path,
-             fps: float, width: int, python: str, prune_ratio: float, post_iter: int) -> dict:
+             fps: float, width: int, python: str, prune_ratio: float, post_iter: int, rotation_cw: int=0) -> dict:
+    if rotation_cw not in (-90,0,90,180):
+        raise ValueError('Rotation must match an explicitly verified Recorder pixel orientation')
+    filters={90:['transpose=clock'],-90:['transpose=cclock'],180:['hflip','vflip'],0:[]}[rotation_cw]
+    filters.extend([f'fps={fps:g}',f'scale={width}:-2:flags=lanczos'])
     return {
-        # Re-encode only a reviewed/upright MP4. ffmpeg honors rotation metadata
-        # unless the input was previously physically rotated; do not rotate twice.
-        'prepare': ['ffmpeg', '-hide_banner', '-nostdin', '-loglevel', 'error', '-i', str(video),
-                    '-vf', f'fps={fps:g},scale={width}:-2:flags=lanczos', '-q:v', '2',
+        # Decode original Recorder MP4 pixels exactly once: ffmpeg auto-rotation
+        # is DISABLED. A preverified CW_90 recording is rotated in this one
+        # operation, avoiding a second large intermediate MP4.
+        'prepare': ['ffmpeg', '-hide_banner', '-nostdin', '-loglevel', 'error', '-noautorotate', '-i', str(video),
+                    '-vf', ','.join(filters), '-q:v', '2',
                     str(scene/'images'/'frame_%06d.jpg')],
         'train': [python, str(source/'train.py'), '--eval', '-s', str(scene),
                   '-m', str(model), '--images', 'images', '--mode', 'custom',
@@ -96,6 +101,16 @@ def gaussian_ply(path: Path) -> bool:
     return all(token in header for token in (b'opacity', b'element vertex')) and (b'f_dc_0' in header or b'scale_0' in header)
 
 
+def frame_manifest(folder: Path) -> dict:
+    frames=sorted(folder.glob('frame_*.jpg'))
+    h=hashlib.sha256()
+    for frame in frames:
+        h.update(frame.name.encode())
+        h.update(str(frame.stat().st_size).encode())
+        h.update(digest_file(frame).encode())
+    return {'frame_count':len(frames),'sha256':h.hexdigest()}
+
+
 def model_iteration(model: Path) -> int | None:
     values = []
     for folder in (model/'point_cloud').glob('iteration_*'):
@@ -119,14 +134,14 @@ def outputs(model: Path) -> dict:
 
 
 def manifest_base(video: Path, sha: str, repo: Path, fps: float, width: int,
-                  prune_ratio: float, post_iter: int) -> dict:
+                  prune_ratio: float, post_iter: int, rotation_cw: int=0) -> dict:
     return {
         'schema': VERSION,
         'video': video.name,
         'video_sha256': sha,
         'longsplat_checkout': str(repo),
         'fps': fps, 'width': width, 'prune_ratio': prune_ratio,
-        'post_iter': post_iter,
+        'post_iter': post_iter, 'rotation_cw': rotation_cw,
         'use': 'NONCOMMERCIAL_ACADEMIC_THESIS',
         'novel_views_supported_when_rendered': True,
         'geometry_is_metric_truth': False,
@@ -138,7 +153,7 @@ def manifest_base(video: Path, sha: str, repo: Path, fps: float, width: int,
 def require_matching_params(old: dict, fresh: dict) -> None:
     if not old:
         return
-    for key in ('schema', 'video_sha256', 'fps', 'width', 'post_iter', 'prune_ratio'):
+    for key in ('schema', 'video_sha256', 'fps', 'width', 'post_iter', 'prune_ratio', 'rotation_cw'):
         if old.get(key) != fresh.get(key):
             raise RuntimeError(f'Existing experiment has different {key}; no overwrite or accidental resume')
 
@@ -157,10 +172,10 @@ def run(args: argparse.Namespace) -> int:
     model = experiment/'longsplat_model'
     scene = experiment/'dataset'
     state_path = experiment/'research_state.json'
-    fresh = manifest_base(video, sha, repo, args.fps, args.width, args.prune_ratio, args.post_iter)
+    fresh = manifest_base(video, sha, repo, args.fps, args.width, args.prune_ratio, args.post_iter, getattr(args,'rotation_cw',0))
     state = read_json(state_path)
     require_matching_params(state, fresh)
-    cmd = commands(video, repo, scene, model, args.fps, args.width, args.python, args.prune_ratio, args.post_iter)
+    cmd = commands(video, repo, scene, model, args.fps, args.width, args.python, args.prune_ratio, args.post_iter, getattr(args,'rotation_cw',0))
     observed = outputs(model)
     if args.phase == 'plan':
         print(json.dumps({**fresh, 'experiment': str(experiment), 'commands': cmd,
@@ -180,10 +195,20 @@ def run(args: argparse.Namespace) -> int:
         if saved:
             if len(frames) != state['frame_count'] or len(frames) < 30:
                 raise RuntimeError('Saved frame receipt disagrees with actual files; investigate, do not overwrite')
-            print('REUSED', len(frames), 'verified-frame-count receipt')
+            if state.get('frame_sha256') != frame_manifest(scene/'images')['sha256']:
+                raise RuntimeError('Frame SHA256 inventory mismatches receipt; preserve and diagnose')
+            print('REUSED', len(frames), 'SHA256-verified frames')
             return 0
         if frames:
-            raise RuntimeError('Partial extracted frames exist; refuse overwrite without diagnosis')
+            # Unreceipted image frames are DERIVED copies, not canonical
+            # Recorder observations. Keep the folder aside for diagnosis and
+            # start exactly this extraction phase again, not model inference.
+            old=scene/'images'
+            suffix=time.strftime('%Y%m%d_%H%M%S')
+            saved=scene/('interrupted_images_'+suffix)
+            if saved.exists():raise RuntimeError('Interruption snapshot collision: '+str(saved))
+            old.rename(saved)
+            print('RECOVERED_INTERRUPTED_FRAME_EXTRACTION; stored old partial frames at',saved,flush=True)
         if shutil.which('ffmpeg') is None:
             raise RuntimeError('ffmpeg is required for frame extraction')
         (scene/'images').mkdir(parents=True, exist_ok=True)
@@ -191,7 +216,20 @@ def run(args: argparse.Namespace) -> int:
         frames = sorted((scene/'images').glob('frame_*.jpg'))
         if len(frames) < 30 or any(f.stat().st_size == 0 for f in frames):
             raise RuntimeError('Frame extraction incomplete; no prepared receipt issued')
+        # Do not silently accept only part of a corrupt full-length video.
+        probe=subprocess.run(['ffprobe','-v','error','-show_entries','format=duration',
+             '-of','default=nokey=1:noprint_wrappers=1',str(video)],capture_output=True,text=True)
+        if probe.returncode == 0:
+            try:
+                duration=float(probe.stdout.strip())
+                expected=duration*args.fps
+                if len(frames) < expected*0.93 or len(frames) > expected*1.07:
+                    raise RuntimeError(f'Incomplete full-duration frame extraction: {len(frames)} vs expected {expected:.1f}')
+            except ValueError:
+                raise RuntimeError('Cannot parse source video duration; refuse incomplete-frame success')
+        inventory=frame_manifest(scene/'images')
         state = {**fresh, 'prepared': True, 'frame_count': len(frames),
+                 'frame_sha256':inventory['sha256'],
                  'trained': False, 'rendered': False, 'exported': False, 'geometry_candidate': False}
         atomic_json(state_path, state)
         print('PREPARED', len(frames), 'upright frames. Source unchanged.')
@@ -201,17 +239,37 @@ def run(args: argparse.Namespace) -> int:
         raise RuntimeError('Prepare phase must be complete before GPU phases')
     if args.phase == 'train':
         if state.get('trained'):
-            if not observed['train_camera_poses'].is_file() or observed['iteration'] is None:
-                raise RuntimeError('Training receipt exists but model artifacts are missing')
+            finalcloud=model/'point_cloud'/f"iteration_{observed['iteration']}"/'point_cloud.ply' if observed['iteration'] else None
+            if (not observed['train_camera_poses'].is_file() or observed['iteration'] is None
+                or observed['iteration']<30000+args.post_iter
+                or finalcloud is None or not finalcloud.is_file() or finalcloud.stat().st_size<=512):
+                raise RuntimeError('Training receipt exists but final model artifacts are missing')
             print('REUSED COMPLETE LONGSPLAT TRAINING')
             return 0
         if model.exists() and any(model.iterdir()):
-            raise RuntimeError('Partial training data found. The upstream trainer does not provide verified interruption resume; do not delete or overwrite.')
+            checkpoint=model_iteration(model)
+            poses=model/'cameras_all_train.json'
+            pcloud=(model/'point_cloud'/f'iteration_{checkpoint}'/'point_cloud.ply') if checkpoint else None
+            if (checkpoint is not None and checkpoint>=30000+args.post_iter
+                and poses.is_file() and poses.stat().st_size>256
+                and pcloud is not None and pcloud.is_file() and pcloud.stat().st_size>512):
+                # Complete upstream train may have returned while the Drive
+                # status receipt was interrupted. Never rerun costly training
+                # when the final iteration and camera evidence are intact.
+                state.update({'trained':True,'iteration':checkpoint,'recovered_final_model':True})
+                atomic_json(state_path,state)
+                print('RECOVERED_VERIFIED_FINAL_TRAIN_ARTIFACTS; training not repeated',flush=True)
+                return 0
+            raise RuntimeError('PARTIAL_TRAIN_NO_OFFICIAL_MIDRUN_RESUME: preserve artifacts; re-training is NOT automatically started')
+        if not getattr(args,'approve_new_training',False):
+            raise RuntimeError('NEW_TRAINING_APPROVAL_REQUIRED: source/environment/preparation can be reused; obtain explicit budget approval')
         model.mkdir(parents=True, exist_ok=True)
         invoke(cmd['train'], cwd=repo, log=experiment/'logs'/'train.log')
         observed = outputs(model)
-        if observed['iteration'] is None or not observed['train_camera_poses'].is_file():
-            raise RuntimeError('Trainer returned but no model + camera poses; refusing COMPLETE')
+        if (observed['iteration'] is None or observed['iteration']<30000+args.post_iter
+            or not observed['train_camera_poses'].is_file()
+            or observed['train_camera_poses'].stat().st_size<256):
+            raise RuntimeError('Trainer returned but no model final iteration and valid camera poses; refusing COMPLETE')
         state.update({'trained': True, 'iteration': observed['iteration']})
         atomic_json(state_path, state)
         print('TRAINING COMPLETE: photorealistic model, not metric certified')
@@ -283,11 +341,13 @@ def main(argv=None):
     p.add_argument('--workspace', required=True, type=Path)
     p.add_argument('--python', default=sys.executable, help='Interpreter with all LongSplat CUDA deps')
     p.add_argument('--fps', default=10., type=float)
+    p.add_argument('--rotation-cw', default=0, type=int, choices=(-90,0,90,180), help='Verified camera pixel rotation; original ZIP uses +90')
     p.add_argument('--width', default=512, type=int)
     p.add_argument('--post-iter', default=20000, type=int)
     p.add_argument('--prune-ratio', default=.6, type=float)
     p.add_argument('--max-geometry-points', default=1_500_000, type=int)
     p.add_argument('--accept-research-license', action='store_true')
+    p.add_argument('--approve-new-training', action='store_true')
     return run(p.parse_args(argv))
 
 if __name__ == '__main__':
