@@ -248,8 +248,10 @@ def prepare_colmap(scene: Path, experiment: Path, count: int, local: Path, log: 
     if shutil.which("colmap") is None:
         raise RuntimeError("COLMAP_NOT_INSTALLED: Colab installs apt colmap in notebook bootstrap")
     sparse=scene/"sparse"
-    model=sparse/"0"
-    complete=all((model/n).is_file() for n in ("cameras.bin","images.bin","points3D.bin"))
+    complete=sparse.is_dir() and any(
+        p.is_dir() and p.name.isdigit()
+        and all((p/n).is_file() for n in ("cameras.bin","images.bin","points3D.bin"))
+        for p in sparse.iterdir())
     if not complete:
         if sparse.exists() and any(sparse.iterdir()):
             # Interrupted mapper: preserve all partial geometry; retry once
@@ -280,8 +282,13 @@ def prepare_colmap(scene: Path, experiment: Path, count: int, local: Path, log: 
     profiles=[]
     for path in sorted(candidates,key=lambda p:int(p.name)):
         candidate_txt=experiment/"colmap_candidate_text"/path.name
+        if candidate_txt.exists() and (not all((candidate_txt/name).is_file()
+             for name in ("images.txt","cameras.txt","points3D.txt"))
+             and any(candidate_txt.iterdir())):
+            quarantine_derived(candidate_txt,"partial_colmap_text")
         candidate_txt.mkdir(parents=True,exist_ok=True)
-        if not (candidate_txt/"images.txt").is_file():
+        if not all((candidate_txt/name).is_file()
+                   for name in ("images.txt","cameras.txt","points3D.txt")):
             run_logged(["colmap","model_converter","--input_path",str(path),
                         "--output_path",str(candidate_txt),"--output_type","TXT"],log)
         nregistered=count_registered_images(candidate_txt/"images.txt")
