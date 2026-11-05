@@ -373,8 +373,10 @@ def real_video_cuda_smoke(py: Path, source: Path, scene: Path,
         return row
     if marker.is_file():
         row=json.loads(marker.read_text())
-        if row.get("status")!="REAL_20_STEP_VIDEO_T4_PASS":
+        if row.get("status")!="REAL_20_STEP_VIDEO_T4_PASS" or any(
+                row.get(k)!=v for k,v in identity.items()):
             raise RuntimeError("CUDA_SMOKE_MARKER_MISMATCH")
+        immutable_json(durable,row)
         return row
     if smoke.exists() and any(smoke.iterdir()):
         # A disconnected VM may have interrupted 20-step smoke. Keep its
