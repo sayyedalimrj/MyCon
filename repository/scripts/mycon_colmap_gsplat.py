@@ -21,7 +21,7 @@ from mycon_capture_safe import prepare as prepare_capture
 from mycon_thesis_one_run import find_capture, validate_attempt
 from mycon_colmap_gsplat_env import setup as setup_gsplat, run_logged
 from mycon_gsplat_resume_patch import ensure_trainer
-from mycon_gsplat_finish import render_and_evaluate_if_missing
+from mycon_gsplat_finish import render_and_evaluate_if_missing,source_checkpoint
 from mycon_audit_runtime import (
     atomic_json, immutable_json, quarantine_derived, frame_manifest,
     validate_frame_manifest, require_source_lock, metrics_valid, validate_artifact_file,
@@ -366,26 +366,52 @@ def real_video_cuda_smoke(py: Path, source: Path, scene: Path,
 
 
 def evidence(result: Path) -> dict:
-    checkpoints=sorted(result.glob("ckpts/ckpt_*.pt"))
+    """Scientific evidence and file integrity are different concepts."""
+    checkpoint=sorted(result.glob("ckpts/ckpt_*.pt"))
     ply=sorted(result.glob("ply/point_cloud_*.ply"))
     videos=sorted(result.glob("videos/traj_*.mp4"))
     metrics=sorted(result.glob("stats/val_step*.json"))
+    valid_ckpts=[p for p in checkpoint if validate_artifact_file(p,2048)]
+    valid_ply=[p for p in ply if validate_artifact_file(p,1024)]
+    valid_videos=[p for p in videos if validate_artifact_file(p,1024)]
     measured={}
-    if metrics:
-        report=json.loads(metrics[-1].read_text())
-        for field in ("psnr","ssim","lpips","num_GS"):
-            value=report.get(field)
-            if isinstance(value,(int,float)) and not isinstance(value,bool):
-                measured[field]=value
-    return {"checkpoints_present":bool(checkpoints),"checkpoint_paths":[str(p) for p in checkpoints],
-            "ply_present":bool(ply),"ply_paths":[str(p) for p in ply],
-            "novel_view_video_present":bool(videos),
-            "novel_view_videos":[str(p) for p in videos],
-            "heldout_evaluation_present":bool(metrics),
+    valid_metrics=[]
+    for path in metrics:
+        try:
+            current=json.loads(path.read_text())
+            if metrics_valid(current):
+                valid_metrics.append(path)
+                measured={k:current[k] for k in ("psnr","ssim","lpips")}
+                if isinstance(current.get("num_GS"),(int,float)):
+                    measured["num_GS"]=current["num_GS"]
+        except (OSError,ValueError,TypeError):
+            pass
+    accepted=False
+    manifest=result/"canonical_evaluation.json"
+    if manifest.is_file() and valid_metrics and valid_ply and valid_ckpts and valid_videos:
+        try:
+            from mycon_audit_runtime import sha256
+            marker=json.loads(manifest.read_text())
+            accepted=(marker.get("schema")=="mycon.canonical_evaluation.v1"
+                and marker.get("canonical_checkpoint_sha256")==sha256(valid_ckpts[-1])
+                and marker.get("ply_sha256")==sha256(valid_ply[-1])
+                and marker.get("stats_sha256")==sha256(valid_metrics[-1])
+                and marker.get("video_sha256")==sha256(valid_videos[-1]))
+        except (OSError,ValueError):
+            accepted=False
+    return {"checkpoints_present":bool(valid_ckpts),
+            "checkpoint_paths":[str(p) for p in valid_ckpts],
+            "ply_present":bool(valid_ply),"ply_paths":[str(p) for p in valid_ply],
+            "novel_view_video_present":bool(valid_videos),
+            "novel_view_videos":[str(p) for p in valid_videos],
+            "heldout_evaluation_present":bool(valid_metrics),
             "heldout_measured_metrics":measured,
-            "evaluation_files":[str(p) for p in metrics],
+            "evaluation_files":[str(p) for p in valid_metrics],
+            "canonical_artifact_hashes_verified":accepted,
+            "research_quality_accepted":False,
             "metric_BIM_validated":False,
-            "note":"Checkpoint/PLY presence alone never certifies model quality or metric geometry"}
+            "note":"Finite held-out scores and consistent files are NOT survey-quality as-built geometry"}
+
 
 
 def verify_original_archive(archive: Path, local: Path) -> dict:
@@ -424,7 +450,9 @@ def run(args: argparse.Namespace) -> dict:
         reports=sorted(folder.glob(f"*/{attempt}/status.json"),key=lambda p:p.stat().st_mtime,reverse=True)
         if not reports:return {"status":"NO_ATTEMPT_YET","mode":"status"}
         doc=json.loads(reports[0].read_text())
-        doc["evidence"]=evidence(reports[0].parent/"gsplat_result")
+        resultroot=reports[0].parent/"gsplat_result"
+        doc["evidence"]=evidence(resultroot/"canonical" if
+                                 (resultroot/"canonical").is_dir() else resultroot)
         return doc
     if not drive.is_dir():raise RuntimeError("DRIVE_NOT_MOUNTED")
     archive=find_capture(drive,args.capture)
@@ -567,7 +595,10 @@ def run(args: argparse.Namespace) -> dict:
     recoveries=sorted((resultdir/"recovery").glob("resume_step_*.pt"))
     final_ckpt=resultdir/"ckpts"/"ckpt_6999_rank0.pt"
     if existing and not recoveries and not final_ckpt.is_file():
-        raise RuntimeError("EARLY_INTERRUPTED_MODEL_BEFORE_FIRST_RECOVERY; preserve this attempt, use distinct ATTEMPT")
+        # Nothing can be resumed before the first checkpoint. Preserve all
+        # early derived artifacts under an immutable sibling, then retry in
+        # the same ATTEMPT without requiring the user to clean Drive.
+        quarantine_derived(resultdir,"early_gpu_interrupt")
     resultdir.mkdir(parents=True,exist_ok=True)
     state={"status":"TRAINING_OR_RECOVERY_STARTED","source_sha256":original["archive_sha256"],
            "registered":gate["registered"],"frames":n,
@@ -583,14 +614,27 @@ def run(args: argparse.Namespace) -> dict:
         # A complete recovery state can be finalized without re-running any
         # gradient steps. Otherwise the patched trainer restores ALL optimizer,
         # scheduler and densification states, then continues at the next step.
-        training_required=not completed_recovery.is_file() and not final_ckpt.is_file()
+        # A final recovery without its hash sidecar is NOT proof of finished
+        # training. Resume the best older verified snapshot instead.
+        candidate_complete=completed_recovery.is_file()
+        final_valid=False
+        if candidate_complete or validate_artifact_file(final_ckpt,2048):
+            try:
+                selected,kind=source_checkpoint(resultdir,6999)
+                final_valid=(selected==completed_recovery and
+                             kind=="post_optimizer_recovery") or (
+                              selected==final_ckpt and kind=="official_pre_optimizer")
+            except (OSError,ValueError,RuntimeError):
+                final_valid=False
+        training_required=not final_valid
         if training_required:
             run_logged(gsplat_command(py,gs_source,training_scene,resultdir,patched),
                        experiment/"logs"/"train_or_resume.log",
                        env=env,cwd=gs_source/"examples",live=True)
         render_and_evaluate_if_missing(py,gs_source,training_scene,resultdir,patched)
-        artifacts=evidence(resultdir)
-        if (not artifacts["checkpoints_present"] or not artifacts["ply_present"]
+        artifacts=evidence(resultdir/"canonical")
+        if (not artifacts["canonical_artifact_hashes_verified"]
+                or not artifacts["checkpoints_present"] or not artifacts["ply_present"]
                 or not artifacts["novel_view_video_present"] or
                 not artifacts["heldout_evaluation_present"]
                 or not metrics_valid(artifacts["heldout_measured_metrics"])):
