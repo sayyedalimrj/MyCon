@@ -32,6 +32,8 @@ class OneRuntimeNoWastedCredits(unittest.TestCase):
             colmap=exp/"colmap_text"
             colmap.mkdir()
             (colmap/"images.txt").write_text("".join(lines))
+            (exp/"colmap_receipt.json").write_text(json.dumps({
+                "registered":80,"selected_submodel":"0"}))
             for n in ("cameras.bin","images.bin","points3D.bin"):
                 (model/n).write_bytes(n.encode()+b"non-empty")
             (exp/"frames_receipt.json").write_text(json.dumps({
