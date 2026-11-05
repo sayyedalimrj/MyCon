@@ -12,6 +12,16 @@ from pathlib import Path
 from mycon_colmap_gsplat_env import run_logged
 
 
+def _cuda_env(py: Path) -> dict:
+    import os
+    env=os.environ.copy()
+    root=Path(py).parent.parent
+    env.update(PYTHONNOUSERSITE="1",MAX_JOBS="2",
+               TORCH_CUDA_ARCH_LIST="7.5",CUDA_HOME=str(root))
+    env["PATH"]=str(root/"bin")+os.pathsep+env.get("PATH","")
+    return env
+
+
 def make_final_model(py: Path, result: Path, *, expected_step: int = 6999) -> Path:
     recovery=result/"recovery"/f"resume_step_{expected_step:06d}.pt"
     official=result/"ckpts"/f"ckpt_{expected_step}_rank0.pt"
@@ -59,7 +69,7 @@ print("MYCON_FINAL_GSPLAT_CHECKPOINT_AND_PLY_READY",official,ply)
 '''
     log=result.parent/"logs"/"finish_model.log"
     run_logged([str(py),"-c",script,str(recovery),str(official),str(ply),str(expected_step)],
-               log)
+               log,env=_cuda_env(py))
     return official
 
 
@@ -77,7 +87,7 @@ def render_and_evaluate_if_missing(py: Path, source: Path,
              "--max_steps",str(expected_step+1),
              "--disable_viewer","--packed","--ckpt",str(ckpt)]
         run_logged(cmd,result.parent/"logs"/"final_eval_only.log",
-                   cwd=source/"examples",live=True)
+                   cwd=source/"examples",env=_cuda_env(py),live=True)
     if not stats.is_file() or not video.is_file() or video.stat().st_size<1024:
         raise RuntimeError("FINAL_GSPLAT_METRICS_OR_VIDEO_MISSING_AFTER_EVAL")
     measured=json.loads(stats.read_text())
