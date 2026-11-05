@@ -129,14 +129,6 @@ def setup(prefix: Path, work: Path, source: Path, log: Path) -> Path:
     available=shutil.disk_usage(str(work)).free if work.is_dir() else shutil.disk_usage(str(work.parent)).free
     if available < 18*(1024**3):
         raise RuntimeError(f"GPU_PREFLIGHT_LOCAL_DISK_LT_18_GIB: {available/1024**3:.1f} GiB")
-    # CUDA 12.1 C++ extensions REJECT host GCC newer than 12. A prior real
-    # MyCON LongSplat run hit this exact failure. Install on the GPU VM
-    # BEFORE fetching multi-GB torch wheels or invoking nvcc.
-    if not (Path("/usr/bin/gcc-12").is_file() and Path("/usr/bin/g++-12").is_file()):
-        run_logged(["apt-get","update","-qq"],log)
-        run_logged(["apt-get","install","-y","gcc-12","g++-12"],log)
-    if not (Path("/usr/bin/gcc-12").is_file() and Path("/usr/bin/g++-12").is_file()):
-        raise RuntimeError("GCC12_REQUIRED_BEFORE_CUDA121_NATIVE_EXTENSION")
     py=prefix/"bin/python"
     receipt=prefix.parent/(prefix.name+"_verified.json")
     env=os.environ.copy()
@@ -201,6 +193,15 @@ def setup(prefix: Path, work: Path, source: Path, log: Path) -> Path:
         intent.write_text(json.dumps({
             "pinned":"gsplat-v1.5.3-torch2.4.1-cu121-t4",
             "prefix":str(prefix),"source":"MYCON_GSPLAT_ISOLATED_INSTALL"},indent=2)+"\n")
+    # CUDA 12.1 C++ extensions REJECT host GCC newer than 12. A prior real
+    # MyCON LongSplat run hit this exact failure. Install on the GPU VM
+    # BEFORE fetching multi-GB torch wheels or invoking nvcc. Unknown prior
+    # environments are rejected before any host apt modification.
+    if not (Path("/usr/bin/gcc-12").is_file() and Path("/usr/bin/g++-12").is_file()):
+        run_logged(["apt-get","update","-qq"],log)
+        run_logged(["apt-get","install","-y","gcc-12","g++-12"],log)
+    if not (Path("/usr/bin/gcc-12").is_file() and Path("/usr/bin/g++-12").is_file()):
+        raise RuntimeError("GCC12_REQUIRED_BEFORE_CUDA121_NATIVE_EXTENSION")
     # Use the already referenced safe micromamba downloader from MyCON.
     from mycon_longsplat_autoenv import micromamba
     mm=micromamba(work/"tools/micromamba",log)
