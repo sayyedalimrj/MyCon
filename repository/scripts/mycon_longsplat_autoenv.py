@@ -70,6 +70,11 @@ def nvcc_info() -> tuple[str,Path | None]:
 def effective_env(profile: dict,envroot: Path) -> dict:
     d=os.environ.copy()
     d['MAX_JOBS']=str(min(3,max(1,os.cpu_count()//2 if os.cpu_count() else 2)))
+    # GCC 12 is supported by CUDA 12.1; Colab's default newer compiler is not.
+    if Path('/usr/bin/gcc-12').is_file() and Path('/usr/bin/g++-12').is_file():
+        d['CC']='/usr/bin/gcc-12'
+        d['CXX']='/usr/bin/g++-12'
+        d['CUDAHOSTCXX']='/usr/bin/g++-12'
     d['TORCH_CUDA_ARCH_LIST']=str(profile['torch_cuda_arch'])
     version,cuda_home=nvcc_info()
     if (envroot/'bin/nvcc').is_file():
@@ -101,6 +106,25 @@ def install(profile: dict,source: Path,root: Path,log: Path, *, repair_partial: 
         print('REUSED_VERIFIED_CUDA_ENV:',py)
         return old
     partial = root.exists() and any(root.iterdir())
+    if partial and py.is_file() and not receipt.exists():
+        # A previously completed manual CUDA environment may lack this controller's
+        # receipt. Adopt only after ALL real extension/kernel smokes pass.
+        try:
+            verify_cuda(py,profile,log,effective_env(profile,root))
+        except Exception as exc:
+            if not repair_partial:
+                raise RuntimeError('PARTIAL_ENV_PRESERVED_UNVERIFIED: choose a new prefix; no deletion') from exc
+        else:
+            report={**marker,'python':str(py),'cuda_verified':True,
+                    'status':'LIVE_CUDA_KERNELS_PASSED_EXISTING_ENV_ADOPTED',
+                    'model_training_or_quality_verified':False}
+            temp=receipt.with_suffix('.partial.json')
+            if temp.exists():
+                raise RuntimeError('PARTIAL_RECEIPT_PRESERVED: inspect '+str(temp))
+            temp.write_text(json.dumps(report,indent=2))
+            os.replace(temp,receipt)
+            print('MYCON_ADOPTED_VERIFIED_EXISTING_ENV:',py,flush=True)
+            return report
     if partial:
         if not repair_partial:
             raise RuntimeError('PARTIAL_ENV_PRESERVED: explicitly repair packages in place or choose a new prefix')
