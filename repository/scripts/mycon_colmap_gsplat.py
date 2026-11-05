@@ -424,7 +424,8 @@ def real_video_cuda_smoke(py: Path, source: Path, scene: Path,
     env["CUDA_HOME"]=str(prefix)
     env["PATH"]=str(prefix/"bin")+os.pathsep+env.get("PATH","")
     run_logged(cmd,experiment/"logs"/"real_video_20_step_smoke.log",
-               cwd=source/"examples",env=env,live=True)
+               cwd=source/"examples",env=env,live=True,
+               timeout_s=1200,idle_timeout_s=600)
     stats=sorted((smoke/"stats").glob("train_step*.json"))
     ckpts=sorted((smoke/"ckpts").glob("ckpt_*_rank0.pt"))
     if not stats or not ckpts:
@@ -708,7 +709,8 @@ def run(args: argparse.Namespace) -> dict:
         if training_required:
             run_logged(gsplat_command(py,gs_source,training_scene,resultdir,patched),
                        experiment/"logs"/"train_or_resume.log",
-                       env=env,cwd=gs_source/"examples",live=True)
+                       env=env,cwd=gs_source/"examples",live=True,
+                       timeout_s=28800,idle_timeout_s=2100)
         render_and_evaluate_if_missing(py,gs_source,training_scene,resultdir,patched)
         artifacts=evidence(resultdir/"canonical")
         if (not artifacts["canonical_artifact_hashes_verified"]
