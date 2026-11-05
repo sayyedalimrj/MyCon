@@ -277,6 +277,12 @@ def run(args: argparse.Namespace) -> dict:
     save_once(experiment/"input_contract.json",inputrec)
     scene=experiment/"scene"
     log=experiment/"logs"/"pipeline.log"
+    if args.mode in ("preflight","all"):
+        # A GPU runtime must NEVER spend time doing CPU-only SfM because the
+        # operator forgot to run the free CPU geometry step first.
+        if (not (experiment/"colmap_receipt.json").is_file()
+            or not (experiment/"bim_candidate"/"colmap_sparse_unscaled.ply").is_file()):
+            raise RuntimeError("CPU_GEOMETRY_MUST_PASS_BEFORE_GPU_PREFLIGHT")
     if args.mode=="all":
         # Check the exact experiment and preflight before extracting video,
         # processing COLMAP, downloading source, or installing dependencies.
