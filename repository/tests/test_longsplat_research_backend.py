@@ -175,3 +175,22 @@ def test_visual_qa_requires_five_heldout_views(tmp_path):
     report=audit.evaluate_holdout_views(model,1000,tmp_path/'report.json')
     assert report['heldout_pairs']==5 and report['status']=='HELDOUT_VIEWS_MEASURED'
     assert not report['unobserved_camera_positions_verified']
+
+
+def test_nvidia_pixel_center_and_depth_dimensions_match_original_source():
+    camera={'image_name':'frame_000000', 'R':np.eye(3).tolist(),
+            'T':[0.,0.,0.], 'Focalx':80., 'Focaly':80.,
+            'width':128, 'height':128}
+    depth=np.full((128,128),2.,dtype=np.float32)
+    center=geo.backproject(camera,depth,np.array([[64,64]]))
+    assert np.allclose(center,[[0.,0.,2.]])
+    with pytest.raises(ValueError,match='Depth size disagrees'):
+        geo.backproject({**camera,'width':256},depth,np.array([[64,64]]))
+
+
+def test_metric_sim3_rejects_coplanar_sites_that_cannot_validate_3d():
+    flat=np.array([[0.,0.,0.],[1.,0.,0.],[0.,1.,0.],[1.,1.,0.]])
+    # A plausible 2D fit cannot certify full 3D BIM geometry and scale.
+    with pytest.raises(ValueError,match='non-coplanar'):
+        gate.estimate_sim3(flat,3*flat+np.array([4.,5.,6.]))
+
