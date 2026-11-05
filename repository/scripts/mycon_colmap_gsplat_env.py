@@ -129,6 +129,14 @@ def setup(prefix: Path, work: Path, source: Path, log: Path) -> Path:
     available=shutil.disk_usage(str(work)).free if work.is_dir() else shutil.disk_usage(str(work.parent)).free
     if available < 18*(1024**3):
         raise RuntimeError(f"GPU_PREFLIGHT_LOCAL_DISK_LT_18_GIB: {available/1024**3:.1f} GiB")
+    # CUDA 12.1 C++ extensions REJECT host GCC newer than 12. A prior real
+    # MyCON LongSplat run hit this exact failure. Install on the GPU VM
+    # BEFORE fetching multi-GB torch wheels or invoking nvcc.
+    if not (Path("/usr/bin/gcc-12").is_file() and Path("/usr/bin/g++-12").is_file()):
+        run_logged(["apt-get","update","-qq"],log)
+        run_logged(["apt-get","install","-y","gcc-12","g++-12"],log)
+    if not (Path("/usr/bin/gcc-12").is_file() and Path("/usr/bin/g++-12").is_file()):
+        raise RuntimeError("GCC12_REQUIRED_BEFORE_CUDA121_NATIVE_EXTENSION")
     py=prefix/"bin/python"
     receipt=prefix.parent/(prefix.name+"_verified.json")
     env=os.environ.copy()
@@ -235,8 +243,27 @@ def setup(prefix: Path, work: Path, source: Path, log: Path) -> Path:
                 "git+https://github.com/rahul-goel/fused-ssim@328dc9836f513d00c4b5bc38fe30478b4435cbb5"],
                log,env=env)
     gsplat_cuda_smoke(py,source,env,log)
+    # Freeze the resolved transitive dependency set + driver/compiler identity
+    # as evidence. Upstream floating wheels must never be silently mistaken
+    # for a byte-for-byte reproducible environment.
+    freeze=subprocess.run([str(py),"-m","pip","freeze","--all"],
+                          capture_output=True,text=True,env=env,check=True)
+    driver=subprocess.run(["nvidia-smi","--query-gpu=name,driver_version,compute_cap",
+                           "--format=csv,noheader"],
+                          capture_output=True,text=True,check=True)
+    from mycon_audit_runtime import sha256
+    constraints_out=prefix.parent/(prefix.name+"_pip_freeze.txt")
+    if constraints_out.exists():
+        if constraints_out.read_text()!=freeze.stdout:
+            raise RuntimeError("GSPLAT_PIP_FREEZE_CONFLICT_PRESERVE")
+    else:
+        constraints_out.write_text(freeze.stdout)
     doc={"pinned":"gsplat-v1.5.3-torch2.4.1-cu121-t4",
          "python":str(py),"status":"ACTUAL_GSPLAT_CUDA_FWD_BWD_SMOKE_PASSED",
+         "torch_cuda_driver":driver.stdout.strip(),
+         "compiler":"GCC 12, nvcc 12.1",
+         "gsplat_source":"v1.5.3",
+         "pip_freeze_sha256":sha256(constraints_out),
          "trained_model_verified":False}
     tmp=receipt.with_suffix(".partial.json")
     if tmp.exists():raise RuntimeError("GSPLAT_PARTIAL_VERIFICATION_RECEIPT_PRESERVED")
