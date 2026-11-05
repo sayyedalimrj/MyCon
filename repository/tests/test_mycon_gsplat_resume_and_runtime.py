@@ -38,6 +38,7 @@ class OneRuntimeNoWastedCredits(unittest.TestCase):
                 "count":80,
                 "first_sha256":c.digest(images/names[0]),
                 "last_sha256":c.digest(images/names[-1]),
+                "manifest":c.frame_manifest(images),
             }))
             self.assertEqual(c.verify_prepared_frames(scene,exp),80)
             local=tmp/"gpu"
@@ -63,8 +64,10 @@ class OneRuntimeNoWastedCredits(unittest.TestCase):
             images.mkdir(parents=True)
             for i in range(80):
                 (images/f"frame_{i:06d}.jpg").write_bytes(b"A"*1200)
+            bad=c.frame_manifest(images)
+            bad["files"]["frame_000040.jpg"]["sha256"]="bad"
             (tmp/"frames_receipt.json").write_text(json.dumps({
-                "count":80,"first_sha256":"bad","last_sha256":"bad"}))
+                "count":80,"manifest":bad}))
             with self.assertRaisesRegex(RuntimeError,"SHA_MISMATCH"):
                 c.verify_prepared_frames(scene,tmp)
 
@@ -86,6 +89,7 @@ class OneRuntimeNoWastedCredits(unittest.TestCase):
                  drive_root=root,local_root=root/"fastgpu",attempt="trial",
                  approve_training=False)
             with (patch.object(c,"find_capture",return_value=archive),
+                  patch.object(c,"require_source_lock"),
                   patch.object(c,"digest",return_value=sha),
                   patch.object(c,"prepare_capture",side_effect=AssertionError("ZIP EXTRACTED")),
                   patch.object(c,"prepare_frames",side_effect=AssertionError("LOCAL VIDEO USED")),
@@ -109,7 +113,7 @@ class OneRuntimeNoWastedCredits(unittest.TestCase):
 
     def test_recovery_export_refuses_when_no_real_checkpoint(self):
         with tempfile.TemporaryDirectory() as td:
-            with self.assertRaisesRegex(RuntimeError,"FINAL_GSPLAT_CHECKPOINT_NOT_FOUND"):
+            with self.assertRaisesRegex(RuntimeError,"MYCON_NO_COMPLETE_FINAL_MODEL_CHECKPOINT"):
                 finish.make_final_model(Path("/env/python"),Path(td))
 
     def test_command_uses_copied_resume_trainer_and_correct_steps(self):
