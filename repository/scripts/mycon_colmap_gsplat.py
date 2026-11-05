@@ -311,7 +311,12 @@ def real_video_cuda_smoke(py: Path, source: Path, scene: Path,
             raise RuntimeError("CUDA_SMOKE_MARKER_MISMATCH")
         return row
     if smoke.exists() and any(smoke.iterdir()):
-        raise RuntimeError("INTERRUPTED_20_STEP_GPU_SMOKE_PRESERVED_CHANGE_RUNTIME_OR_INSPECT_LOG")
+        # A disconnected VM may have interrupted 20-step smoke. Keep its
+        # evidence, but allow exactly one clean retry without user surgery.
+        saved=smoke.with_name(smoke.name+"_partial_preserved_01")
+        if saved.exists():
+            raise RuntimeError("TWO_INTERRUPTED_GPU_SMOKES_PRESERVED_INSPECT_REAL_ERROR_LOG")
+        smoke.rename(saved)
     smoke.mkdir(parents=True,exist_ok=True)
     cmd=gsplat_command(py,source,scene,smoke,trainer)
     # Official gsplat's short run is deliberately no PLY/no video/no heldout.
