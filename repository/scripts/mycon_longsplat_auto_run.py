@@ -75,6 +75,16 @@ def invoke_cmd(cmd: list[str],log: Path,env: dict | None=None,cwd: Path | None=N
             raise RuntimeError(f'PHASE_FAILED(exit={code}) see {log}')
 
 
+def isolate_attempt(experiment_root: Path, attempt_id: str | None) -> Path:
+    """Give explicit acceptance runs a distinct immutable checkpoint namespace."""
+    if attempt_id is None:
+        return experiment_root  # preserve legacy experiment identity
+    import re
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,47}', attempt_id):
+        raise ValueError('ATTEMPT_ID_INVALID: refusing unsafe output directory')
+    return experiment_root / 'attempts' / attempt_id
+
+
 def run(args) -> dict:
     capture=args.capture.expanduser().resolve()
     drive=args.drive_root.expanduser().resolve()
@@ -110,13 +120,8 @@ def run(args) -> dict:
     captured_sha=native['archive_sha256']
     key=profile_key(profile)
     experiment_root=status_root/captured_sha[:16]/key
-    # Explicit attempts are isolated: no model/checkpoint overwrite and no fake resume.
-    attempt=getattr(args,'attempt_id',None)
-    if attempt is not None:
-        import re
-        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,47}',attempt):
-            raise ValueError('ATTEMPT_ID_INVALID: refusing unsafe output directory')
-        experiment_root=experiment_root/'attempts'/attempt
+    # Explicit attempts never touch previous LongSplat output directories.
+    experiment_root=isolate_attempt(experiment_root,getattr(args,'attempt_id',None))
     workspace=experiment_root/'workspace'
     experiment_root.mkdir(parents=True,exist_ok=True)
     stable=experiment_root/'gpu_profile.json'
