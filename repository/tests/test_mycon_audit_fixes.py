@@ -81,7 +81,9 @@ class AuditFixes(unittest.TestCase):
                         (target/"cameras.txt").write_text("test\n")
                         (target/"points3D.txt").write_text("test\n")
                     else:
-                        raise AssertionError("PLY WAS UNNECESSARILY OVERWRITTEN")
+                        # A CPU receipt is not trusted until a fresh conversion
+                        # confirms the cloud belongs to the selected model.
+                        Path(cmd[cmd.index("--output_path")+1]).write_bytes(payload)
             with (patch.object(c,"run_logged",side_effect=convert),
                   patch.object(c.shutil,"which",return_value="/usr/bin/colmap")):
                 result=c.prepare_colmap(scene,exp,180,root,root/"colmap.log")
@@ -89,6 +91,47 @@ class AuditFixes(unittest.TestCase):
             self.assertEqual(result["selected_submodel"],"0")
             self.assertEqual(candidate.read_bytes(),payload)
             self.assertTrue((exp/"colmap_receipt.json").is_file())
+
+    def test_wrong_existing_ply_is_quarantined_before_new_cpu_receipt(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);scene=root/"scene";exp=root/"exp"
+            model=scene/"sparse"/"1"
+            model.mkdir(parents=True)
+            for name in ("cameras.bin","images.bin","points3D.bin"):
+                (model/name).write_bytes(b"selected COLMAP model"+name.encode())
+            candidate=exp/"bim_candidate"/"colmap_sparse_unscaled.ply"
+            candidate.parent.mkdir(parents=True)
+            old=b"ply"+b"OLD_OTHER_SUBMODEL"*80
+            corrected=b"ply"+b"TRUE_SELECTED_SUBMODEL"*80
+            candidate.write_bytes(old)
+            def convert(cmd,log,*args,**kwargs):
+                if cmd[1]!="model_converter":
+                    raise AssertionError("MAPPER SHOULD BE REUSED")
+                dest=Path(cmd[cmd.index("--output_path")+1])
+                typ=cmd[cmd.index("--output_type")+1]
+                if typ=="TXT":
+                    dest.mkdir(parents=True,exist_ok=True)
+                    (dest/"images.txt").write_text(
+                        "".join(f"{i} 1 0 0 0 0 0 0 1 frame_{i:06d}.jpg\\n\\n"
+                                for i in range(1,151)))
+                    (dest/"cameras.txt").write_text("CAMS")
+                    (dest/"points3D.txt").write_text("POINTS")
+                elif typ=="PLY":
+                    dest.write_bytes(corrected)
+                else:
+                    raise AssertionError("WRONG_COLMAP_CONVERSION")
+            with (patch.object(c,"run_logged",side_effect=convert),
+                  patch.object(c.shutil,"which",return_value="/usr/bin/colmap")):
+                result=c.prepare_colmap(scene,exp,180,root,root/"log.txt")
+            self.assertEqual(result["selected_submodel"],"1")
+            self.assertEqual(candidate.read_bytes(),corrected)
+            backups=list(candidate.parent.glob(
+                "colmap_sparse_unscaled.ply.preserved_different_or_incomplete_colmap_ply_*"))
+            self.assertEqual(len(backups),1)
+            self.assertEqual(backups[0].read_bytes(),old)
+            self.assertEqual(
+                json.loads((exp/"colmap_receipt.json").read_text())[
+                    "sparse_candidate_ply_sha256"],c.digest(candidate))
 
     def test_verified_20_step_gpu_smoke_reused_across_colab_disconnect(self):
         with tempfile.TemporaryDirectory() as td:
