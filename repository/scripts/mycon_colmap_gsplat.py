@@ -500,29 +500,51 @@ def run(args: argparse.Namespace) -> dict:
     # Repeat real CUDA kernel checks, but NEVER reinstall during a training run.
     from mycon_colmap_gsplat_env import verify_existing
     py=verify_existing(prefix,gs_source,log)
+    patched=ensure_trainer(gs_source)
     resultdir=experiment/"gsplat_result"
-    if resultdir.exists() and any(resultdir.iterdir()):
-        raise RuntimeError("EXISTING_GSPLAT_OUTPUT_PRESERVED: use a distinct --attempt; cannot fake resume")
+    completed_recovery=resultdir/"recovery"/"resume_step_006999.pt"
+    existing=resultdir.exists() and any(resultdir.iterdir())
+    recoveries=sorted((resultdir/"recovery").glob("resume_step_*.pt"))
+    final_ckpt=resultdir/"ckpts"/"ckpt_6999_rank0.pt"
+    if existing and not recoveries and not final_ckpt.is_file():
+        raise RuntimeError("EARLY_INTERRUPTED_MODEL_BEFORE_FIRST_RECOVERY; preserve this attempt, use distinct ATTEMPT")
     resultdir.mkdir(parents=True,exist_ok=True)
-    state={"status":"TRAINING_STARTED","source_sha256":original["archive_sha256"],
+    state={"status":"TRAINING_OR_RECOVERY_STARTED","source_sha256":original["archive_sha256"],
            "registered":gate["registered"],"frames":n,
+           "recovery_snapshots_found":len(recoveries),
            "bim_metric_validated":False}
     statusfile.write_text(json.dumps(state,indent=2)+"\n")
+    env=os.environ.copy()
+    env.update(PYTHONNOUSERSITE="1",MAX_JOBS="2",TORCH_CUDA_ARCH_LIST="7.5",
+               MYCON_RESUME_EVERY="500")
+    env["CUDA_HOME"]=str(prefix)
+    env["PATH"]=str(prefix/"bin")+os.pathsep+env.get("PATH","")
     try:
-        run_logged(gsplat_command(py,gs_source,training_scene,resultdir),experiment/"logs"/"train.log",
-                   cwd=gs_source/"examples",live=True)
+        # A complete recovery state can be finalized without re-running any
+        # gradient steps. Otherwise the patched trainer restores ALL optimizer,
+        # scheduler and densification states, then continues at the next step.
+        training_required=not completed_recovery.is_file() and not final_ckpt.is_file()
+        if training_required:
+            run_logged(gsplat_command(py,gs_source,training_scene,resultdir,patched),
+                       experiment/"logs"/"train_or_resume.log",
+                       env=env,cwd=gs_source/"examples",live=True)
+        render_and_evaluate_if_missing(py,gs_source,training_scene,resultdir,patched)
+        artifacts=evidence(resultdir)
+        if (not artifacts["checkpoints_present"] or not artifacts["ply_present"]
+                or not artifacts["novel_view_video_present"] or
+                not artifacts["heldout_evaluation_present"]
+                or not all(k in artifacts["heldout_measured_metrics"] for
+                           k in ("psnr","ssim","lpips"))):
+            raise RuntimeError("GSPLAT_ACCEPTANCE_ARTIFACTS_INCOMPLETE")
     except Exception as exc:
-        state.update(status="TRAINING_FAILED_PRESERVE_PARTIAL",error=str(exc)[-900:])
+        state.update(status="TRAINING_FAILED_PRESERVE_PARTIAL",error=str(exc)[-1000:])
         statusfile.write_text(json.dumps(state,indent=2)+"\n")
         raise
-    artifacts=evidence(resultdir)
-    if (not artifacts["checkpoints_present"] or not artifacts["ply_present"]
-            or not artifacts["novel_view_video_present"] or
-            not artifacts["heldout_evaluation_present"]):
-        raise RuntimeError("GSPLAT_TRAIN_INCOMPLETE_CHECKPOINT_PLY_NOVELVIEW_OR_HELDOUT_QA")
     result={"status":"GSPLAT_TRAINING_OUTPUTS_EXIST_NOT_BIM_METRIC",
             "registered":gate["registered"],"frames":n,
             "source_sha256":original["archive_sha256"],
+            "recovered_from_snapshot":bool(recoveries),
+            "completed_gradient_training_reexecuted":bool(training_required),
             "evidence":artifacts,"bim_metric_validated":False}
     statusfile.write_text(json.dumps(result,indent=2)+"\n")
     return result
