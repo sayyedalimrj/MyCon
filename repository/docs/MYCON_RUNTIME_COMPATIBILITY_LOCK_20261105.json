@@ -1,0 +1,64 @@
+{
+  "schema": "mycon.runtime.compatibility.v1",
+  "generated_at_utc": "2026-11-05",
+  "policy": "One controlled notebook; CPU-only verify/geometry precede GPU; never overwrite raw Recorder/checkpoints",
+  "cpu_stage": {
+    "os": "Linux (Colab)",
+    "python": "host Colab Python; no CUDA Python packages imported",
+    "tools": [
+      "git",
+      "ffmpeg",
+      "ffprobe",
+      "colmap (OS package)"
+    ],
+    "phases": [
+      "verify",
+      "geometry"
+    ],
+    "minimum_disk_free_gib": 2,
+    "no_gpu_required": true
+  },
+  "gpu_baseline": {
+    "name": "colmap_gsplat",
+    "device": "NVIDIA Tesla T4",
+    "compute_capability": "7.5",
+    "vram_gib": 15,
+    "env": "micromamba isolated python=3.10.13",
+    "cuda_toolkit": "12.1",
+    "torch": "2.4.1+cu121",
+    "torchvision": "0.19.1+cu121",
+    "gsplat": "1.5.3+pt24cu121",
+    "gsplat_wheel_index": "https://docs.gsplat.studio/whl/pt24cu121",
+    "gsplat_wheel_sha256_linux_cp310": "0493bab68ed5fc71f4ce8bfc2be03b584d8a41a06a6d9362e09a795340f8c488",
+    "gsplat_upstream_git_tag": "v1.5.3",
+    "pycolmap": "rmbrualla/pycolmap@cc7ea4b7301720ac29287dbe450952511b32125e",
+    "nerfview": "nerfstudio-project/nerfview@4538024fe0d15fd1a0e4d760f3695fc44ca72787",
+    "fused_ssim": "rahul-goel/fused-ssim@328dc9836f513d00c4b5bc38fe30478b4435cbb5",
+    "tyro": "0.8.14",
+    "torchmetrics": "1.4.3",
+    "numpy": "1.26.4",
+    "pillow": "10.4.0",
+    "opencv_python_headless": "4.10.0.84",
+    "min_local_free_gib": 18,
+    "cuda_smoke": "real gsplat rasterization forward/backward; fused_ssim GPU; LPIPS AlexNet; CLI import",
+    "training_steps": 7000,
+    "train_gate": "same capture + attempt accepted preflight receipt + real CUDA kernel retest",
+    "metric_bim_validated_by_training": false
+  },
+  "research_longsplat": {
+    "upstream": "https://github.com/NVlabs/LongSplat",
+    "upstream_sha": "19750775a9d19f30aa05a8333c4c6c231b2d5f4a",
+    "torch_pinned_in_existing_auto_profile": "2.5.1+cu121 (T4)",
+    "torchvision": "0.20.1",
+    "pytorch3d": "source pinned to 0.7.8 SHA 75ebee...",
+    "issue": "Official PyTorch3D compatibility table lists PyTorch through 2.4.1; existing LongSplat T4 profile 2.5.1 is NOT a compatibility-certified combination.",
+    "state": "research comparator only; require successful NVIDIA full real CUDA+MASt3R preflight; do not claim low-risk until that passes",
+    "preserves_existing_experiments": true,
+    "noncommercial_research_license": true
+  },
+  "notes": [
+    "GitHub CI contains no Colab GPU. A green status never certifies a working NVIDIA driver or trained model.",
+    "Original Recorder archive, sidecars, camera reference and checkpoints are never deleted by the orchestrator.",
+    "Neither a Gaussian PLY nor COLMAP SfM sparse cloud is metric truth without independent BIM/site calibration."
+  ]
+}
