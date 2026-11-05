@@ -22,6 +22,11 @@ from mycon_thesis_one_run import find_capture, validate_attempt
 from mycon_colmap_gsplat_env import setup as setup_gsplat, run_logged
 from mycon_gsplat_resume_patch import ensure_trainer
 from mycon_gsplat_finish import render_and_evaluate_if_missing
+from mycon_audit_runtime import (
+    atomic_json, immutable_json, quarantine_derived, frame_manifest,
+    validate_frame_manifest, require_source_lock, metrics_valid, validate_artifact_file,
+    ensure_free_space, sha256 as full_hash
+)
 
 DRIVE = Path("/content/drive/MyDrive/MyCon_R4")
 LOCAL = Path("/content/MyCON_ColmapGsplat")
@@ -130,45 +135,51 @@ def colmap_gate(registered: int, frames: int) -> dict:
 
 
 def prepare_frames(video: Path, scene: Path, experiment: Path, log: Path) -> int:
+    """Recover interruptions automatically, preserving every original frame."""
     images=scene/"images"
     receipt=experiment/"frames_receipt.json"
-    prior=sorted(images.glob("frame_*.jpg")) if images.is_dir() else []
-    if receipt.exists():
-        state=json.loads(receipt.read_text())
-        if len(prior)!=state.get("count"):raise RuntimeError("PREPARED_IMAGES_INCOMPLETE_PRESERVED")
-        if any(p.stat().st_size<1000 for p in prior):raise RuntimeError("PREPARED_FRAME_CORRUPT")
-        return len(prior)
-    if prior:raise RuntimeError("UNRECEIPTED_EXISTING_FRAMES_PRESERVED")
+    previous=sorted(images.glob("frame_*.jpg")) if images.is_dir() else []
+    if receipt.is_file():
+        row=json.loads(receipt.read_text())
+        if "manifest" in row:
+            return validate_frame_manifest(images,row["manifest"])
+        # Backward-compatible migration from the original first/last receipt,
+        # but only if both old checksums and the verified source video agree.
+        if (previous and len(previous)==row.get("count") and
+            digest(previous[0])==row.get("first_sha256") and
+            digest(previous[-1])==row.get("last_sha256") and
+            digest(video)==row.get("capture_video_sha256")):
+            upgraded=dict(row)
+            upgraded["manifest"]=frame_manifest(images)
+            atomic_json(receipt,upgraded)
+            return len(previous)
+        raise RuntimeError("MYCON_EXISTING_FRAME_RECEIPT_INTEGRITY_FAIL_PRESERVE")
+    if previous or (images.exists() and any(images.iterdir())):
+        quarantine_derived(images,"interrupted_ffmpeg")
     images.mkdir(parents=True,exist_ok=True)
     cmd=["ffmpeg","-hide_banner","-nostdin","-loglevel","error","-noautorotate",
          "-i",str(video),"-vf",
          f"transpose=clock,fps={EXPECTED_FPS:g},scale={EXPECTED_WIDTH}:-2:flags=lanczos",
          "-q:v","2",str(images/"frame_%06d.jpg")]
     run_logged(cmd,log)
-    frames=sorted(images.glob("frame_*.jpg"))
-    if not (80<=len(frames)<=240) or any(p.stat().st_size<1000 for p in frames):
-        raise RuntimeError("INCOMPLETE_96_SECOND_FRAME_EXTRACTION")
-    save_once(receipt,{"count":len(frames),"fps":EXPECTED_FPS,"width":EXPECTED_WIDTH,
-                       "first_sha256":digest(frames[0]),"last_sha256":digest(frames[-1]),
-                       "capture_video_sha256":digest(video),"orientation":"CW_90_ONCE",
-                       "source_recording_changed":False})
-    return len(frames)
+    manifest=frame_manifest(images)
+    row={"count":manifest["count"],"fps":EXPECTED_FPS,"width":EXPECTED_WIDTH,
+         "first_sha256":manifest["files"][sorted(manifest["files"])[0]]["sha256"],
+         "last_sha256":manifest["files"][sorted(manifest["files"])[-1]]["sha256"],
+         "capture_video_sha256":digest(video),"orientation":"CW_90_ONCE",
+         "source_recording_changed":False,"manifest":manifest}
+    save_once(receipt,row)
+    return manifest["count"]
 
 
 def verify_prepared_frames(scene: Path, experiment: Path) -> int:
-    """Reuse Drive frames after Runtime reset; NEVER reopen a vanished local MP4."""
     receipt=experiment/"frames_receipt.json"
-    if not receipt.is_file():
-        raise RuntimeError("CPU_FRAMES_RECEIPT_MISSING_ON_DRIVE")
+    if not receipt.is_file():raise RuntimeError("CPU_FRAMES_RECEIPT_MISSING_ON_DRIVE")
     row=json.loads(receipt.read_text())
-    images=sorted((scene/"images").glob("frame_*.jpg"))
-    if len(images)!=row.get("count") or not 80 <= len(images) <= 240:
-        raise RuntimeError("CPU_FRAMES_INCOMPLETE_AFTER_RUNTIME_SWITCH")
-    if digest(images[0])!=row.get("first_sha256") or digest(images[-1])!=row.get("last_sha256"):
-        raise RuntimeError("CPU_FRAMES_SHA_MISMATCH_AFTER_RUNTIME_SWITCH")
-    if any(p.stat().st_size<1000 for p in images):
-        raise RuntimeError("CPU_FRAMES_ZERO_OR_CORRUPTED")
-    return len(images)
+    if "manifest" not in row:
+        raise RuntimeError("CPU_FRAME_MANIFEST_NEEDS_CPU_MIGRATION_BEFORE_GPU")
+    return validate_frame_manifest(scene/"images",row["manifest"])
+
 
 
 def local_training_scene(scene: Path, experiment: Path, local: Path) -> Path:
@@ -204,7 +215,7 @@ def local_training_scene(scene: Path, experiment: Path, local: Path) -> Path:
         source=scene/"images"/name
         target=dest_images/name
         if target.exists():
-            if target.stat().st_size!=source.stat().st_size:
+            if target.stat().st_size!=source.stat().st_size or digest(target)!=digest(source):
                 raise RuntimeError("GPU_LOCAL_CACHE_IMAGE_MISMATCH_PRESERVE")
         else:shutil.copy2(source,target)
     for name in ("cameras.bin","images.bin","points3D.bin"):
@@ -264,9 +275,11 @@ def prepare_colmap(scene: Path, experiment: Path, count: int, local: Path, log: 
     # establish the COLMAP-to-BIM similarity transform and held-out residuals.
     candidate=experiment/"bim_candidate"/"colmap_sparse_unscaled.ply"
     candidate.parent.mkdir(parents=True,exist_ok=True)
-    if candidate.exists():raise RuntimeError("BIM_CANDIDATE_ALREADY_EXISTS_WITHOUT_RECEIPT")
-    run_logged(["colmap","model_converter","--input_path",str(model),
-                "--output_path",str(candidate),"--output_type","PLY"],log)
+    if candidate.exists() and candidate.stat().st_size<512:
+        quarantine_derived(candidate,"incomplete_colmap_ply")
+    if not candidate.is_file():
+        run_logged(["colmap","model_converter","--input_path",str(model),
+                    "--output_path",str(candidate),"--output_type","PLY"],log)
     if not candidate.is_file() or candidate.stat().st_size<512:
         raise RuntimeError("COLMAP_INDEPENDENT_SFM_CANDIDATE_EMPTY")
     save_once(experiment/"bim_candidate"/"stage8_handoff.json",{
@@ -444,6 +457,8 @@ def run(args: argparse.Namespace) -> dict:
         if args.mode=="geometry":
             save_once(experiment/"verified_capture_cpu.json",original)
     experiment.mkdir(parents=True,exist_ok=True)
+    require_source_lock(experiment,Path(__file__).resolve().parent,
+                        create=(args.mode=="geometry"))
     statusfile=experiment/"status.json"
     inputrec={"source_sha256":original["archive_sha256"],"method":"COLMAP+gsplat",
               "gsplat_tag":GSPLAT_TAG,"fps":EXPECTED_FPS,"width":EXPECTED_WIDTH,
@@ -497,7 +512,7 @@ def run(args: argparse.Namespace) -> dict:
                                      "GSPLAT_TRAINING_OUTPUTS_EXIST_NOT_BIM_METRIC",
                                      "PREFLIGHT_REAL_VIDEO_GPU_SMOKE_PASSED_NO_FULL_TRAINING"):
                 return old
-        statusfile.write_text(json.dumps(result,indent=2)+"\n")
+        atomic_json(statusfile,result)
         return result
     gs_source=local/"official_gsplat_v153"
     if args.mode=="all" and accepted.get("registered")!=gate["registered"]:
@@ -523,7 +538,7 @@ def run(args: argparse.Namespace) -> dict:
                                       "TRAINING_FAILED_PRESERVE_PARTIAL",
                                       "GSPLAT_TRAINING_OUTPUTS_EXIST_NOT_BIM_METRIC"):
                 return old
-        statusfile.write_text(json.dumps(result,indent=2)+"\n")
+        atomic_json(statusfile,result)
         return result
     if args.mode!="all":raise RuntimeError("UNKNOWN_MODE")
     if not args.approve_training:raise RuntimeError("TRAINING_NOT_APPROVED_USE_EXPLICIT_ALL")
@@ -558,7 +573,7 @@ def run(args: argparse.Namespace) -> dict:
            "registered":gate["registered"],"frames":n,
            "recovery_snapshots_found":len(recoveries),
            "bim_metric_validated":False}
-    statusfile.write_text(json.dumps(state,indent=2)+"\n")
+    atomic_json(statusfile,state)
     env=os.environ.copy()
     env.update(PYTHONNOUSERSITE="1",MAX_JOBS="2",TORCH_CUDA_ARCH_LIST="7.5",
                MYCON_RESUME_EVERY="500")
@@ -578,12 +593,11 @@ def run(args: argparse.Namespace) -> dict:
         if (not artifacts["checkpoints_present"] or not artifacts["ply_present"]
                 or not artifacts["novel_view_video_present"] or
                 not artifacts["heldout_evaluation_present"]
-                or not all(k in artifacts["heldout_measured_metrics"] for
-                           k in ("psnr","ssim","lpips"))):
+                or not metrics_valid(artifacts["heldout_measured_metrics"])):
             raise RuntimeError("GSPLAT_ACCEPTANCE_ARTIFACTS_INCOMPLETE")
     except Exception as exc:
         state.update(status="TRAINING_FAILED_PRESERVE_PARTIAL",error=str(exc)[-1000:])
-        statusfile.write_text(json.dumps(state,indent=2)+"\n")
+        atomic_json(statusfile,state)
         raise
     result={"status":"GSPLAT_TRAINING_OUTPUTS_EXIST_NOT_BIM_METRIC",
             "registered":gate["registered"],"frames":n,
@@ -591,7 +605,7 @@ def run(args: argparse.Namespace) -> dict:
             "recovered_from_snapshot":bool(recoveries),
             "completed_gradient_training_reexecuted":bool(training_required),
             "evidence":artifacts,"bim_metric_validated":False}
-    statusfile.write_text(json.dumps(result,indent=2)+"\n")
+    atomic_json(statusfile,result)
     return result
 
 
