@@ -150,6 +150,7 @@ def setup(prefix: Path, work: Path, source: Path, log: Path) -> Path:
         gsplat_cuda_smoke(py,source,env,log)
         print("MYCON_GSPLAT_REUSED_CUDA_VERIFIED",flush=True)
         return py
+    intent=prefix.parent/(prefix.name+"_install_intent.json")
     partial=prefix.exists() and any(prefix.iterdir())
     if partial:
         # A previously interrupted package installation can finish cleanly.
@@ -180,12 +181,18 @@ def setup(prefix: Path, work: Path, source: Path, log: Path) -> Path:
                 if (identity[0]!=[3,10] or not identity[1].startswith("2.4.1+cu121")
                     or identity[2]!="12.1"):
                     raise RuntimeError("PARTIAL_ENV_WRONG_TORCH_ABI_PRESERVE")
+        if not intent.is_file() or json.loads(intent.read_text()).get("pinned")!="gsplat-v1.5.3-torch2.4.1-cu121-t4":
+            raise RuntimeError("GSPLAT_PARTIAL_ENV_PRESERVED_UNKNOWN_ORIGIN")
         stamp=prefix.parent/(prefix.name+"_one_repair_attempted.json")
         if stamp.is_file():
             raise RuntimeError("GSPLAT_PARTIAL_ENV_ALREADY_RETRIED_ONCE_PRESERVED")
         stamp.write_text(json.dumps({"status":"REPAIR_IN_PROGRESS_NO_DELETION",
                                      "prefix":str(prefix)},indent=2)+"\n")
         print("MYCON_ONCE_ONLY_REPAIRING_PARTIAL_ENV_WITHOUT_DELETION",flush=True)
+    if not partial and not intent.is_file():
+        intent.write_text(json.dumps({
+            "pinned":"gsplat-v1.5.3-torch2.4.1-cu121-t4",
+            "prefix":str(prefix),"source":"MYCON_GSPLAT_ISOLATED_INSTALL"},indent=2)+"\n")
     # Use the already referenced safe micromamba downloader from MyCON.
     from mycon_longsplat_autoenv import micromamba
     mm=micromamba(work/"tools/micromamba",log)
