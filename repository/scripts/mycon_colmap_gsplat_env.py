@@ -82,6 +82,32 @@ print("MYCON_GSPLAT_REAL_FORWARD_BACKWARD_AND_LPIPS_PASS",torch.__version__,gspl
                log,env=env,cwd=source/"examples")
 
 
+def verify_existing(prefix: Path, source: Path, log: Path) -> Path:
+    """Fast fail-closed, NO-PIP/NO-CONDA check immediately before GPU training."""
+    prefix=prefix.expanduser().resolve()
+    py=prefix/"bin/python"
+    receipt=prefix.parent/(prefix.name+"_verified.json")
+    if not py.is_file() or not receipt.is_file():
+        raise RuntimeError("GPU_TRAINING_REFUSED_ENV_NOT_ALREADY_PREFLIGHT_VERIFIED")
+    try:
+        evidence=json.loads(receipt.read_text())
+    except (OSError,ValueError) as exc:
+        raise RuntimeError("GPU_TRAINING_REFUSED_ENV_RECEIPT_UNREADABLE") from exc
+    if evidence.get("pinned")!="gsplat-v1.5.3-torch2.4.1-cu121-t4":
+        raise RuntimeError("GPU_TRAINING_REFUSED_ENV_WRONG_VERSION")
+    args=["nvidia-smi","--query-gpu=compute_cap","--format=csv,noheader,nounits"]
+    gpu=subprocess.run(args,capture_output=True,text=True,check=False)
+    if gpu.returncode or not gpu.stdout.strip().startswith("7.5"):
+        raise RuntimeError("GPU_TRAINING_REFUSED_NEED_T4_SM75")
+    env=os.environ.copy()
+    env.update(PYTHONNOUSERSITE="1",MAX_JOBS="2",TORCH_CUDA_ARCH_LIST="7.5")
+    if (prefix/"bin/nvcc").is_file():
+        env["CUDA_HOME"]=str(prefix)
+        env["PATH"]=str(prefix/"bin")+os.pathsep+env.get("PATH","")
+    gsplat_cuda_smoke(py,source,env,log)
+    return py
+
+
 def setup(prefix: Path, work: Path, source: Path, log: Path) -> Path:
     prefix=prefix.expanduser().resolve()
     # Stop before any multi-GB installs if Colab has no NVIDIA T4.
