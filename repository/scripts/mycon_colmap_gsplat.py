@@ -354,7 +354,9 @@ def real_video_cuda_smoke(py: Path, source: Path, scene: Path,
     Uses /content local output and never touches full 7000-step result root.
     This does consume a small amount of GPU time; it is NOT a zero-GPU test.
     """
-    smoke=Path("/content/MyCON_ColmapGsplat")/"short_real_video_smoke"/experiment.parent.name/experiment.name
+    # Use the actual isolated environment's local root, not a hard-coded
+    # /content pathname; keeps custom smoke/output roots consistent.
+    smoke=Path(py).resolve().parent.parent.parent/"short_real_video_smoke"/experiment.parent.name/experiment.name
     marker=smoke/"mycon_20_step_result.json"
     durable=experiment/"real_video_gpu_smoke_receipt.json"
     identity={"source_sha256":digest(experiment/"colmap_receipt.json"),
