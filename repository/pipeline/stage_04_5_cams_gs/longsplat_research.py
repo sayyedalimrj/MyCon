@@ -92,8 +92,8 @@ def invoke(cmd: list[str], *, cwd: Path, log: Path) -> None:
     log.parent.mkdir(parents=True, exist_ok=True)
     tail = deque(maxlen=12)
     with log.open('a', encoding='utf-8') as handle:
-        handle.write('\\n'+'='*60+'\\n'+time.strftime('%FT%TZ', time.gmtime())+'\\n')
-        handle.write(json.dumps(cmd)+'\\n')
+        handle.write('\n'+'='*60+'\n'+time.strftime('%FT%TZ', time.gmtime())+'\n')
+        handle.write(json.dumps(cmd)+'\n')
         handle.flush()
         proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
