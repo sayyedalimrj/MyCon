@@ -32,6 +32,8 @@ class OneRuntimeNoWastedCredits(unittest.TestCase):
             colmap=exp/"colmap_text"
             colmap.mkdir()
             (colmap/"images.txt").write_text("".join(lines))
+            for n in ("cameras.bin","images.bin","points3D.bin"):
+                (model/n).write_bytes(n.encode()+b"non-empty")
             candidate=exp/"bim_candidate"/"colmap_sparse_unscaled.ply"
             candidate.parent.mkdir(parents=True,exist_ok=True)
             candidate.write_bytes(b"ply"+b"x"*600)
@@ -41,8 +43,6 @@ class OneRuntimeNoWastedCredits(unittest.TestCase):
                     for n in ("cameras.bin","images.bin","points3D.bin")},
                 "registered_images_txt_sha256":c.digest(colmap/"images.txt"),
                 "sparse_candidate_ply_sha256":c.digest(candidate)}))
-            for n in ("cameras.bin","images.bin","points3D.bin"):
-                (model/n).write_bytes(n.encode()+b"non-empty")
             (exp/"frames_receipt.json").write_text(json.dumps({
                 "count":80,
                 "first_sha256":c.digest(images/names[0]),
