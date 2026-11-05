@@ -80,7 +80,7 @@ class AuditFixes(unittest.TestCase):
                                     for i in range(1,151)))
                         (target/"cameras.txt").write_text("test\n")
                         (target/"points3D.txt").write_text(
-                            "".join(f"{i} {i*.01} {i*.02} {i*.03} 120 140 160 0.4 1 0\\n"
+                            "".join(f"{i} {i*.01} {i*.02} {i*.03} 120 140 160 0.4 1 0\n"
                                     for i in range(1,151)))
                     else:
                         # A CPU receipt is not trusted until a fresh conversion
@@ -120,7 +120,7 @@ class AuditFixes(unittest.TestCase):
                                 for i in range(1,151)))
                     (dest/"cameras.txt").write_text("CAMS")
                     (dest/"points3D.txt").write_text(
-                        "".join(f"{i} {i*.01} {i*.02} {i*.03} 120 140 160 0.4 1 0\\n"
+                        "".join(f"{i} {i*.01} {i*.02} {i*.03} 120 140 160 0.4 1 0\n"
                                 for i in range(1,151)))
                 elif typ=="PLY":
                     dest.write_bytes(corrected)
@@ -149,11 +149,11 @@ class AuditFixes(unittest.TestCase):
     def test_sparse_geometry_quality_refuses_empty_and_nonfinite_points(self):
         with tempfile.TemporaryDirectory() as td:
             source=Path(td)/"points3D.txt"
-            source.write_text("1 0 0 0 255 255 255 nan 1 0\\n")
+            source.write_text("1 0 0 0 255 255 255 nan 1 0\n")
             with self.assertRaisesRegex(RuntimeError,"NONFINITE"):
                 c.colmap_sparse_quality(source)
             source.write_text("".join(
-                f"{i} {i*.1} {i*.04} {i*.07} 255 255 255 0.3 1 0\\n"
+                f"{i} {i*.1} {i*.04} {i*.07} 255 255 255 0.3 1 0\n"
                 for i in range(1,121)))
             good=c.colmap_sparse_quality(source)
             self.assertEqual(good["points3D"],120)
