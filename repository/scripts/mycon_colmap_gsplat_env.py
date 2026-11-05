@@ -15,7 +15,7 @@ from pathlib import Path
 
 def run_logged(cmd: list[str], log: Path, *, cwd: Path | None = None,
                env: dict | None = None, live: bool = False,
-               timeout_s: int = 28800, idle_timeout_s: int = 2100) -> None:
+               timeout_s: int = 3600, idle_timeout_s: int = 2100) -> None:
     """Live watch with bounded stalled-runtime cost, preserving all GPU receipts.
 
     No shell. A separate reader thread drains stdout byte-by-byte, so tqdm's
