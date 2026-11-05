@@ -46,7 +46,7 @@ class BimGeometryHandoff(unittest.TestCase):
             result=aligned_colmap_cloud(cloud,anchors,ifc,out,
                                         max_holdout_m=.05,base_config=cfg)
             self.assertLess(result["holdout_max_m"],1e-5)
-            self.assertEqual(result["sim3_scale"],2.0)
+            self.assertAlmostEqual(result["sim3_scale"],2.0,places=10)
             self.assertFalse(result["stage9_progress_authorized"])
             self.assertFalse(result["stage11_schedule_authorized"])
             self.assertTrue((out/"stage8_review_config.yaml").is_file())
