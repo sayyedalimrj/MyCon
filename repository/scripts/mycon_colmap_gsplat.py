@@ -161,8 +161,8 @@ def local_training_scene(scene: Path, experiment: Path, local: Path) -> Path:
     path=experiment/"colmap_text/images.txt"
     if not path.is_file():raise RuntimeError("CPU_COLMAP_IMAGES_LIST_MISSING")
     for line in path.read_text().splitlines():
-        match=re.search(r"\\b(frame_\\d{6}\\.jpg)\\s*$",line)
-        if match and re.match(r"^\\s*\\d+\\s+",line):
+        match=re.search(r"\b(frame_\d{6}\.jpg)\s*$",line)
+        if match and re.match(r"^\s*\d+\s+",line):
             names.append(match.group(1))
     if len(names)!=len(set(names)) or len(names)<MIN_REGISTERED:
         raise RuntimeError("COLMAP_REGISTERED_IMAGE_NAMES_INVALID")
@@ -405,6 +405,7 @@ def run(args: argparse.Namespace) -> dict:
     gs_source=local/"official_gsplat_v153"
     if args.mode=="all" and accepted.get("registered")!=gate["registered"]:
         raise RuntimeError("PREFLIGHT_COLMAP_REGISTRATION_CHANGED")
+    local.mkdir(parents=True,exist_ok=True)
     training_scene=local_training_scene(scene,experiment,local)
     ensure_source(gs_source,log)
     if args.mode=="preflight":
