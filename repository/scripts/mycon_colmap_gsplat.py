@@ -136,6 +136,8 @@ def prepare_colmap(scene: Path, experiment: Path, count: int, local: Path, log: 
         for p in ("cameras.bin","images.bin","points3D.bin"):
             if not (scene/"sparse/0"/p).is_file():
                 raise RuntimeError("COLMAP_RECEIPT_WITH_MISSING_MODEL")
+        if not (experiment/"bim_candidate"/"colmap_sparse_unscaled.ply").is_file():
+            raise RuntimeError("COLMAP_RECEIPT_WITH_MISSING_BIM_CANDIDATE")
         return colmap_gate(record["registered"],count)
     if shutil.which("colmap") is None:
         raise RuntimeError("COLMAP_NOT_INSTALLED: Colab installs apt colmap in notebook bootstrap")
@@ -156,6 +158,29 @@ def prepare_colmap(scene: Path, experiment: Path, count: int, local: Path, log: 
                 "--output_path",str(txt),"--output_type","TXT"],log)
     registered=count_registered_images(txt/"images.txt")
     gate=colmap_gate(registered,count)
+    # This is separate COLMAP SfM geometry, NOT the photorealistic Gaussian PLY.
+    # Unit scale is arbitrary until independently surveyed control anchors
+    # establish the COLMAP-to-BIM similarity transform and held-out residuals.
+    candidate=experiment/"bim_candidate"/"colmap_sparse_unscaled.ply"
+    candidate.parent.mkdir(parents=True,exist_ok=True)
+    if candidate.exists():raise RuntimeError("BIM_CANDIDATE_ALREADY_EXISTS_WITHOUT_RECEIPT")
+    run_logged(["colmap","model_converter","--input_path",str(model),
+                "--output_path",str(candidate),"--output_type","PLY"],log)
+    if not candidate.is_file() or candidate.stat().st_size<512:
+        raise RuntimeError("COLMAP_INDEPENDENT_SFM_CANDIDATE_EMPTY")
+    save_once(experiment/"bim_candidate"/"stage8_handoff.json",{
+        "schema":"mycon.stage8.geometry_candidate.v1",
+        "candidate_ply":str(candidate),
+        "origin":"COLMAP_SFM_SPARSE_POINTS_NOT_RENDERER_DEPTH",
+        "unit_system":"ARBITRARY_SCALE_NONMETRIC",
+        "independent_site_anchors_present":False,
+        "stage8_registration_approved":False,
+        "stage9_progress_approved":False,
+        "required_next_steps":[
+            "collect independent site/BIM points",
+            "align to BIM with held-out metric validation",
+            "run geometric coverage and per-element residual checks"]
+    })
     save_once(receipt,gate)
     return gate
 
@@ -173,11 +198,12 @@ def evidence(result: Path) -> dict:
     checkpoints=sorted(result.glob("ckpts/ckpt_*.pt"))
     ply=sorted(result.glob("ply/point_cloud_*.ply"))
     videos=sorted(result.glob("videos/traj_*.mp4"))
-    metrics=sorted(result.glob("stats/*.json"))+sorted(result.glob("*.json"))
+    metrics=sorted(result.glob("stats/val_step*.json"))
     return {"checkpoints_present":bool(checkpoints),"checkpoint_paths":[str(p) for p in checkpoints],
             "ply_present":bool(ply),"ply_paths":[str(p) for p in ply],
             "novel_view_video_present":bool(videos),
             "novel_view_videos":[str(p) for p in videos],
+            "heldout_evaluation_present":bool(metrics),
             "evaluation_files":[str(p) for p in metrics],
             "metric_BIM_validated":False,
             "note":"Checkpoint/PLY presence alone never certifies model quality or metric geometry"}
@@ -241,8 +267,9 @@ def run(args: argparse.Namespace) -> dict:
                cwd=gs_source/"examples",live=True)
     artifacts=evidence(resultdir)
     if (not artifacts["checkpoints_present"] or not artifacts["ply_present"]
-            or not artifacts["novel_view_video_present"]):
-        raise RuntimeError("GSPLAT_TRAIN_FINISHED_BUT_CHECKPOINT_PLY_OR_NOVEL_VIEW_MISSING")
+            or not artifacts["novel_view_video_present"] or
+            not artifacts["heldout_evaluation_present"]):
+        raise RuntimeError("GSPLAT_TRAIN_INCOMPLETE_CHECKPOINT_PLY_NOVELVIEW_OR_HELDOUT_QA")
     result={"status":"GSPLAT_TRAINING_OUTPUTS_EXIST_NOT_BIM_METRIC",
             "registered":gate["registered"],"frames":n,
             "source_sha256":original["archive_sha256"],
