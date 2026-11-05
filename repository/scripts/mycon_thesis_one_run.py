@@ -102,6 +102,36 @@ def build_command(controller: Path, *, archive: Path, drive: Path, local: Path,
     return cmd
 
 
+def evidence_for_attempt(attempt_root: Path) -> dict:
+    """Read-only direct artifact inventory; never infer training from a log alone."""
+    candidates=list((attempt_root/'workspace').glob('*/longsplat_model'))
+    if len(candidates)!=1:
+        return {'model_directories_found':len(candidates),'training_checkpoint_verified':False,
+                'novel_view_rgb_exists':False,'gaussian_3dgs_exists':False}
+    model=candidates[0]
+    finals=sorted(model.glob('point_cloud/iteration_*/point_cloud.ply'),
+                  key=lambda p:int(p.parent.name.split('_')[-1])
+                  if p.parent.name.split('_')[-1].isdigit() else -1)
+    cloud=next((p for p in reversed(finals) if p.is_file() and p.stat().st_size>512),None)
+    videos=sorted(model.glob('train/ours_*/videos/nvs_rgb.mp4'),
+                  key=lambda p:int(p.parent.parent.name.split('_')[-1])
+                  if p.parent.parent.name.split('_')[-1].isdigit() else -1)
+    rgb=next((p for p in reversed(videos) if p.is_file() and p.stat().st_size>1024),None)
+    ply=model/'converted_3dgs'/'point_cloud.ply'
+    qa=sorted((attempt_root/'workspace').glob('*/novel_view_qa.json'))
+    return {'model_directories_found':1,'model_directory':str(model),
+            'training_checkpoint_verified':bool(cloud),
+            'last_checkpoint':str(cloud) if cloud else None,
+            'novel_view_rgb_exists':bool(rgb),
+            'novel_view_rgb':str(rgb) if rgb else None,
+            'gaussian_3dgs_exists':ply.is_file() and ply.stat().st_size>512,
+            'gaussian_3dgs_path':str(ply) if ply.is_file() and ply.stat().st_size>512 else None,
+            'novel_view_qa_exists':len(qa)==1,
+            'novel_view_qa_path':str(qa[0]) if len(qa)==1 else None,
+            'metric_bim_validated':False,
+            'note':'File inventory is evidence, not a quality/geometry certificate'}
+
+
 def status(drive: Path, attempt: str) -> int:
     root = drive / 'research_longsplat_auto'
     if not root.is_dir():
@@ -115,6 +145,7 @@ def status(drive: Path, attempt: str) -> int:
     report = json.loads(reports[0].read_text())
     print(json.dumps({'file':str(reports[0]), 'status':report.get('status'),
                       'stages':report.get('stages', {}),
+                      'evidence':evidence_for_attempt(reports[0].parent),
                       'bim_metric_validated':report.get('bim_metric_validated', False)},
                      ensure_ascii=False, indent=2))
     return 0
