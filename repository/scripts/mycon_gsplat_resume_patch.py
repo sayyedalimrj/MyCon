@@ -24,7 +24,12 @@ def replace_once(text: str, before: str, after: str) -> str:
 
 
 def patch_source(text: str) -> str:
-    text = replace_once(text, "import time\n", "import time\nimport random\n")
+    text = replace_once(text, "import time\n", "import time\nimport random\nimport hashlib\n")
+    # Important: gsplat's normalizer changes units and axes. The BIM candidate
+    # remains in raw COLMAP coordinates. Keep Gaussian PLY in that SAME frame
+    # and record the identity handoff, still with arbitrary non-metric units.
+    text = replace_once(text, "normalize_world_space: bool = True",
+                        "normalize_world_space: bool = False")
     before = "        trainloader = torch.utils.data.DataLoader(\n"
     after = '''        # MyCON patch: restore complete model+optimizer+strategy state after
         # their creation, before iterating the dataset. Never use --ckpt for
@@ -33,12 +38,35 @@ def patch_source(text: str) -> str:
         os.makedirs(mycon_recovery, exist_ok=True)
         mycon_saved = sorted(
             Path(mycon_recovery).glob("resume_step_*.pt"),
-            key=lambda p: int(p.stem.rsplit("_", 1)[-1])
+            key=lambda p: int(p.stem.rsplit("_", 1)[-1]),
+            reverse=True
         )
-        if mycon_saved:
-            checkpoint = torch.load(
-                mycon_saved[-1], map_location=self.device, weights_only=False
-            )
+        checkpoint = None
+        for candidate in mycon_saved:
+            stamp = candidate.with_suffix(candidate.suffix + ".sha256.json")
+            if not stamp.is_file():
+                print("MYCON_RECOVERY_SKIPPED_NO_HASH_RECEIPT",candidate,flush=True)
+                continue
+            try:
+                meta = json.loads(stamp.read_text())
+                if (meta.get("size") != candidate.stat().st_size
+                    or meta.get("sha256") != hashlib.sha256(candidate.read_bytes()).hexdigest()):
+                    raise ValueError("hash or size mismatch")
+                attempt = torch.load(candidate, map_location="cpu", weights_only=False)
+                if (attempt.get("patch") != "mycon-resume-v1"
+                    or attempt.get("data_dir") != str(cfg.data_dir)
+                    or attempt.get("max_steps") != max_steps
+                    or attempt.get("world_size") != world_size
+                    or set(attempt.get("splats", {})) != set(self.splats)):
+                    raise ValueError("recovery identity/state mismatch")
+                checkpoint = attempt
+                print("MYCON_RECOVERY_VERIFIED",candidate,flush=True)
+                break
+            except Exception as exc:
+                print("MYCON_RECOVERY_SKIPPED_CORRUPT",candidate,type(exc).__name__,flush=True)
+        if mycon_saved and checkpoint is None:
+            raise RuntimeError("NO_VALID_HASHED_RECOVERY_SNAPSHOT")
+        if checkpoint is not None:
             if (checkpoint.get("patch") != "mycon-resume-v1"
                 or checkpoint.get("data_dir") != str(cfg.data_dir)
                 or checkpoint.get("max_steps") != max_steps
@@ -110,7 +138,27 @@ def patch_source(text: str) -> str:
                 }
                 torch.save(snapshot, partial)
                 os.replace(partial, target)
-                print("MYCON_IMMUTABLE_RECOVERY_SAVED", target, flush=True)
+                # A full readback and a metadata sidecar make interrupted Drive
+                # FUSE writes detectable. Only hashed snapshots are resumable.
+                h = hashlib.sha256()
+                with open(target,"rb") as infile:
+                    for part in iter(lambda: infile.read(4*1024*1024), b""):
+                        h.update(part)
+                meta = {"sha256":h.hexdigest(),
+                        "size":os.path.getsize(target),
+                        "step":step,"patch":"mycon-resume-v1"}
+                stamp = target + ".sha256.json"
+                tempstamp = stamp + ".partial." + str(os.getpid())
+                with open(tempstamp,"w") as outfile:
+                    json.dump(meta,outfile)
+                    outfile.flush()
+                    os.fsync(outfile.fileno())
+                os.replace(tempstamp,stamp)
+                print("MYCON_IMMUTABLE_HASH_VERIFIED_RECOVERY_SAVED", target,flush=True)
+            if len(self.splats["means"]) > int(os.environ.get("MYCON_MAX_GAUSSIANS","1500000")):
+                raise RuntimeError("MYCON_GAUSSIAN_GROWTH_GUARD_EXCEEDED_AFTER_STEP_"+str(step))
+            if torch.cuda.max_memory_allocated()/1024**3 > float(os.environ.get("MYCON_MAX_CUDA_GIB","13.0")):
+                raise RuntimeError("MYCON_GPU_VRAM_GUARD_EXCEEDED_AFTER_STEP_"+str(step))
 
             # eval the full set
 '''
