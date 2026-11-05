@@ -49,6 +49,9 @@ def gsplat_cuda_smoke(py: Path, source: Path, env: dict, log: Path) -> None:
     code=r'''import torch,gsplat
 from gsplat.rendering import rasterization
 assert torch.__version__.startswith("2.4.1+cu121"),torch.__version__
+assert gsplat.__version__=="1.5.3",gsplat.__version__
+from importlib.metadata import version
+assert version("gsplat")=="1.5.3+pt24cu121",version("gsplat")
 assert torch.cuda.is_available()
 assert tuple(torch.cuda.get_device_capability(0))==(7,5)
 means=torch.tensor([[0.,0.,3.]],device="cuda",requires_grad=True)
@@ -146,7 +149,21 @@ def setup(prefix: Path, work: Path, source: Path, log: Path) -> Path:
         print("MYCON_GSPLAT_REUSED_CUDA_VERIFIED",flush=True)
         return py
     if prefix.exists() and any(prefix.iterdir()):
-        raise RuntimeError("GSPLAT_PARTIAL_ENV_PRESERVED_NO_REINSTALL: "+str(prefix))
+        # An interrupted run may have finished installing every package but
+        # crashed before writing the small receipt. Safe adoption requires
+        # a FULL kernel+LPIPS+trainer smoke; no pip or reinstall is attempted.
+        if py.is_file():
+            try:
+                gsplat_cuda_smoke(py,source,env,log)
+            except Exception as exc:
+                raise RuntimeError("GSPLAT_PARTIAL_ENV_PRESERVED_UNVERIFIED: "+str(prefix)) from exc
+            receipt.write_text(json.dumps({
+                "pinned":"gsplat-v1.5.3-torch2.4.1-cu121-t4",
+                "python":str(py),"status":"ADOPTED_EXISTING_ALL_REAL_KERNELS_PASSED",
+                "trained_model_verified":False},indent=2)+"\n")
+            print("MYCON_GSPLAT_ADOPTED_EXISTING_ENV_AFTER_FULL_CUDA_SMOKE",flush=True)
+            return py
+        raise RuntimeError("GSPLAT_PARTIAL_ENV_PRESERVED_NO_PYTHON: "+str(prefix))
     # Use the already referenced safe micromamba downloader from MyCON.
     from mycon_longsplat_autoenv import micromamba
     mm=micromamba(work/"tools/micromamba",log)
