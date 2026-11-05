@@ -232,16 +232,24 @@ def prepare_colmap(scene: Path, experiment: Path, count: int, local: Path, log: 
     if shutil.which("colmap") is None:
         raise RuntimeError("COLMAP_NOT_INSTALLED: Colab installs apt colmap in notebook bootstrap")
     sparse=scene/"sparse"
-    if sparse.exists() and any(sparse.iterdir()):
-        raise RuntimeError("PARTIAL_COLMAP_PRESERVED_NEW_ATTEMPT_REQUIRED")
-    sparse.mkdir(parents=True,exist_ok=True)
-    database=local/"colmap_cache"/(experiment.parent.name+"_"+experiment.name+".db")
-    database.parent.mkdir(parents=True,exist_ok=True)
-    env=os.environ.copy()
-    env["QT_QPA_PLATFORM"]="offscreen"
-    env["OMP_NUM_THREADS"]=str(min(4,max(1,os.cpu_count() or 2)))
-    for cmd in supported_colmap_commands(commands_for_scene(scene,database,sparse)):
-        run_logged(cmd,log,env=env)
+    model=sparse/"0"
+    complete=all((model/n).is_file() for n in ("cameras.bin","images.bin","points3D.bin"))
+    if not complete:
+        if sparse.exists() and any(sparse.iterdir()):
+            # Interrupted mapper: preserve all partial geometry; retry once
+            # from source frames and the existing local feature database.
+            prior=sparse.with_name("sparse_incomplete_preserved_01")
+            if prior.exists():
+                raise RuntimeError("MULTIPLE_PARTIAL_COLMAP_ATTEMPTS_PRESERVED_FOR_DIAGNOSIS")
+            sparse.rename(prior)
+        sparse.mkdir(parents=True,exist_ok=True)
+        database=local/"colmap_cache"/(experiment.parent.name+"_"+experiment.name+".db")
+        database.parent.mkdir(parents=True,exist_ok=True)
+        env=os.environ.copy()
+        env["QT_QPA_PLATFORM"]="offscreen"
+        env["OMP_NUM_THREADS"]=str(min(4,max(1,os.cpu_count() or 2)))
+        for cmd in supported_colmap_commands(commands_for_scene(scene,database,sparse)):
+            run_logged(cmd,log,env=env)
     model=sparse/"0"
     if not all((model/n).is_file() for n in ("cameras.bin","images.bin","points3D.bin")):
         raise RuntimeError("COLMAP_SPARSE_MODEL_NOT_FOUND")
