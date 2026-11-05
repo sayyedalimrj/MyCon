@@ -85,6 +85,30 @@ def commands_for_scene(scene: Path, database: Path, sparse: Path) -> list[list[s
     ]
 
 
+def supported_colmap_commands(commands: list[list[str]]) -> list[list[str]]:
+    """Adapt CPU SIFT flags to installed COLMAP CLI; reject unknown variant."""
+    replacements={
+        "feature_extractor":("--SiftExtraction.use_gpu","--FeatureExtraction.use_gpu"),
+        "sequential_matcher":("--SiftMatching.use_gpu","--FeatureMatching.use_gpu"),
+    }
+    resolved=[]
+    for cmd in commands:
+        step=cmd[1]
+        if step in replacements:
+            probe=subprocess.run(["colmap",step,"-h"],
+                                 capture_output=True,text=True,timeout=30)
+            helptext=probe.stdout+"\\n"+probe.stderr
+            old,new=replacements[step]
+            if old in helptext:
+                resolved.append(cmd)
+            elif new in helptext:
+                resolved.append([new if v==old else v for v in cmd])
+            else:
+                raise RuntimeError("COLMAP_SIFT_CPU_FLAG_UNSUPPORTED_FOR_INSTALLED_VERSION:"+step)
+        else:resolved.append(cmd)
+    return resolved
+
+
 def count_registered_images(images_txt: Path) -> int:
     if not images_txt.is_file():raise RuntimeError("COLMAP_IMAGES_TXT_MISSING")
     # COLMAP alternates camera lines and 2D observations; blank second
@@ -213,8 +237,11 @@ def prepare_colmap(scene: Path, experiment: Path, count: int, local: Path, log: 
     sparse.mkdir(parents=True,exist_ok=True)
     database=local/"colmap_cache"/(experiment.parent.name+"_"+experiment.name+".db")
     database.parent.mkdir(parents=True,exist_ok=True)
-    for cmd in commands_for_scene(scene,database,sparse):
-        run_logged(cmd,log)
+    env=os.environ.copy()
+    env["QT_QPA_PLATFORM"]="offscreen"
+    env["OMP_NUM_THREADS"]=str(min(4,max(1,os.cpu_count() or 2)))
+    for cmd in supported_colmap_commands(commands_for_scene(scene,database,sparse)):
+        run_logged(cmd,log,env=env)
     model=sparse/"0"
     if not all((model/n).is_file() for n in ("cameras.bin","images.bin","points3D.bin")):
         raise RuntimeError("COLMAP_SPARSE_MODEL_NOT_FOUND")
