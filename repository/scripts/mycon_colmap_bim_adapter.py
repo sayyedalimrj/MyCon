@@ -74,6 +74,15 @@ def aligned_colmap_cloud(cloud: Path, anchors: Path, ifc: Path,
             structured[color]=vertex[color].astype(np.uint8)
         else:
             structured[color]=180
+    site_cfg=None
+    if base_config is not None:
+        # Validate the real site config BEFORE writing even a temporary output.
+        import yaml
+        if not base_config.is_file():
+            raise RuntimeError("MYCON_SITE_CONFIG_REQUIRED_FOR_REAL_STAGE8")
+        site_cfg=yaml.safe_load(base_config.read_text(encoding="utf-8"))
+        if not isinstance(site_cfg,dict):
+            raise RuntimeError("MYCON_STAGE8_BASE_CONFIG_NOT_OBJECT")
     if output.exists() and any(output.iterdir()):
         prior=output/"stage8_metric_review.json"
         if prior.is_file():
@@ -110,15 +119,10 @@ def aligned_colmap_cloud(cloud: Path, anchors: Path, ifc: Path,
             "stage9_progress_authorized":False,
             "stage11_schedule_authorized":False,
             "quality_warning":"Sparse SfM may not support element coverage or completion measurement"}
-    if base_config is not None:
-        # Reuse the user's actual site configuration; never fake a site, IFC,
-        # project origin, existing schedule or element mappings.
-        import yaml
-        if not base_config.is_file():
-            raise RuntimeError("MYCON_SITE_CONFIG_REQUIRED_FOR_REAL_STAGE8")
-        base=yaml.safe_load(base_config.read_text(encoding="utf-8"))
-        if not isinstance(base,dict):
-            raise RuntimeError("MYCON_STAGE8_BASE_CONFIG_NOT_OBJECT")
+    if site_cfg is not None:
+        # Reuse original site configuration; never edit it.
+        # We parsed/validated this BEFORE creating the output directory.
+        base=site_cfg
         base.setdefault("bim",{}).update({
             "scan_input_candidates":[str(candidate)],
             "initial_scale_strategy":"fixed_1",
