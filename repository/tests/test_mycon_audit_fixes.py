@@ -82,7 +82,8 @@ class AuditFixes(unittest.TestCase):
                         (target/"points3D.txt").write_text("test\n")
                     else:
                         raise AssertionError("PLY WAS UNNECESSARILY OVERWRITTEN")
-            with patch.object(c,"run_logged",side_effect=convert):
+            with (patch.object(c,"run_logged",side_effect=convert),
+                  patch.object(c.shutil,"which",return_value="/usr/bin/colmap")):
                 result=c.prepare_colmap(scene,exp,180,root,root/"colmap.log")
             self.assertEqual(result["registered"],150)
             self.assertEqual(result["selected_submodel"],"0")
