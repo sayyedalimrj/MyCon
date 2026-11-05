@@ -61,7 +61,7 @@ class TestOneRun(unittest.TestCase):
             try:
                 with patch.object(m,'verify_cuda') as check:
                     env,reason=m.choose_env(
-                        root,{'gpu':{'sm':75},'torch_cuda_wheel':'cu121'},root/'logs')
+                        root,{'gpu':{'sm':75},'torch_cuda_wheel':'cu121','torch_cuda_arch':'7.5'},root/'logs')
                 self.assertEqual(env,known)
                 self.assertEqual(reason,'REUSED_VERIFIED_CUDA_KERNELS')
                 check.assert_called_once()
@@ -77,7 +77,7 @@ class TestOneRun(unittest.TestCase):
             (bad/'bin/python').write_text('python')
             with patch.object(m,'verify_cuda',side_effect=RuntimeError('cuda broken')):
                 with self.assertRaisesRegex(RuntimeError,'NO_VERIFIED_ENV_AND_NEW_PREFIX_ALREADY_EXISTS'):
-                    m.choose_env(local,{'gpu':{'sm':75},'torch_cuda_wheel':'cu121'},
+                    m.choose_env(local,{'gpu':{'sm':75},'torch_cuda_wheel':'cu121','torch_cuda_arch':'7.5'},
                                  root/'logs')
             self.assertTrue((bad/'bin/python').exists())
 
