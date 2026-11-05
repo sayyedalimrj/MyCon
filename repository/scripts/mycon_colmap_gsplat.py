@@ -121,6 +121,53 @@ def count_registered_images(images_txt: Path) -> int:
     return len(cameras)
 
 
+def colmap_sparse_quality(points_txt: Path) -> dict:
+    """Basic structural SfM QA, independent of view-count success.
+
+    COLMAP points3D.txt: POINT3D_ID X Y Z R G B ERROR TRACK...
+    Reject nonfinite or near-empty geometry before allocating Colab T4.
+    Quantitative reprojection/error percentiles remain evidence, NOT metric BIM.
+    """
+    import math
+    import statistics
+    if not points_txt.is_file():
+        raise RuntimeError("COLMAP_POINTS3D_TXT_MISSING")
+    count=0
+    errors=[]
+    xyz_min=[float("inf")]*3
+    xyz_max=[float("-inf")]*3
+    for row in points_txt.open(encoding="utf-8"):
+        line=row.strip()
+        if not line or line.startswith("#"):
+            continue
+        fields=line.split()
+        if len(fields)<10:
+            raise RuntimeError("COLMAP_POINTS3D_LINE_INVALID")
+        try:
+            coordinates=[float(x) for x in fields[1:4]]
+            err=float(fields[7])
+        except ValueError as exc:
+            raise RuntimeError("COLMAP_POINTS3D_NONNUMERIC") from exc
+        if not all(math.isfinite(x) for x in coordinates) or not math.isfinite(err) or err<0:
+            raise RuntimeError("COLMAP_POINTS3D_NONFINITE_OR_NEGATIVE_ERROR")
+        for j,x in enumerate(coordinates):
+            xyz_min[j]=min(xyz_min[j],x)
+            xyz_max[j]=max(xyz_max[j],x)
+        errors.append(err)
+        count+=1
+    if count<100:
+        raise RuntimeError("COLMAP_SPARSE_POINT_COUNT_LT_100; reject unsupported training geometry")
+    extents=[b-a for a,b in zip(xyz_min,xyz_max)]
+    if not all(math.isfinite(x) and x>=0 for x in extents):
+        raise RuntimeError("COLMAP_SPARSE_EXTENTS_INVALID")
+    # This is a view-synthesis QA metric, NOT a dimensional survey gate.
+    return {"points3D":count,
+            "reprojection_error_mean_px":round(float(statistics.fmean(errors)),4),
+            "reprojection_error_max_px":round(max(errors),4),
+            "bounds_extents_arbitrary_units":[round(v,6) for v in extents],
+            "metric_scale_verified":False}
+
+
 def colmap_gate(registered: int, frames: int) -> dict:
     if frames < 80:raise RuntimeError("VIDEO_TOO_FEW_PREPARED_FRAMES")
     fraction=registered/frames
@@ -326,6 +373,7 @@ def prepare_colmap(scene: Path, experiment: Path, count: int, local: Path, log: 
     gate.update(selected_submodel=model.name, candidate_models=[
         {"submodel":path.name,"registered":n}
         for n,path,_ in profiles])
+    gate["sparse_qa"]=colmap_sparse_quality(txt/"points3D.txt")
     # This is separate COLMAP SfM geometry, NOT the photorealistic Gaussian PLY.
     # Unit scale is arbitrary until independently surveyed control anchors
     # establish the COLMAP-to-BIM similarity transform and held-out residuals.
