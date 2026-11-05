@@ -129,6 +129,20 @@ def aligned_colmap_cloud(cloud: Path, anchors: Path, ifc: Path,
             "allow_synthetic_ifc_fallback_for_tests":False,
             "fail_on_low_registration_quality":True})
         base.setdefault("inputs",{})["ifc"]=str(ifc)
+        # Never let a generated review configuration overwrite the user's
+        # historical Stage8 element metadata, aligned cloud or run report.
+        # Stage8 can run against this isolated review namespace independently.
+        stage8_root=output/"stage8_outputs"
+        aligned=stage8_root/"aligned"
+        base.setdefault("paths",{})["bim_aligned_dir"]=str(aligned)
+        base["bim"].update({
+            "bim_reference_ply":str(aligned/"bim_reference.ply"),
+            "bim_reference_mesh":str(aligned/"bim_reference_mesh.ply"),
+            "scan_aligned_ply":str(aligned/"scan_aligned.ply"),
+            "transform_json":str(aligned/"transform_scan_to_bim.json"),
+            "element_metadata_jsonl":str(aligned/"bim_elements.jsonl"),
+            "registration_report_json":str(stage8_root/"registration_report.json"),
+        })
         target=output/"stage8_review_config.yaml"
         target.write_text(yaml.safe_dump(base,allow_unicode=True,sort_keys=False),
                           encoding="utf-8")
