@@ -159,7 +159,8 @@ def render_and_evaluate_if_missing(py: Path, source: Path, scene: Path,
          "--max_steps",str(expected_step+1),
          "--disable_viewer","--packed","--ckpt",str(ckpt)]
     run_logged(cmd,result.parent/"logs"/"final_canonical_eval.log",
-               cwd=source/"examples",env=_cuda_env(py),live=True)
+               cwd=source/"examples",env=_cuda_env(py),live=True,
+               timeout_s=7200,idle_timeout_s=1200)
     if not (validate_artifact_file(stats,20) and validate_artifact_file(video)):
         raise RuntimeError("MYCON_CANONICAL_EVAL_MISSING")
     measured=json.loads(stats.read_text())
