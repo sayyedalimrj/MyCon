@@ -66,8 +66,15 @@ assert means.grad is not None and torch.isfinite(means.grad).all()
 from fused_ssim import fused_ssim
 v=torch.rand(1,3,32,32,device="cuda")
 assert torch.isfinite(fused_ssim(v,v)).all()
+# gsplat's final hold-out metrics use torchmetrics LPIPS/torchvision AlexNet
+# weights. Exercise/download them in preflight rather than after 7000 steps.
+from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
+lpips=LearnedPerceptualImagePatchSimilarity(net_type="alex").to("cuda").eval()
+with torch.no_grad():
+  assert torch.isfinite(lpips(torch.rand(1,3,64,64,device="cuda"),
+                            torch.rand(1,3,64,64,device="cuda"))).all()
 torch.cuda.synchronize()
-print("MYCON_GSPLAT_REAL_FORWARD_BACKWARD_PASS",torch.__version__,gsplat.__version__)
+print("MYCON_GSPLAT_REAL_FORWARD_BACKWARD_AND_LPIPS_PASS",torch.__version__,gsplat.__version__)
 '''
     run_logged([str(py),"-c",code],log,env=env)
     # Verify trainer imports/CLI against the pinned tag before paid training.
