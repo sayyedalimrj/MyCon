@@ -167,6 +167,9 @@ def verify_existing(prefix: Path, source: Path, log: Path) -> Path:
         raise RuntimeError("GPU_TRAINING_REFUSED_NEED_T4_SM75")
     env=os.environ.copy()
     env.update(PYTHONNOUSERSITE="1",MAX_JOBS="2",TORCH_CUDA_ARCH_LIST="7.5")
+    if (Path("/usr/bin/gcc-12")).is_file() and (Path("/usr/bin/g++-12")).is_file():
+        env.update(CC="/usr/bin/gcc-12",CXX="/usr/bin/g++-12",
+                   CUDAHOSTCXX="/usr/bin/g++-12")
     if (prefix/"bin/nvcc").is_file():
         env["CUDA_HOME"]=str(prefix)
         env["PATH"]=str(prefix/"bin")+os.pathsep+env.get("PATH","")
@@ -265,6 +268,10 @@ def setup(prefix: Path, work: Path, source: Path, log: Path) -> Path:
         run_logged(["apt-get","install","-y","gcc-12","g++-12"],log)
     if not (Path("/usr/bin/gcc-12").is_file() and Path("/usr/bin/g++-12").is_file()):
         raise RuntimeError("GCC12_REQUIRED_BEFORE_CUDA121_NATIVE_EXTENSION")
+    # These variables were initialized BEFORE apt. Set them again explicitly
+    # now or nvcc still invokes the incompatible default Colab GCC.
+    env.update(CC="/usr/bin/gcc-12",CXX="/usr/bin/g++-12",
+               CUDAHOSTCXX="/usr/bin/g++-12")
     # Use the already referenced safe micromamba downloader from MyCON.
     from mycon_longsplat_autoenv import micromamba
     mm=micromamba(work/"tools/micromamba",log)
