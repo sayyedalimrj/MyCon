@@ -27,6 +27,9 @@ def run(source: Path, frames_dir: Path) -> dict:
     if not (source / "train.py").is_file() or not (source / "submodules/mast3r").is_dir():
         raise RuntimeError("OFFICIAL_NVIDIA_LONGSPLAT_CHECKOUT_REQUIRED")
     first, second, total = choose_pair(frames_dir)
+    # python /absolute/path/to/smoke.py sets sys.path[0] to MyCON/scripts,
+    # not to NVIDIA's checkout. Add it explicitly rather than rely on cwd.
+    sys.path.insert(0, str(source))
     # Execute from the official NVIDIA repository using the same Python as training.
     # The caller explicitly sets cwd=source and CUDA_HOME/compiled extension paths.
     import torch
