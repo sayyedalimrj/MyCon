@@ -98,6 +98,27 @@ class TestOneRun(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             self.assertEqual(m.status(Path(td),'attempt1'),2)
 
+    def test_status_file_inventory_never_fakes_training_completion(self):
+        with tempfile.TemporaryDirectory() as td:
+            base=Path(td)
+            empty=m.evidence_for_attempt(base)
+            self.assertFalse(empty['checkpoint_ply_present_not_training_complete'])
+            self.assertFalse(empty['gaussian_3dgs_exists'])
+            self.assertFalse(empty['metric_bim_validated'])
+            model=base/'workspace'/'raw_a'/'longsplat_model'
+            c=model/'point_cloud'/'iteration_50000'/'point_cloud.ply'
+            c.parent.mkdir(parents=True)
+            c.write_bytes(b'A'*1000)
+            rgb=model/'train'/'ours_50000'/'videos'/'nvs_rgb.mp4'
+            rgb.parent.mkdir(parents=True)
+            rgb.write_bytes(b'B'*2000)
+            data=m.evidence_for_attempt(base)
+            self.assertTrue(data['checkpoint_ply_present_not_training_complete'])
+            self.assertTrue(data['novel_view_rgb_exists'])
+            self.assertFalse(data['gaussian_3dgs_exists'])
+            self.assertFalse(data['metric_bim_validated'])
+
+
 
 if __name__=='__main__':
     unittest.main()
