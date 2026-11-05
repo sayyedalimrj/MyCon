@@ -29,6 +29,8 @@ jobs:
           python -m py_compile repository/scripts/mycon_longsplat_auto_run.py
           python -m py_compile repository/scripts/mycon_longsplat_autoenv.py
           python -m py_compile repository/scripts/mycon_mast3r_2view_smoke.py
+          python -m py_compile repository/scripts/mycon_colmap_gsplat.py
+          python -m py_compile repository/scripts/mycon_colmap_gsplat_env.py
           python -m py_compile repository/pipeline/stage_04_5_cams_gs/longsplat_research.py
       - name: Reject notebook syntax and malformed JSON
         run: |
@@ -48,3 +50,4 @@ jobs:
           python -m unittest discover -s repository/tests -p test_mycon_thesis_one_run.py -v
           python -m unittest discover -s repository/tests -p test_mycon_mast3r_2view_smoke.py -v
           python -m unittest discover -s repository/tests -p test_mycon_nvidia_progress.py -v
+          python -m unittest discover -s repository/tests -p test_mycon_colmap_gsplat.py -v
