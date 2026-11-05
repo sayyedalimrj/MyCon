@@ -35,7 +35,7 @@ class OneRuntimeNoWastedCredits(unittest.TestCase):
             for n in ("cameras.bin","images.bin","points3D.bin"):
                 (model/n).write_bytes(n.encode()+b"non-empty")
             (exp/"frames_receipt.json").write_text(json.dumps({
-                "count":70,
+                "count":80,
                 "first_sha256":c.digest(images/names[0]),
                 "last_sha256":c.digest(images/names[-1]),
             }))
