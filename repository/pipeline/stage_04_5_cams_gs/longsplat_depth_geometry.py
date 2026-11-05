@@ -51,9 +51,13 @@ def backproject(camera: dict, depth, pixels):
     shift=np.asarray(camera['T'], dtype=np.float64)
     if rot.shape!=(3,3) or shift.shape!=(3,) or abs(np.linalg.det(rot)-1)>0.03:
         raise ValueError('Camera pose invalid')
+    # Official LongSplat scene/cameras.py uses principal point width/2,
+    # height/2 (NOT (width-1)/2). Camera JSON is saved after to_final().
+    if int(camera.get('width',-1))!=w or int(camera.get('height',-1))!=h:
+        raise ValueError('Depth size disagrees with NVIDIA camera JSON dimensions')
     y,x=pixels[:,0],pixels[:,1]
     z=depth[y,x]
-    view_xyz=np.column_stack(((x-(w-1)/2)/fx*z, (y-(h-1)/2)/fy*z, z))
+    view_xyz=np.column_stack(((x-w/2)/fx*z, (y-h/2)/fy*z, z))
     return (view_xyz - shift) @ rot.T
 
 
