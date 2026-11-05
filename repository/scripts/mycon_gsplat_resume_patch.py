@@ -77,16 +77,20 @@ def patch_source(text: str) -> str:
             # densification updates, so the restored step is truly next.
             # Snapshots are immutable and saved atomically on Drive.
             mycon_interval = int(os.environ.get("MYCON_RESUME_EVERY", "1000"))
-            if mycon_interval and ((step + 1) % mycon_interval == 0 or
+            if mycon_interval and ((step + 1) == 200 or
+                                   (step + 1) % mycon_interval == 0 or
                                    step == max_steps - 1):
                 target = os.path.join(
                     mycon_recovery, f"resume_step_{step:06d}.pt"
                 )
                 if os.path.exists(target):
                     raise RuntimeError("MYCON_EXISTING_RECOVERY_CHECKPOINT_PRESERVED")
-                partial = target + ".partial"
+                # A prior VM may have left a .partial artifact. Never
+                # overwrite or treat it as a valid checkpoint; write another
+                # unique partial name and atomically publish only a complete .pt.
+                partial = target + ".partial." + str(os.getpid())
                 if os.path.exists(partial):
-                    raise RuntimeError("MYCON_PARTIAL_RECOVERY_CHECKPOINT_PRESERVED")
+                    raise RuntimeError("MYCON_CURRENT_PROCESS_PARTIAL_EXISTS")
                 snapshot = {
                     "patch": "mycon-resume-v1",
                     "data_dir": str(cfg.data_dir),
