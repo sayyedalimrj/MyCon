@@ -150,27 +150,47 @@ def setup(prefix: Path, work: Path, source: Path, log: Path) -> Path:
         gsplat_cuda_smoke(py,source,env,log)
         print("MYCON_GSPLAT_REUSED_CUDA_VERIFIED",flush=True)
         return py
-    if prefix.exists() and any(prefix.iterdir()):
-        # An interrupted run may have finished installing every package but
-        # crashed before writing the small receipt. Safe adoption requires
-        # a FULL kernel+LPIPS+trainer smoke; no pip or reinstall is attempted.
+    partial=prefix.exists() and any(prefix.iterdir())
+    if partial:
+        # A previously interrupted package installation can finish cleanly.
+        # Re-check all real CUDA kernels first, then allow ONE controlled
+        # idempotent repair; never delete/reinstall Torch in a known good env.
         if py.is_file():
             try:
                 gsplat_cuda_smoke(py,source,env,log)
-            except Exception as exc:
-                raise RuntimeError("GSPLAT_PARTIAL_ENV_PRESERVED_UNVERIFIED: "+str(prefix)) from exc
-            receipt.write_text(json.dumps({
-                "pinned":"gsplat-v1.5.3-torch2.4.1-cu121-t4",
-                "python":str(py),"status":"ADOPTED_EXISTING_ALL_REAL_KERNELS_PASSED",
-                "trained_model_verified":False},indent=2)+"\n")
-            print("MYCON_GSPLAT_ADOPTED_EXISTING_ENV_AFTER_FULL_CUDA_SMOKE",flush=True)
-            return py
-        raise RuntimeError("GSPLAT_PARTIAL_ENV_PRESERVED_NO_PYTHON: "+str(prefix))
+            except Exception:
+                pass
+            else:
+                receipt.write_text(json.dumps({
+                    "pinned":"gsplat-v1.5.3-torch2.4.1-cu121-t4",
+                    "python":str(py),"status":"ADOPTED_EXISTING_ALL_REAL_KERNELS_PASSED",
+                    "trained_model_verified":False},indent=2)+"\n")
+                print("MYCON_GSPLAT_ADOPTED_EXISTING_ENV_AFTER_FULL_CUDA_SMOKE",flush=True)
+                return py
+            # Refuse to install into a prefix containing a different working
+            # PyTorch/CUDA identity; such a prefix is not ours to modify.
+            probe=subprocess.run([str(py),"-c",
+                "import json,sys;import torch;print(json.dumps([list(sys.version_info[:2]),torch.__version__,torch.version.cuda]))"],
+                capture_output=True,text=True)
+            if probe.returncode==0:
+                try:
+                    identity=json.loads(probe.stdout.strip().splitlines()[-1])
+                except (ValueError,IndexError):
+                    raise RuntimeError("PARTIAL_ENV_TORCH_IDENTITY_UNREADABLE")
+                if (identity[0]!=[3,10] or not identity[1].startswith("2.4.1+cu121")
+                    or identity[2]!="12.1"):
+                    raise RuntimeError("PARTIAL_ENV_WRONG_TORCH_ABI_PRESERVE")
+        stamp=prefix.parent/(prefix.name+"_one_repair_attempted.json")
+        if stamp.is_file():
+            raise RuntimeError("GSPLAT_PARTIAL_ENV_ALREADY_RETRIED_ONCE_PRESERVED")
+        stamp.write_text(json.dumps({"status":"REPAIR_IN_PROGRESS_NO_DELETION",
+                                     "prefix":str(prefix)},indent=2)+"\n")
+        print("MYCON_ONCE_ONLY_REPAIRING_PARTIAL_ENV_WITHOUT_DELETION",flush=True)
     # Use the already referenced safe micromamba downloader from MyCON.
     from mycon_longsplat_autoenv import micromamba
     mm=micromamba(work/"tools/micromamba",log)
     prefix.parent.mkdir(parents=True,exist_ok=True)
-    run_logged([str(mm),"create","-y","-p",str(prefix),"-c","conda-forge",
+    run_logged([str(mm),"install" if partial else "create","-y","-p",str(prefix),"-c","conda-forge",
                 "python=3.10.13","pip","setuptools","wheel","ninja","cmake"],log,env=env)
     run_logged([str(mm),"install","-y","-p",str(prefix),
                 "-c","nvidia/label/cuda-12.1.1","-c","conda-forge",
