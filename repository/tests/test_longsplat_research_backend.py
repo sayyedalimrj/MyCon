@@ -40,7 +40,11 @@ def make_frames(argv,*,cwd,log):
 def prepare(tmp_path):
     args=fixture(tmp_path)
     args.phase='prepare';args.accept_research_license=True
-    with patch.object(bridge,'invoke',side_effect=make_frames),patch.object(bridge.shutil,'which',return_value='/usr/bin/ffmpeg'):
+    # The fixture contains synthetic video bytes. Mock ffprobe so this
+    # structural unit test does not depend on a real video decoder.
+    with (patch.object(bridge,'invoke',side_effect=make_frames),
+          patch.object(bridge.shutil,'which',return_value='/usr/bin/ffmpeg'),
+          patch.object(bridge.subprocess,'run',return_value=Namespace(returncode=1,stdout=''))):
         assert bridge.run(args)==0
     return args
 
