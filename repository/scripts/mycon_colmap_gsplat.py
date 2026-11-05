@@ -264,11 +264,27 @@ def run(args: argparse.Namespace) -> dict:
                 "training_authorized":False}
     if args.mode=="verify":
         return verify_original_archive(archive,local)
-    local.mkdir(parents=True,exist_ok=True)
-    original=prepare_capture(archive,local/"verified_recorder_input",verified_rotation_cw=90)
-    if not 90 <= original["full_video_duration_s"] <= 110:
-        raise RuntimeError("WRONG_CAPTURE_EXPECT_96_SECOND_RECORDER")
-    experiment=drive/"research_colmap_gsplat"/original["archive_sha256"][:16]/attempt
+    if args.mode in ("preflight","all"):
+        # CPU geometry persisted the fully verified source receipts on Drive.
+        # In a fresh GPU VM avoid decompressing the 436MB video a second time.
+        # We still rehash the immutable ZIP to rule out a same-name replacement.
+        archive_sha=digest(archive)
+        experiment=drive/"research_colmap_gsplat"/archive_sha[:16]/attempt
+        cpu_receipt=experiment/"verified_capture_cpu.json"
+        if not cpu_receipt.is_file():
+            raise RuntimeError("CPU_SOURCE_AND_GEOMETRY_RECEIPT_MISSING_BEFORE_GPU")
+        original=json.loads(cpu_receipt.read_text())
+        if (original.get("archive_sha256")!=archive_sha
+            or not 90 <= original.get("full_video_duration_s",0) <= 110):
+            raise RuntimeError("CPU_CAPTURE_SHA_OR_DURATION_CHANGED")
+    else:
+        local.mkdir(parents=True,exist_ok=True)
+        original=prepare_capture(archive,local/"verified_recorder_input",verified_rotation_cw=90)
+        if not 90 <= original["full_video_duration_s"] <= 110:
+            raise RuntimeError("WRONG_CAPTURE_EXPECT_96_SECOND_RECORDER")
+        experiment=drive/"research_colmap_gsplat"/original["archive_sha256"][:16]/attempt
+        if args.mode=="geometry":
+            save_once(experiment/"verified_capture_cpu.json",original)
     experiment.mkdir(parents=True,exist_ok=True)
     statusfile=experiment/"status.json"
     inputrec={"source_sha256":original["archive_sha256"],"method":"COLMAP+gsplat",
