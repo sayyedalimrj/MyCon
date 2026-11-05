@@ -27,6 +27,8 @@ jobs:
           python -m py_compile repository/scripts/mycon_thesis_one_run.py
           python -m py_compile repository/scripts/mycon_longsplat_auto_run.py
           python -m py_compile repository/scripts/mycon_longsplat_autoenv.py
+          python -m py_compile repository/scripts/mycon_mast3r_2view_smoke.py
+          python -m py_compile repository/pipeline/stage_04_5_cams_gs/longsplat_research.py
       - name: Reject notebook syntax and malformed JSON
         run: |
           python - <<'PY'
@@ -41,4 +43,6 @@ jobs:
           print('NOTEBOOK_JSON_AND_PYTHON_SYNTAX_PASS')
           PY
       - name: Run non-destructive acceptance unit tests
-        run: python -m unittest discover -s repository/tests -p test_mycon_thesis_one_run.py -v
+        run: |
+          python -m unittest discover -s repository/tests -p test_mycon_thesis_one_run.py -v
+          python -m unittest discover -s repository/tests -p test_mycon_mast3r_2view_smoke.py -v
