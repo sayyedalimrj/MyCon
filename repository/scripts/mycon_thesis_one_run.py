@@ -106,7 +106,7 @@ def evidence_for_attempt(attempt_root: Path) -> dict:
     """Read-only direct artifact inventory; never infer training from a log alone."""
     candidates=list((attempt_root/'workspace').glob('*/longsplat_model'))
     if len(candidates)!=1:
-        return {'model_directories_found':len(candidates),'training_checkpoint_verified':False,
+        return {'model_directories_found':len(candidates),'checkpoint_ply_present_not_training_complete':False,
                 'novel_view_rgb_exists':False,'gaussian_3dgs_exists':False}
     model=candidates[0]
     finals=sorted(model.glob('point_cloud/iteration_*/point_cloud.ply'),
@@ -120,7 +120,7 @@ def evidence_for_attempt(attempt_root: Path) -> dict:
     ply=model/'converted_3dgs'/'point_cloud.ply'
     qa=sorted((attempt_root/'workspace').glob('*/novel_view_qa.json'))
     return {'model_directories_found':1,'model_directory':str(model),
-            'training_checkpoint_verified':bool(cloud),
+            'checkpoint_ply_present_not_training_complete':bool(cloud),
             'last_checkpoint':str(cloud) if cloud else None,
             'novel_view_rgb_exists':bool(rgb),
             'novel_view_rgb':str(rgb) if rgb else None,
