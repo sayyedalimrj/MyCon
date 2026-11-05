@@ -91,8 +91,10 @@ class BaselineGuards(unittest.TestCase):
             prefix=root/"env"
             prefix.mkdir()
             (prefix/"protected_checkpoints.txt").write_text("not to delete")
-            with self.assertRaisesRegex(RuntimeError,"PARTIAL_ENV_PRESERVED"):
-                env.setup(prefix,root,root/"gsplat",root/"log")
+            with patch.object(env.subprocess,"run",
+                              return_value=SimpleNamespace(returncode=0,stdout="7.5")):
+                with self.assertRaisesRegex(RuntimeError,"PARTIAL_ENV_PRESERVED"):
+                    env.setup(prefix,root,root/"gsplat",root/"log")
             self.assertTrue((prefix/"protected_checkpoints.txt").exists())
 
     def test_unsafe_attempt_cannot_change_write_root(self):
