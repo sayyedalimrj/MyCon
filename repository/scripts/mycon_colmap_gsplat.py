@@ -85,9 +85,12 @@ def commands_for_scene(scene: Path, database: Path, sparse: Path) -> list[list[s
 
 def count_registered_images(images_txt: Path) -> int:
     if not images_txt.is_file():raise RuntimeError("COLMAP_IMAGES_TXT_MISSING")
-    records=[x for x in images_txt.read_text().splitlines() if x.strip() and not x.startswith("#")]
-    if len(records)%2:raise RuntimeError("COLMAP_IMAGES_TXT_MALFORMED")
-    return len(records)//2
+    # COLMAP alternates camera lines and 2D observations; blank second
+    # lines are legal, so simply counting nonempty lines gives wrong totals.
+    cameras=[line for line in images_txt.read_text().splitlines()
+             if re.match(r"^\\s*\\d+\\s+",line) and
+                re.search(r"\\bframe_\\d{6}\\.jpg\\s*$",line)]
+    return len(cameras)
 
 
 def colmap_gate(registered: int, frames: int) -> dict:
@@ -140,7 +143,7 @@ def prepare_colmap(scene: Path, experiment: Path, count: int, local: Path, log: 
     if sparse.exists() and any(sparse.iterdir()):
         raise RuntimeError("PARTIAL_COLMAP_PRESERVED_NEW_ATTEMPT_REQUIRED")
     sparse.mkdir(parents=True,exist_ok=True)
-    database=local/"colmap_cache"/(experiment.name+".db")
+    database=local/"colmap_cache"/(experiment.parent.name+"_"+experiment.name+".db")
     database.parent.mkdir(parents=True,exist_ok=True)
     for cmd in commands_for_scene(scene,database,sparse):
         run_logged(cmd,log)
@@ -163,15 +166,18 @@ def gsplat_command(py: Path, source: Path, scene: Path, result: Path) -> list[st
             "--test_every","8","--max_steps",str(STEPS),
             "--save_steps",str(STEPS),"--eval_steps",str(STEPS),
             "--ply_steps",str(STEPS),"--save_ply","--disable_viewer",
-            "--packed","--disable_video"]
+            "--packed"]
 
 
 def evidence(result: Path) -> dict:
     checkpoints=sorted(result.glob("ckpts/ckpt_*.pt"))
     ply=sorted(result.glob("ply/point_cloud_*.ply"))
+    videos=sorted(result.glob("videos/traj_*.mp4"))
     metrics=sorted(result.glob("stats/*.json"))+sorted(result.glob("*.json"))
     return {"checkpoints_present":bool(checkpoints),"checkpoint_paths":[str(p) for p in checkpoints],
             "ply_present":bool(ply),"ply_paths":[str(p) for p in ply],
+            "novel_view_video_present":bool(videos),
+            "novel_view_videos":[str(p) for p in videos],
             "evaluation_files":[str(p) for p in metrics],
             "metric_BIM_validated":False,
             "note":"Checkpoint/PLY presence alone never certifies model quality or metric geometry"}
@@ -234,8 +240,9 @@ def run(args: argparse.Namespace) -> dict:
     run_logged(gsplat_command(py,gs_source,scene,resultdir),experiment/"logs"/"train.log",
                cwd=gs_source/"examples",live=True)
     artifacts=evidence(resultdir)
-    if not artifacts["checkpoints_present"] or not artifacts["ply_present"]:
-        raise RuntimeError("GSPLAT_TRAIN_FINISHED_BUT_CHECKPOINT_OR_PLY_MISSING")
+    if (not artifacts["checkpoints_present"] or not artifacts["ply_present"]
+            or not artifacts["novel_view_video_present"]):
+        raise RuntimeError("GSPLAT_TRAIN_FINISHED_BUT_CHECKPOINT_PLY_OR_NOVEL_VIEW_MISSING")
     result={"status":"GSPLAT_TRAINING_OUTPUTS_EXIST_NOT_BIM_METRIC",
             "registered":gate["registered"],"frames":n,
             "source_sha256":original["archive_sha256"],
