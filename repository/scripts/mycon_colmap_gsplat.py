@@ -249,6 +249,24 @@ def run(args: argparse.Namespace) -> dict:
     log=experiment/"logs"/"pipeline.log"
     n=prepare_frames(local/"verified_recorder_input/raw_capture.mp4",scene,experiment,log)
     gate=prepare_colmap(scene,experiment,n,local,log)
+    if args.mode=="geometry":
+        # Safe, CPU-only COLMAP stage. Can run before assigning a Colab GPU;
+        # all extracted frames / SfM geometry receipts live on Drive and
+        # survive a CPU -> T4 runtime switch.
+        result={"status":"GEOMETRY_PREPARED_COLMAP_REGISTERED_NO_GPU",
+                "registered":gate["registered"],"frames":n,
+                "source_sha256":original["archive_sha256"],
+                "training_executed":False,"bim_metric_validated":False}
+        if statusfile.exists():
+            old=json.loads(statusfile.read_text())
+            if old.get("source_sha256")!=result["source_sha256"]:
+                raise RuntimeError("GEOMETRY_ATTEMPT_SOURCE_CONFLICT")
+            if old.get("status") in ("TRAINING_STARTED","TRAINING_FAILED_PRESERVE_PARTIAL",
+                                     "GSPLAT_TRAINING_OUTPUTS_EXIST_NOT_BIM_METRIC",
+                                     "PREFLIGHT_COLMAP_AND_GSPLAT_CUDA_PASSED_NO_TRAINING"):
+                return old
+        statusfile.write_text(json.dumps(result,indent=2)+"\n")
+        return result
     gs_source=local/"official_gsplat_v153"
     ensure_source(gs_source,log)
     if args.mode=="preflight":
@@ -268,7 +286,21 @@ def run(args: argparse.Namespace) -> dict:
         return result
     if args.mode!="all":raise RuntimeError("UNKNOWN_MODE")
     if not args.approve_training:raise RuntimeError("TRAINING_NOT_APPROVED_USE_EXPLICIT_ALL")
-    py=setup_gsplat(local/"gsplat_py310_torch24_cu121",local,gs_source,log)
+    # A GPU training request MUST have a same-capture accepted preflight receipt.
+    # Never install multi-GB packages just because MODE=all was accidentally set.
+    if not statusfile.is_file():
+        raise RuntimeError("PREFLIGHT_MUST_PASS_BEFORE_GPU_TRAINING")
+    accepted=json.loads(statusfile.read_text())
+    if (accepted.get("status")!="PREFLIGHT_COLMAP_AND_GSPLAT_CUDA_PASSED_NO_TRAINING"
+        or accepted.get("source_sha256")!=original["archive_sha256"]
+        or accepted.get("registered")!=gate["registered"]):
+        raise RuntimeError("SAME_CAPTURE_COLMAP_AND_CUDA_PREFLIGHT_REQUIRED")
+    prefix=local/"gsplat_py310_torch24_cu121"
+    if not (prefix/"bin/python").is_file():
+        raise RuntimeError("PREFLIGHT_PYTHON_ENV_NOT_PRESENT_CURRENT_RUNTIME")
+    # Repeat real CUDA kernel checks, but NEVER reinstall during a training run.
+    from mycon_colmap_gsplat_env import verify_existing
+    py=verify_existing(prefix,gs_source,log)
     resultdir=experiment/"gsplat_result"
     if resultdir.exists() and any(resultdir.iterdir()):
         raise RuntimeError("EXISTING_GSPLAT_OUTPUT_PRESERVED: use a distinct --attempt; cannot fake resume")
@@ -299,7 +331,7 @@ def run(args: argparse.Namespace) -> dict:
 
 def main(argv=None) -> int:
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--mode",choices=("plan","preflight","all","status"),default="preflight")
+    p.add_argument("--mode",choices=("plan","geometry","preflight","all","status"),default="preflight")
     p.add_argument("--capture",type=Path)
     p.add_argument("--drive-root",type=Path,default=DRIVE)
     p.add_argument("--local-root",type=Path,default=LOCAL)
