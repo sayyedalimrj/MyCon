@@ -292,11 +292,24 @@ def setup(prefix: Path, work: Path, source: Path, log: Path) -> Path:
                 "Pillow==10.4.0","tqdm","tyro==0.8.14","pyyaml",
                 "matplotlib","tensorboard","tensorly","splines",
                 "torchmetrics[image]==1.4.3","plyfile"],log,env=env)
-    # Official precompiled v1.5.3 wheel is available for Torch2.4/CUDA12.1/CP310.
-    # Avoid a source/JIT build of gsplat's large CUDA library.
-    run_logged([str(py),"-m","pip","install","--no-deps","--index-url",
-                "https://docs.gsplat.studio/whl/pt24cu121",
-                "gsplat==1.5.3+pt24cu121"],log,env=env)
+    # Verify official July 2025 GitHub release SHA256 BEFORE installing native
+    # code. This exact 21.1MB cp310 Linux wheel is published by gsplat v1.5.3.
+    # Never install a substituted wheel or unexpectedly built source package.
+    from mycon_audit_runtime import sha256
+    wheel_sha="0493bab68ed5fc71f4ce8bfc2be03b584d8a41a06a6d9362e09a795340f8c488"
+    wheel_dir=work/"verified_wheels"/"gsplat_v153_pt24cu121_cp310"
+    wheel_dir.mkdir(parents=True,exist_ok=True)
+    wheels=list(wheel_dir.glob("gsplat-1.5.3+pt24cu121-cp310-cp310-linux_x86_64.whl"))
+    if not wheels:
+        run_logged([str(py),"-m","pip","download","--no-deps",
+                    "--only-binary=:all:","--dest",str(wheel_dir),
+                    "--index-url","https://docs.gsplat.studio/whl/pt24cu121",
+                    "gsplat==1.5.3+pt24cu121"],log,env=env,timeout_s=900)
+        wheels=list(wheel_dir.glob("gsplat-1.5.3+pt24cu121-cp310-cp310-linux_x86_64.whl"))
+    if len(wheels)!=1 or sha256(wheels[0])!=wheel_sha:
+        raise RuntimeError("MYCON_GSPLAT_OFFICIAL_WHEEL_SHA256_MISMATCH")
+    run_logged([str(py),"-m","pip","install","--no-deps",str(wheels[0])],
+               log,env=env)
     for requirement in (
         "git+https://github.com/rmbrualla/pycolmap@cc7ea4b7301720ac29287dbe450952511b32125e",
         "git+https://github.com/nerfstudio-project/nerfview@4538024fe0d15fd1a0e4d760f3695fc44ca72787",
