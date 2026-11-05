@@ -199,11 +199,19 @@ def evidence(result: Path) -> dict:
     ply=sorted(result.glob("ply/point_cloud_*.ply"))
     videos=sorted(result.glob("videos/traj_*.mp4"))
     metrics=sorted(result.glob("stats/val_step*.json"))
+    measured={}
+    if metrics:
+        report=json.loads(metrics[-1].read_text())
+        for field in ("psnr","ssim","lpips","num_GS"):
+            value=report.get(field)
+            if isinstance(value,(int,float)) and not isinstance(value,bool):
+                measured[field]=value
     return {"checkpoints_present":bool(checkpoints),"checkpoint_paths":[str(p) for p in checkpoints],
             "ply_present":bool(ply),"ply_paths":[str(p) for p in ply],
             "novel_view_video_present":bool(videos),
             "novel_view_videos":[str(p) for p in videos],
             "heldout_evaluation_present":bool(metrics),
+            "heldout_measured_metrics":measured,
             "evaluation_files":[str(p) for p in metrics],
             "metric_BIM_validated":False,
             "note":"Checkpoint/PLY presence alone never certifies model quality or metric geometry"}
@@ -254,6 +262,8 @@ def run(args: argparse.Namespace) -> dict:
             old=json.loads(statusfile.read_text())
             if old.get("source_sha256")!=result["source_sha256"]:
                 raise RuntimeError("OLD_STATUS_DIFFERENT_CAPTURE")
+            if old.get("status") in ("TRAINING_STARTED","GSPLAT_TRAINING_OUTPUTS_EXIST_NOT_BIM_METRIC"):
+                return old
         statusfile.write_text(json.dumps(result,indent=2)+"\n")
         return result
     if args.mode!="all":raise RuntimeError("UNKNOWN_MODE")
@@ -263,8 +273,17 @@ def run(args: argparse.Namespace) -> dict:
     if resultdir.exists() and any(resultdir.iterdir()):
         raise RuntimeError("EXISTING_GSPLAT_OUTPUT_PRESERVED: use a distinct --attempt; cannot fake resume")
     resultdir.mkdir(parents=True,exist_ok=True)
-    run_logged(gsplat_command(py,gs_source,scene,resultdir),experiment/"logs"/"train.log",
-               cwd=gs_source/"examples",live=True)
+    state={"status":"TRAINING_STARTED","source_sha256":original["archive_sha256"],
+           "registered":gate["registered"],"frames":n,
+           "bim_metric_validated":False}
+    statusfile.write_text(json.dumps(state,indent=2)+"\n")
+    try:
+        run_logged(gsplat_command(py,gs_source,scene,resultdir),experiment/"logs"/"train.log",
+                   cwd=gs_source/"examples",live=True)
+    except Exception as exc:
+        state.update(status="TRAINING_FAILED_PRESERVE_PARTIAL",error=str(exc)[-900:])
+        statusfile.write_text(json.dumps(state,indent=2)+"\n")
+        raise
     artifacts=evidence(resultdir)
     if (not artifacts["checkpoints_present"] or not artifacts["ply_present"]
             or not artifacts["novel_view_video_present"] or
