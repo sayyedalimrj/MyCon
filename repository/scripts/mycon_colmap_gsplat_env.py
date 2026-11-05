@@ -13,36 +13,99 @@ import sys
 from pathlib import Path
 
 
-def run_logged(cmd: list[str], log: Path, *, cwd: Path | None = None, env: dict | None = None,
-               live: bool = False) -> None:
+def run_logged(cmd: list[str], log: Path, *, cwd: Path | None = None,
+               env: dict | None = None, live: bool = False,
+               timeout_s: int = 28800, idle_timeout_s: int = 2100) -> None:
+    """Live watch with bounded stalled-runtime cost, preserving all GPU receipts.
+
+    No shell. A separate reader thread drains stdout byte-by-byte, so tqdm's
+    carriage-return-only progress is a valid heartbeat. Python subprocess is
+    terminated only if genuinely idle or exceeding the explicit run budget.
+    """
+    import threading
+    import time
     log.parent.mkdir(parents=True,exist_ok=True)
     with log.open("a",encoding="utf-8") as f:
         f.write("\n>>> "+json.dumps(cmd)+"\n")
         f.flush()
-        if live:
-            proc=subprocess.Popen(cmd,cwd=cwd,env=env,stdin=subprocess.DEVNULL,
-                                  stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
-                                  text=True,errors="replace",bufsize=1)
-            tail=[]
+        if not live:
             try:
-                for line in proc.stdout:
-                    f.write(line)
-                    if len(tail)>12:tail.pop(0)
-                    tail.append(line.strip())
-                    if ("Step:" in line or "error" in line.lower() or "Traceback" in line):
+                proc=subprocess.run(cmd,cwd=cwd,env=env,stdout=f,
+                                    stderr=subprocess.STDOUT,stdin=subprocess.DEVNULL,
+                                    check=False,timeout=timeout_s)
+            except subprocess.TimeoutExpired as exc:
+                raise RuntimeError("COMMAND_TIMEOUT_NONLIVE_SAFELY_PRESERVED: "+
+                                   str(log)) from exc
+            if proc.returncode:
+                raise RuntimeError("COMMAND_FAILED(exit="+str(proc.returncode)+"): "+
+                                   str(cmd[0])+"; log="+str(log))
+            return
+        proc=subprocess.Popen(cmd,cwd=cwd,env=env,stdin=subprocess.DEVNULL,
+                              stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
+                              text=True,errors="replace",bufsize=1)
+        started=time.monotonic()
+        last_activity=[started]
+        lines=[]
+        writer_errors=[]
+        def drain():
+            current=[]
+            try:
+                while True:
+                    ch=proc.stdout.read(1)
+                    if not ch:break
+                    last_activity[0]=time.monotonic()
+                    f.write(ch)
+                    if ch in ("\r","\n"):
+                        line="".join(current).strip()
+                        if line:
+                            lines.append(line[-350:])
+                            if len(lines)>15:lines.pop(0)
+                            if ("Step:" in line or "error" in line.lower()
+                                or "Traceback" in line
+                                or "MYCON_IMMUTABLE_HASH_VERIFIED" in line):
+                                print("MYCON_GPU:",line[-250:],flush=True)
+                        current.clear()
                         f.flush()
-                        print("MYCON_GSPLAT:",line[-250:].strip(),flush=True)
+                    else:
+                        current.append(ch)
+                        if len(current)>5000:current=current[-5000:]
+            except Exception as exc:
+                writer_errors.append(exc)
             finally:
                 if proc.stdout is not None:proc.stdout.close()
-                ret=proc.wait()
                 f.flush()
-            if ret:raise RuntimeError("COMMAND_FAILED(exit="+str(ret)+"): "+
-                                       " | ".join(tail)[-700:]+"; log="+str(log))
+        th=threading.Thread(target=drain,daemon=True)
+        th.start()
+        stopped=None
+        while proc.poll() is None:
+            time.sleep(2)
+            now=time.monotonic()
+            if writer_errors:
+                stopped="GPU_LOG_READER_FAILED"
+                break
+            if now-started > timeout_s:
+                stopped="GPU_RUN_TOTAL_TIME_GUARD"
+                break
+            if now-last_activity[0] > idle_timeout_s:
+                stopped="GPU_RUN_STALLED_NO_OUTPUT_GUARD"
+                break
+        if stopped:
+            proc.terminate()
+            try:proc.wait(timeout=25)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
         else:
-            proc=subprocess.run(cmd,cwd=cwd,env=env,stdout=f,stderr=subprocess.STDOUT,
-                                stdin=subprocess.DEVNULL,check=False)
-            if proc.returncode:raise RuntimeError(
-                "COMMAND_FAILED(exit="+str(proc.returncode)+"): "+str(cmd[0])+"; log="+str(log))
+            proc.wait()
+        th.join(timeout=20)
+        f.flush()
+        if stopped:
+            raise RuntimeError(stopped+"; last lines: "+" | ".join(lines[-8:])+
+                               "; preserved logs="+str(log))
+        if proc.returncode:
+            raise RuntimeError("COMMAND_FAILED(exit="+str(proc.returncode)+"): "+
+                               " | ".join(lines[-8:])[-800:]+"; log="+str(log))
+
 
 
 def gsplat_cuda_smoke(py: Path, source: Path, env: dict, log: Path) -> None:
