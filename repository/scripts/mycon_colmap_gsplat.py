@@ -424,7 +424,9 @@ def run(args: argparse.Namespace) -> dict:
             raise RuntimeError("PREFLIGHT_MUST_PASS_BEFORE_GPU_TRAINING")
         accepted=json.loads(statusfile.read_text())
         if (accepted.get("status") not in ("PREFLIGHT_REAL_VIDEO_GPU_SMOKE_PASSED_NO_FULL_TRAINING",
-                                           "TRAINING_STARTED","TRAINING_FAILED_PRESERVE_PARTIAL")
+                                           "TRAINING_STARTED","TRAINING_OR_RECOVERY_STARTED",
+                                           "TRAINING_FAILED_PRESERVE_PARTIAL",
+                                           "GSPLAT_TRAINING_OUTPUTS_EXIST_NOT_BIM_METRIC")
             or accepted.get("source_sha256")!=original["archive_sha256"]):
             raise RuntimeError("SAME_CAPTURE_COLMAP_AND_CUDA_PREFLIGHT_REQUIRED")
         prefix=local/"gsplat_py310_torch24_cu121"
@@ -477,7 +479,8 @@ def run(args: argparse.Namespace) -> dict:
             old=json.loads(statusfile.read_text())
             if old.get("source_sha256")!=result["source_sha256"]:
                 raise RuntimeError("OLD_STATUS_DIFFERENT_CAPTURE")
-            if old.get("status") in ("TRAINING_STARTED","TRAINING_FAILED_PRESERVE_PARTIAL",
+            if old.get("status") in ("TRAINING_STARTED","TRAINING_OR_RECOVERY_STARTED",
+                                      "TRAINING_FAILED_PRESERVE_PARTIAL",
                                       "GSPLAT_TRAINING_OUTPUTS_EXIST_NOT_BIM_METRIC"):
                 return old
         statusfile.write_text(json.dumps(result,indent=2)+"\n")
@@ -490,7 +493,9 @@ def run(args: argparse.Namespace) -> dict:
         raise RuntimeError("PREFLIGHT_MUST_PASS_BEFORE_GPU_TRAINING")
     accepted=json.loads(statusfile.read_text())
     if (accepted.get("status") not in ("PREFLIGHT_REAL_VIDEO_GPU_SMOKE_PASSED_NO_FULL_TRAINING",
-                                           "TRAINING_STARTED","TRAINING_FAILED_PRESERVE_PARTIAL")
+                                           "TRAINING_STARTED","TRAINING_OR_RECOVERY_STARTED",
+                                           "TRAINING_FAILED_PRESERVE_PARTIAL",
+                                           "GSPLAT_TRAINING_OUTPUTS_EXIST_NOT_BIM_METRIC")
         or accepted.get("source_sha256")!=original["archive_sha256"]
         or accepted.get("registered")!=gate["registered"]):
         raise RuntimeError("SAME_CAPTURE_COLMAP_AND_CUDA_PREFLIGHT_REQUIRED")
