@@ -110,6 +110,8 @@ def invoke(cmd: list[str], *, cwd: Path, log: Path) -> None:
                     print('MYCON_NVIDIA_PROGRESS:', brief[-200:], flush=True)
                     last_update = now
         finally:
+            if proc.stdout is not None:
+                proc.stdout.close()
             code = proc.wait()
             handle.flush()
     if code:
