@@ -42,10 +42,12 @@ def patch_source(text: str) -> str:
             reverse=True
         )
         checkpoint = None
+        invalid_candidates = []
         for candidate in mycon_saved:
             stamp = candidate.with_suffix(candidate.suffix + ".sha256.json")
             if not stamp.is_file():
                 print("MYCON_RECOVERY_SKIPPED_NO_HASH_RECEIPT",candidate,flush=True)
+                invalid_candidates.append((candidate,stamp,"no_hash_receipt"))
                 continue
             try:
                 meta = json.loads(stamp.read_text())
@@ -68,9 +70,27 @@ def patch_source(text: str) -> str:
                 break
             except Exception as exc:
                 print("MYCON_RECOVERY_SKIPPED_CORRUPT",candidate,type(exc).__name__,flush=True)
+                invalid_candidates.append((candidate,stamp,type(exc).__name__))
         if mycon_saved and checkpoint is None:
+            # No valid optimizer state: NEVER silently start zero-costly steps.
+            # Keep every existing snapshot for diagnosis and demand a distinct
+            # explicitly authorized experiment instead of guessing.
             raise RuntimeError("NO_VALID_HASHED_RECOVERY_SNAPSHOT")
         if checkpoint is not None:
+            # Only AFTER a good older snapshot is verified may we archive
+            # broken later snapshots. Never delete/overwrite a checkpoint.
+            # This prevents stopping at the very same bad filename on replay.
+            for invalid, stamp, reason in invalid_candidates:
+                destination=invalid.with_name(invalid.name+".preserved_invalid_"+str(os.getpid()))
+                if destination.exists():
+                    raise RuntimeError("MYCON_INVALID_RECOVERY_PRESERVATION_COLLISION")
+                invalid.rename(destination)
+                if stamp.is_file():
+                    saved_stamp=stamp.with_name(stamp.name+".preserved_invalid_"+str(os.getpid()))
+                    if saved_stamp.exists():
+                        raise RuntimeError("MYCON_INVALID_RECOVERY_STAMP_COLLISION")
+                    stamp.rename(saved_stamp)
+                print("MYCON_INVALID_RECOVERY_PRESERVED",destination,reason,flush=True)
             if (checkpoint.get("patch") != "mycon-resume-v1"
                 or checkpoint.get("data_dir") != str(cfg.data_dir)
                 or checkpoint.get("max_steps") != max_steps
