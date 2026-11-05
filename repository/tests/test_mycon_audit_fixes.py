@@ -133,6 +133,57 @@ class AuditFixes(unittest.TestCase):
             self.assertEqual(model["source_kind"],"post_optimizer_recovery")
             self.assertEqual(model["colmap_to_gaussian_4x4"][0],[1,0,0,0])
 
+    def test_interrupted_immutable_receipt_partial_does_not_block_retry(self):
+        with tempfile.TemporaryDirectory() as td:
+            directory=Path(td)
+            stuck=directory/"geometry.json.partial"
+            stuck.write_text("unfinished write from disconnected CPU")
+            target=directory/"geometry.json"
+            c.save_once(target,{"source_sha256":"abc"})
+            self.assertEqual(json.loads(target.read_text()),{"source_sha256":"abc"})
+            self.assertEqual(stuck.read_text(),"unfinished write from disconnected CPU")
+            with self.assertRaisesRegex(RuntimeError,"IMMUTABLE_RECEIPT_CONFLICT"):
+                c.save_once(target,{"source_sha256":"different"})
+
+    def test_interrupted_canonical_ply_is_preserved_and_regenerated(self):
+        with tempfile.TemporaryDirectory() as td:
+            result=Path(td)
+            recovery=result/"recovery"/"resume_step_006999.pt"
+            recovery.parent.mkdir()
+            recovery.write_bytes(b"valid snapshot supplied by real trainer"*200)
+            audit.atomic_json(Path(str(recovery)+".sha256.json"),{
+                "size":recovery.stat().st_size,
+                "sha256":audit.sha256(recovery)})
+            old=result/"canonical"/"ckpts"/"ckpt_6999_rank0.pt"
+            old.parent.mkdir(parents=True)
+            old.write_bytes(b"interrupted model write")
+            calls=[]
+            def export(cmd, log, **kwargs):
+                calls.append(cmd)
+                target=result/"canonical"/"ckpts"/"ckpt_6999_rank0.pt"
+                ply=result/"canonical"/"ply"/"point_cloud_6999.ply"
+                target.parent.mkdir(parents=True,exist_ok=True)
+                ply.parent.mkdir(parents=True,exist_ok=True)
+                target.write_bytes(b"valid checkpoint"*400)
+                ply.write_bytes(b"ply result"*300)
+            with patch.object(finish,"run_logged",side_effect=export):
+                outcome=finish.make_final_model(Path("/env/bin/python"),result)
+            self.assertTrue(outcome.is_file())
+            self.assertEqual(len(calls),1)
+            preserved=list(result.glob("canonical.preserved_unreceipted_canonical_model_*"))
+            self.assertEqual(len(preserved),1)
+            self.assertEqual(
+                (preserved[0]/"ckpts"/"ckpt_6999_rank0.pt").read_bytes(),
+                b"interrupted model write")
+            self.assertTrue((result/"canonical"/"canonical_model.json").is_file())
+
+    def test_corrupt_resume_checkpoint_has_preservation_and_fallback_guard(self):
+        import inspect
+        patch_source=inspect.getsource(resume.patch_source)
+        self.assertIn("invalid_candidates.append((candidate,stamp",patch_source)
+        self.assertIn("MYCON_INVALID_RECOVERY_PRESERVED",patch_source)
+        self.assertIn("NO_VALID_HASHED_RECOVERY_SNAPSHOT",patch_source)
+
     def test_nan_inf_not_accepted_as_valid_reconstruction(self):
         self.assertFalse(audit.metrics_valid({"psnr":float("nan"),"ssim":0.8,"lpips":0.1}))
         self.assertFalse(audit.metrics_valid({"psnr":30,"ssim":float("inf"),"lpips":0.1}))
