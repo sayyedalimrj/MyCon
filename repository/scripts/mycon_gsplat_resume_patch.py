@@ -49,8 +49,12 @@ def patch_source(text: str) -> str:
                 continue
             try:
                 meta = json.loads(stamp.read_text())
+                digest = hashlib.sha256()
+                with candidate.open("rb") as infile:
+                    for part in iter(lambda: infile.read(4*1024*1024), b""):
+                        digest.update(part)
                 if (meta.get("size") != candidate.stat().st_size
-                    or meta.get("sha256") != hashlib.sha256(candidate.read_bytes()).hexdigest()):
+                    or meta.get("sha256") != digest.hexdigest()):
                     raise ValueError("hash or size mismatch")
                 attempt = torch.load(candidate, map_location="cpu", weights_only=False)
                 if (attempt.get("patch") != "mycon-resume-v1"
@@ -80,7 +84,17 @@ def patch_source(text: str) -> str:
                 optimizer = self.optimizers[name]
                 optimizer.param_groups[0]["params"] = [param]
                 optimizer.load_state_dict(checkpoint["optimizers"][name])
-            self.strategy_state = checkpoint["strategy_state"]
+            def _cuda_state(item):
+                if torch.is_tensor(item):
+                    return item.to(device=self.device)
+                if isinstance(item,dict):
+                    return {key:_cuda_state(val) for key,val in item.items()}
+                if isinstance(item,list):
+                    return [_cuda_state(val) for val in item]
+                if isinstance(item,tuple):
+                    return tuple(_cuda_state(val) for val in item)
+                return item
+            self.strategy_state = _cuda_state(checkpoint["strategy_state"])
             if len(schedulers) != len(checkpoint["schedulers"]):
                 raise RuntimeError("MYCON_RESUME_SCHEDULER_COUNT_MISMATCH")
             for scheduler, state in zip(schedulers, checkpoint["schedulers"]):
