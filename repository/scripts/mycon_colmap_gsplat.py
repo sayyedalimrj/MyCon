@@ -20,6 +20,8 @@ from pathlib import Path
 from mycon_capture_safe import prepare as prepare_capture
 from mycon_thesis_one_run import find_capture, validate_attempt
 from mycon_colmap_gsplat_env import setup as setup_gsplat, run_logged
+from mycon_gsplat_resume_patch import ensure_trainer
+from mycon_gsplat_finish import render_and_evaluate_if_missing
 
 DRIVE = Path("/content/drive/MyDrive/MyCon_R4")
 LOCAL = Path("/content/MyCON_ColmapGsplat")
@@ -249,13 +251,65 @@ def prepare_colmap(scene: Path, experiment: Path, count: int, local: Path, log: 
     return gate
 
 
-def gsplat_command(py: Path, source: Path, scene: Path, result: Path) -> list[str]:
-    return [str(py),str(source/"examples/simple_trainer.py"),"default",
+def gsplat_command(py: Path, source: Path, scene: Path, result: Path,
+                   trainer: Path | None=None) -> list[str]:
+    return [str(py),str(trainer or (source/"examples/simple_trainer.py")),"default",
             "--data_dir",str(scene),"--data_factor","1","--result_dir",str(result),
             "--test_every","8","--max_steps",str(STEPS),
             "--save_steps",str(STEPS),"--eval_steps",str(STEPS),
             "--ply_steps",str(STEPS),"--save_ply","--disable_viewer",
             "--packed"]
+
+
+def real_video_cuda_smoke(py: Path, source: Path, scene: Path,
+                          experiment: Path, trainer: Path) -> dict:
+    """20 actual optimizer steps on real registered phone frames, not fake Gaussians.
+
+    Uses /content local output and never touches full 7000-step result root.
+    This does consume a small amount of GPU time; it is NOT a zero-GPU test.
+    """
+    smoke=Path("/content/MyCON_ColmapGsplat")/"short_real_video_smoke"/experiment.parent.name/experiment.name
+    marker=smoke/"mycon_20_step_result.json"
+    if marker.is_file():
+        row=json.loads(marker.read_text())
+        if row.get("status")!="REAL_20_STEP_VIDEO_T4_PASS":
+            raise RuntimeError("CUDA_SMOKE_MARKER_MISMATCH")
+        return row
+    if smoke.exists() and any(smoke.iterdir()):
+        raise RuntimeError("INTERRUPTED_20_STEP_GPU_SMOKE_PRESERVED_CHANGE_RUNTIME_OR_INSPECT_LOG")
+    smoke.mkdir(parents=True,exist_ok=True)
+    cmd=gsplat_command(py,source,scene,smoke,trainer)
+    # Official gsplat's short run is deliberately no PLY/no video/no heldout.
+    # The 20-step optimizer loop validates pycolmap camera parsing,
+    # rasterization, real pixel batches, backward, and checkpoint writes.
+    cmd[cmd.index("--max_steps")+1]="20"
+    cmd[cmd.index("--save_steps")+1]="20"
+    cmd[cmd.index("--eval_steps")+1]="-1"
+    cmd[cmd.index("--ply_steps")+1]="-1"
+    cmd.remove("--save_ply")
+    cmd.append("--disable_video")
+    env=os.environ.copy()
+    env.update(PYTHONNOUSERSITE="1",MAX_JOBS="2",
+               TORCH_CUDA_ARCH_LIST="7.5",MYCON_RESUME_EVERY="0")
+    prefix=Path(py).parent.parent
+    env["CUDA_HOME"]=str(prefix)
+    env["PATH"]=str(prefix/"bin")+os.pathsep+env.get("PATH","")
+    run_logged(cmd,experiment/"logs"/"real_video_20_step_smoke.log",
+               cwd=source/"examples",env=env,live=True)
+    stats=sorted((smoke/"stats").glob("train_step*.json"))
+    ckpts=sorted((smoke/"ckpts").glob("ckpt_*_rank0.pt"))
+    if not stats or not ckpts:
+        raise RuntimeError("GPU_REAL_VIDEO_OPTIMIZER_SMOKE_OUTPUTS_MISSING")
+    measured=json.loads(stats[-1].read_text())
+    mem=measured.get("mem")
+    if not isinstance(mem,(int,float)) or not 0<mem<13.5:
+        raise RuntimeError("T4_SMOKE_MEMORY_EXCEEDS_CONSERVATIVE_13_5_GIB")
+    result={"status":"REAL_20_STEP_VIDEO_T4_PASS",
+            "real_registered_video_images":True,
+            "max_gpu_allocated_gib":round(float(mem),3),
+            "steps":20,"full_training_executed":False}
+    marker.write_text(json.dumps(result,indent=2)+"\\n")
+    return result
 
 
 def evidence(result: Path) -> dict:
@@ -398,7 +452,7 @@ def run(args: argparse.Namespace) -> dict:
                 raise RuntimeError("GEOMETRY_ATTEMPT_SOURCE_CONFLICT")
             if old.get("status") in ("TRAINING_STARTED","TRAINING_FAILED_PRESERVE_PARTIAL",
                                      "GSPLAT_TRAINING_OUTPUTS_EXIST_NOT_BIM_METRIC",
-                                     "PREFLIGHT_COLMAP_AND_GSPLAT_CUDA_PASSED_NO_TRAINING"):
+                                     "PREFLIGHT_REAL_VIDEO_GPU_SMOKE_PASSED_NO_FULL_TRAINING"):
                 return old
         statusfile.write_text(json.dumps(result,indent=2)+"\n")
         return result
@@ -409,17 +463,21 @@ def run(args: argparse.Namespace) -> dict:
     training_scene=local_training_scene(scene,experiment,local)
     ensure_source(gs_source,log)
     if args.mode=="preflight":
-        # Explicit GPU prerequisites are checked now, before training.
+        # Explicit GPU prerequisites are checked now, before 7000-step training.
         py=setup_gsplat(local/"gsplat_py310_torch24_cu121",local,gs_source,log)
-        result={"status":"PREFLIGHT_COLMAP_AND_GSPLAT_CUDA_PASSED_NO_TRAINING",
+        patched=ensure_trainer(gs_source)
+        smoke=real_video_cuda_smoke(py,gs_source,training_scene,experiment,patched)
+        result={"status":"PREFLIGHT_REAL_VIDEO_GPU_SMOKE_PASSED_NO_FULL_TRAINING",
                 "registered":gate["registered"],"frames":n,
                 "cuda_python":str(py),"source_sha256":original["archive_sha256"],
+                "real_video_smoke":smoke,
                 "training_executed":False,"bim_metric_validated":False}
         if statusfile.exists():
             old=json.loads(statusfile.read_text())
             if old.get("source_sha256")!=result["source_sha256"]:
                 raise RuntimeError("OLD_STATUS_DIFFERENT_CAPTURE")
-            if old.get("status") in ("TRAINING_STARTED","GSPLAT_TRAINING_OUTPUTS_EXIST_NOT_BIM_METRIC"):
+            if old.get("status") in ("TRAINING_STARTED","TRAINING_FAILED_PRESERVE_PARTIAL",
+                                      "GSPLAT_TRAINING_OUTPUTS_EXIST_NOT_BIM_METRIC"):
                 return old
         statusfile.write_text(json.dumps(result,indent=2)+"\n")
         return result
