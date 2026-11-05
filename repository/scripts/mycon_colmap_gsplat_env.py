@@ -136,6 +136,8 @@ def setup(prefix: Path, work: Path, source: Path, log: Path) -> Path:
     env["MAX_JOBS"]="2"
     env["TORCH_CUDA_ARCH_LIST"]="7.5"
     env["PIP_DISABLE_PIP_VERSION_CHECK"]="1"
+    # Micromamba -p environments still need a stable root prefix in Colab.
+    env["MAMBA_ROOT_PREFIX"]=str(work/"mamba_root")
     if (Path("/usr/bin/g++-12")).is_file():
         env.update(CC="/usr/bin/gcc-12",CXX="/usr/bin/g++-12",CUDAHOSTCXX="/usr/bin/g++-12")
     if (prefix/"bin/nvcc").is_file():
