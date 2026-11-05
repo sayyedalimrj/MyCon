@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'repository/scripts/mycon_*'
+      - 'repository/pipeline/stage_04_5_cams_gs/**'
       - 'repository/tests/test_mycon_*'
       - 'repository/MyCON_FINAL_ACCEPTANCE.ipynb'
       - '.github/workflows/mycon-final-acceptance.yml'
