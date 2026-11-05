@@ -84,6 +84,18 @@ print("MYCON_GSPLAT_REAL_FORWARD_BACKWARD_AND_LPIPS_PASS",torch.__version__,gspl
 
 def setup(prefix: Path, work: Path, source: Path, log: Path) -> Path:
     prefix=prefix.expanduser().resolve()
+    # Stop before any multi-GB installs if Colab has no NVIDIA T4.
+    gpu=subprocess.run(["nvidia-smi","--query-gpu=compute_cap",
+                        "--format=csv,noheader,nounits"],
+                       capture_output=True,text=True,check=False)
+    if gpu.returncode or not gpu.stdout.strip():
+        raise RuntimeError("GSPLAT_NO_NVIDIA_GPU_SELECT_T4_IN_COLAB_RUNTIME")
+    try:
+        capability=float(gpu.stdout.splitlines()[0].strip())
+    except ValueError as exc:
+        raise RuntimeError("GSPLAT_GPU_COMPUTE_CAPABILITY_UNREADABLE") from exc
+    if round(capability*10)!=75:
+        raise RuntimeError("GSPLAT_PINNED_BASELINE_REQUIRES_T4_SM75; got SM"+str(round(capability*10)))
     py=prefix/"bin/python"
     receipt=prefix.parent/(prefix.name+"_verified.json")
     env=os.environ.copy()
