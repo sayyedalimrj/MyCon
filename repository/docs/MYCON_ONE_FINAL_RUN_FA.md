@@ -1,60 +1,42 @@
-# MyCON — فقط یک نوت‌بوک نهایی؛ اجرای کم‌ریسک و کنترل‌شده
+# راهنمای قطعی اجرای MyCON — یک نوت‌بوک، دو Runtime، بازیابی ایمن
 
-**شروع فقط از این لینک:** [MyCON_FINAL_ACCEPTANCE.ipynb](https://colab.research.google.com/github/sayyedalimrj/MyCon/blob/feature/mycon-single-final-acceptance-20261105/repository/MyCON_FINAL_ACCEPTANCE.ipynb)
+**فقط [MyCON_FINAL_ACCEPTANCE.ipynb](https://colab.research.google.com/github/sayyedalimrj/MyCon/blob/feature/mycon-single-final-acceptance-20261105/repository/MyCON_FINAL_ACCEPTANCE.ipynb) را اجرا کن.** فایل ZIP و نوت‌بوک‌های v1/v2 قدیمی منسوخ‌اند.
 
-**مرجع نسخه‌ها:** [قفل سازگاری Python/CUDA/GPU](./MYCON_RUNTIME_COMPATIBILITY_LOCK_20261105.json)
+## Run all اول روی CPU
 
-## انتخاب فعلی
+- به Drive متصل شو. `CAPTURE_ZIP` را فقط اگر تشخیص خودکار یکتا شکست خورد با مسیر دقیق **آرشیو اصلی ۹۶ ثانیه‌ای Recorder** پر کن.
+- `verify`: ZIP/manifest/CRC/hash/فضای آزاد را بدون GPU کنترل می‌کند. اصل ZIP، pose.csv، IMU و checkpointها تغییر نمی‌کنند.
+- `geometry`: FFmpeg کل فیلم را با ۲fps و عرض ۶۴۰px به حدود ۱۹۲ فریم تبدیل می‌کند؛ COLMAP در حالت CPU، SIFT sequential و SfM را اجرا می‌کند؛ حداقل **۶۰ تصویر و ۶۵٪ تصاویر** باید ثبت شوند. تغییر نام گزینه‌های SIFT بین نسخه‌های COLMAP قبل از اجرای سنگین بررسی می‌شود.
+- مدل `scene/sparse/0`، فریم‌ها، ابرنقاط مستقل `bim_candidate/colmap_sparse_unscaled.ply` و رسیدهای SHA بر روی **Drive** قرار می‌گیرند.
+- پس از خروجی `CPU_GEOMETRY_COMPLETE_ON_GOOGLE_DRIVE`، سلول عمداً با `INTENTIONAL_CPU_STOP` متوقف می‌شود. **خطای عمدی پایان CPU است؛ مجدد CPU Run all لازم نیست.**
 
-برای گرفتن اولین مدل قابل اندازه‌گیری، **COLMAP + gsplat رسمی v1.5.3** مسیر پیش‌فرض است. روش بر بازسازی از فیلم داخلی موبایل در [SpatialScene3D v10.5](https://github.com/Ziro21/SpatialScene3D) تکیه دارد، اما کد نوت‌بوک آن پروژه را کپی نمی‌کند. آموزش مستقیماً توسط [simple_trainer.py رسمی gsplat](https://github.com/nerfstudio-project/gsplat/tree/v1.5.3/examples) انجام می‌شود. این روش کنترل ساده‌تری برای استفاده با T4 دارد.
+## Run all دوم روی T4
 
-NVIDIA LongSplat و تمام checkpointهای قبلی **محفوظ‌اند**؛ مسیر LongSplat برای پژوهش مقایسه‌ای باقی می‌ماند. نصب PyTorch3D در ترکیب قبلی Torch 2.5.1 و کد اصلی NVIDIA نیازمند تست واقعی سازگاری است و در نوت‌بوک پیش‌فرض بدون تأیید آغاز نمی‌شود. این حفظ NVIDIA به معنی تأیید آموزش آن نیست.
+- Runtime را از Colab دستی به **NVIDIA T4** تغییر بده؛ /content طبیعی است که پاک شود. در نوت‌بوک همان **Run all از اول** را بزن.
+- سلول اول GitHub و Drive را وصل می‌کند. سلول دوم با دیدن T4 **همه مراحل CPU را Skip می‌کند**.
+- `preflight`: SHA اصلی و رسیدهای Drive را می‌خواند و **بدون ویدئوی محلی و بدون اجرای دوباره FFmpeg/COLMAP** فقط تصاویر ثبت‌شده و sparse model را به /content سریع منتقل می‌کند.
+- محیط مجزای `Python 3.10.13 / torch 2.4.1+cu121 / CUDA 12.1 / gsplat 1.5.3+pt24cu121` نصب و کرنل‌های واقعی، fused-SSIM، LPIPS، واردکردن trainer و سپس **۲۰ قدم بهینه‌سازی واقعی روی همان تصاویر کارگاه** آزمایش می‌شوند. این یک اجرای کوتاه GPU است و هزینه زمانی کم اما واقعی دارد؛ **آموزش کامل ۷۰۰۰ قدمی نیست**.
+- موفقیت دقیق: `PREFLIGHT_REAL_VIDEO_GPU_SMOKE_PASSED_NO_FULL_TRAINING`.
+- `TRAIN_CONFIRMATION=""` پیش‌فرض، مانع آموزش کامل می‌شود. برای اجازه صریح `TRAIN_CONFIRMATION="RUN_7000_STEPS_T4"` را در سلول اول بگذار و روی همان T4 دوباره Run all بزن؛ پس از پیش‌اجرا، `all` اجرا می‌شود. اگر این تأیید را از قبل در سلول اول گذاشته باشی، **همان Run all دوم** آموزش را بعد از preflight آغاز می‌کند.
 
-## ترتیب فقط همین چهار مرحله
+## بازیابی بعد از قطع GPU
 
-1. **Colab با Runtime = CPU**: سلول شماره ۱ اتصال به Drive و GitHub را اجرا کن. `CAPTURE_ZIP` را فقط اگر سیستم ZIP اصلی را پیدا نکرد با **مسیر واقعی همان آرشیو ۹۶ ثانیه‌ای** مقداردهی کن. سلول شماره ۲ را برای `verify` اجرا کن؛ این مرحله بدون pip، CUDA و آموزش است و فرمت/CRC/SHA256 ZIP اصلی و فضای آزاد را بررسی می‌کند.
-2. **همچنان CPU**: سلول شماره ۳ را اجرا کن؛ `ffmpeg` و `COLMAP` در صورت نیاز با apt نصب می‌شوند، فریم‌های ۲fps با عرض ۶۴۰ از کل فیلم ساخته می‌شوند، COLMAP باید حداقل ۶۰ فریم و ۶۵٪ را ثبت کند. مدل هندسی `scene/sparse/0` و ابرنقاط مستقل `bim_candidate/colmap_sparse_unscaled.ply` در Drive ذخیره می‌شوند. GPU مصرف نمی‌شود.
-3. **Runtime را به T4 GPU تغییر بده**: **سلول اتصال شماره ۱ را دوباره اجرا کن** چون Colab محیط محلی را عوض می‌کند. سپس سلول شماره ۴ `preflight` را اجرا کن. مرحله GPU با SHA ZIP و رسید CPU ثابت می‌کند کار CPU از قبل انجام شده و **ویدئو را دوباره استخراج نمی‌کند**. پس از نصب محیط جداگانه Python 3.10/Torch2.4.1/CUDA12.1/gsplat1.5.3، *واقعاً* CUDA forward/backward، fused-SSIM، LPIPS و CLI رسمی gsplat را امتحان می‌کند. هنوز آموزش نمی‌کند.
-4. **فقط اگر پیام زیر صادر شد**: `PREFLIGHT_COLMAP_AND_GSPLAT_CUDA_PASSED_NO_TRAINING`. در سلول شماره ۵ مقدار `TRAIN_CONFIRMATION` را به **`RUN_7000_STEPS_T4`** تغییر بده و اجرا کن. ۷۰۰۰ مرحله صرفاً اولین خط مبنای تجربی است؛ کیفیت نهایی را تضمین نمی‌کند. سلول شماره ۶ وضعیت را بدون آموزش نشان می‌دهد.
+- کد رسمی `nerfstudio-project/gsplat` از tag `v1.5.3` بی‌تغییر clone می‌شود. کد `mycon_gsplat_resume_patch.py` در همان checkout یک **فایل جداگانه** `mycon_resumable_trainer.py` می‌سازد؛ trainer رسمی overwrite نمی‌شود.
+- ذخیره immutable full-state `result/recovery/resume_step_*.pt` بعد از مرحله **۲۰۰** و سپس هر **۵۰۰** مرحله و پایان شامل Gaussian، optimizer، scheduler، densification strategy و RNG است. snapshot فقط پس از پایان قدم optimizer ساخته می‌شود.
+- با قطع Runtime، همان ATTEMPT را نگه دار و روی Runtime جدید T4 دوباره Run all بزن؛ پیش‌اجرا وابستگی‌ها را دوباره بررسی می‌کند؛ `all` با تأیید صریح از آخرین snapshot قابل خواندن ادامه می‌دهد. قبل از قدم ۲۰۰ یک snapshot بازیابی کامل وجود ندارد؛ برای یک اجرای خیلی زود قطع‌شده، کد بدون تخریب فایل‌های قبلی متوقف می‌شود.
+- `--ckpt` رسمی gsplat **فقط eval** است، نه resume optimizer. کد MyCON برای جلوگیری از ادعای غلط از آن برای resume استفاده نمی‌کند. اگر آخرین snapshot مرحله ۶۹۹۹ کامل است، `mycon_gsplat_finish.py` بدون آموزش مجدد مدل Gaussian PLY و رندر/معیارهای hold-out را کامل می‌کند.
+- **تضمین bitwise replay نداریم**: ترتیب shuffle بین DataLoaderهای دو Runtime ممکن است تغییر کند؛ ولی وزن‌ها، optimizer، scheduler و densification از snapshot کامل برمی‌گردند.
 
-**هرگز Runtime را بین مرحله پیش‌اجرای T4 و آموزش تغییر نده؛** بسته‌های محیط محلی به Runtime تعلق دارند و بعد از تغییر آن باید دوباره بررسی شوند. هرگز از دستور `pip install -U torch` خارج از محیط جداشده استفاده نکن.
+## گزارش نهایی و معیار پایان‌نامه
 
-## قفل سازگاری T4
+در `MyDrive/MyCon_R4/research_colmap_gsplat/<archive_sha16>/<ATTEMPT>/`:
+- `verified_capture_cpu.json`، `frames_receipt.json`، `colmap_receipt.json`؛
+- `scene/images` و `scene/sparse/0`؛
+- `bim_candidate/colmap_sparse_unscaled.ply` با هشدار **مقیاس دلخواه**؛
+- `gsplat_result/recovery/` و `gsplat_result/ckpts/`؛
+- `gsplat_result/ply/point_cloud_6999.ply`، `gsplat_result/videos/traj_6999.mp4` و `gsplat_result/stats/val_step6999.json`؛
+- `logs/real_video_20_step_smoke.log` و `logs/train_or_resume.log` و `status.json`.
 
-| جزء | نسخه مورد انتظار |
-|---|---|
-| GPU | NVIDIA Tesla T4، SM 7.5، تقریباً ۱۵ GiB VRAM |
-| Python آموزش | 3.10.13 در micromamba مستقل؛ Python میزبان Colab دست‌نخورده |
-| Torch / torchvision | 2.4.1+cu121 / 0.19.1+cu121 |
-| CUDA nvcc | 12.1 در محیط مستقل |
-| gsplat | 1.5.3+pt24cu121، wheel رسمی cp310 لینوکس، بدون کامپایل gsplat |
-| TorchMetrics / Tyro | 1.4.3 / 0.8.14 |
-| NumPy / Pillow | 1.26.4 / 10.4.0 |
-| OpenCV headless | 4.10.0.84 |
-| ابزار SfM | FFmpeg + COLMAP روی CPU؛ نسخه apt در Runtime CPU به‌صورت واقعی آزموده می‌شود |
+**مهم:** این pipeline خط مبنای بصری-هندسی COLMAP/gsplat است. روش رسمی NVIDIA LongSplat و کد depth-to-BIM در همان PR برای مقایسه پژوهشی محفوظ‌اند و اجرای خودکار GPU ندارند. هیچ PLY یا PSNR به‌تنهایی متریک/بیم نیست. برای اعلام درصد پیشرفت واقعی، فایل IFC واقعی، حداقل چهار نقطه کنترل مستقل غیرهم‌صفحه و نقاط hold-out، تبدیل Sim(3)، تحلیل خطای متریک و مشاهده‌پذیری عناصر لازم است؛ خروجی فعلی خودش نتیجه نهایی BIM تولید نمی‌کند.
 
-فهرست دقیق SHA wheel و مراجع upstream در فایل JSON همراه است. خروجی‌های source، CPU geometry و checksum روی Drive‌اند؛ پکیج‌های Python با Runtime محلی عوض می‌شوند. شروع آموزش بدون receipt معتبر **مسدود** است.
-
-## خروجی‌ها و معیار پذیرش
-
-```text
-MyDrive/MyCon_R4/research_colmap_gsplat/<SHA16>/<ATTEMPT>/
-  verified_capture_cpu.json      # همان Recorder، SHA اصلی و همه sidecarهای اصلی
-  frames_receipt.json            # فریم‌ها و HASH ورودی
-  colmap_receipt.json            # دوربین‌های ثبت شده و درصد ثبت
-  scene/images/                  # از ویدئوی کامل بدون تغییر به Recorder
-  scene/sparse/0/                # COLMAP
-  bim_candidate/                 # ابرنقاط مستقل SfM، هنوز غیرمتریک
-  gsplat_result/ckpts/           # checkpoint واقعی 3DGS
-  gsplat_result/ply/             # Gaussian PLY
-  gsplat_result/videos/          # فیلم حرکت دوربین جدید
-  gsplat_result/stats/           # معیارهای واقعی holdout PSNR/SSIM/LPIPS
-  logs/                          # خطای واقعی ابزارهای بالادستی
-  status.json                    # READ-ONLY از طریق سلول وضعیت
-```
-
-**هیچ فایل PLY صرفاً به دلیل وجود، آماده مقایسه BIM نیست.** برای تطبیق نهایی باید IFC واقعی و دستگاه مختصات آن، حداقل چهار نقطه کنترل مستقل غیرهم‌صفحه و دو نقطه holdout جداگانه، برازش یکنواخت Sim(3)، سطح‌بندی و کنترل خطای هندسی/مشاهده‌پذیری هر عنصر تهیه شود. بعد از پذیرش Stage8، Stage9 می‌تواند عناصر دارای شواهد را به پیشرفت برنامه زمانی Stage11 منتقل کند. نبود شواهد در قسمت پوشیده ساختمان نشانه ساخته‌نشدن نیست.
-
-## محدودیت مهم
-
-GitHub CI صرفاً تست‌های بدون GPU و قراردادها را اجرا می‌کند. **تا زمانی که GPU واقعی T4 در همین نسخه و روی ZIP واقعی موفق نشده باشد، تضمین کارکرد همهٔ درایورها یا کیفیت BIM نداریم.** اگر در مرحله‌ای متوقف شد، log همان مرحله را بررسی کن و آن را کورکورانه تکرار نکن. هیچ checkpoint یا Recorder قبلی را حذف نکن.
+**وضعیت اعتبارسنجی:** تمام تست‌های آفلاین CI شامل تطبیق source patch با gsplat رسمی v1.5.3 است، اما **آموزش کامل و سازگاری واقعی GPU Colab روی داده کاربر هنوز اجرا/تأیید نشده**. این محدودیت فقط با اجرای preflight و آموزش در Colab خودت روشن می‌شود؛ از قبل تضمین خطای صفر داده نمی‌شود.
