@@ -287,7 +287,14 @@ def run(args: argparse.Namespace) -> int:
         if not getattr(args,'approve_new_training',False):
             raise RuntimeError('NEW_TRAINING_APPROVAL_REQUIRED: source/environment/preparation can be reused; obtain explicit budget approval')
         model.mkdir(parents=True, exist_ok=True)
-        invoke(cmd['train'], cwd=repo, log=experiment/'logs'/'train.log')
+        # NVIDIA's official train_custom.sh chooses a non-default GUI port.
+        # Reserve an available local port instead of assuming 6009 is free.
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(('127.0.0.1', 0))
+            dynamic_port=sock.getsockname()[1]
+        train_cmd=cmd['train']+['--port',str(dynamic_port)]
+        invoke(train_cmd, cwd=repo, log=experiment/'logs'/'train.log')
         observed = outputs(model)
         if (observed['iteration'] is None or observed['iteration']<30000+args.post_iter
             or not observed['train_camera_poses'].is_file()
