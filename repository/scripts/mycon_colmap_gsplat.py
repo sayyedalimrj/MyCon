@@ -168,7 +168,7 @@ def gsplat_command(py: Path, source: Path, scene: Path, result: Path) -> list[st
 
 def evidence(result: Path) -> dict:
     checkpoints=sorted(result.glob("ckpts/ckpt_*.pt"))
-    ply=sorted(result.glob("*.ply"))
+    ply=sorted(result.glob("ply/point_cloud_*.ply"))
     metrics=sorted(result.glob("stats/*.json"))+sorted(result.glob("*.json"))
     return {"checkpoints_present":bool(checkpoints),"checkpoint_paths":[str(p) for p in checkpoints],
             "ply_present":bool(ply),"ply_paths":[str(p) for p in ply],
