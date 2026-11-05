@@ -83,15 +83,38 @@ def commands(video: Path, source: Path, scene: Path, model: Path,
 
 
 def invoke(cmd: list[str], *, cwd: Path, log: Path) -> None:
-    log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open('a', encoding='utf-8') as handle:
-        handle.write('\n'+'='*60+'\n'+time.strftime('%FT%TZ', time.gmtime())+'\n')
-        handle.write(json.dumps(cmd)+'\n')
-        handle.flush()
-        proc = subprocess.run(cmd, cwd=cwd, stdout=handle, stderr=subprocess.STDOUT, check=False)
-    if proc.returncode:
-        raise RuntimeError(f'Command failed with code {proc.returncode}; see {log}')
+    """Persist NVIDIA output AND relay rate-limited progress to the Colab cell.
 
+    The official LongSplat tqdm bars use carriage returns; simply redirecting
+    to a Drive log made hours of real training appear silent in Colab.
+    """
+    from collections import deque
+    log.parent.mkdir(parents=True, exist_ok=True)
+    tail = deque(maxlen=12)
+    with log.open('a', encoding='utf-8') as handle:
+        handle.write('\\n'+'='*60+'\\n'+time.strftime('%FT%TZ', time.gmtime())+'\\n')
+        handle.write(json.dumps(cmd)+'\\n')
+        handle.flush()
+        proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, errors='replace', bufsize=1)
+        last_update = time.monotonic()
+        try:
+            for line in proc.stdout:
+                handle.write(line)
+                tail.append(line.strip())
+                now = time.monotonic()
+                if now - last_update >= 45:
+                    handle.flush()
+                    brief = next((x for x in reversed(tail) if x), 'NVIDIA process still running')
+                    print('MYCON_NVIDIA_PROGRESS:', brief[-200:], flush=True)
+                    last_update = now
+        finally:
+            code = proc.wait()
+            handle.flush()
+    if code:
+        last = ' | '.join(x for x in tail if x)[-700:]
+        raise RuntimeError(f'NVIDIA_COMMAND_FAILED(exit={code}), last output: {last}; full log: {log}')
 
 def gaussian_ply(path: Path) -> bool:
     if not path.is_file() or path.stat().st_size < 512:
