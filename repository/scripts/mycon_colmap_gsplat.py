@@ -331,11 +331,27 @@ def prepare_colmap(scene: Path, experiment: Path, count: int, local: Path, log: 
     # establish the COLMAP-to-BIM similarity transform and held-out residuals.
     candidate=experiment/"bim_candidate"/"colmap_sparse_unscaled.ply"
     candidate.parent.mkdir(parents=True,exist_ok=True)
-    if candidate.exists() and candidate.stat().st_size<512:
-        quarantine_derived(candidate,"incomplete_colmap_ply")
-    if not candidate.is_file():
-        run_logged(["colmap","model_converter","--input_path",str(model),
-                    "--output_path",str(candidate),"--output_type","PLY"],log)
+    # A PLY left by a disconnected CPU VM has NO verified source-model
+    # receipt. It may be a DIFFERENT sparse submodel. Generate the selected
+    # model to a fresh path and compare bytes before accepting any old PLY.
+    generated=candidate.with_name(candidate.name+".verified_"+str(os.getpid())+".ply")
+    if generated.exists():
+        raise RuntimeError("COLMAP_VERIFIED_TEMP_PLY_CONFLICT_PRESERVE")
+    run_logged(["colmap","model_converter","--input_path",str(model),
+                "--output_path",str(generated),"--output_type","PLY"],log)
+    if not generated.is_file() or generated.stat().st_size<512:
+        raise RuntimeError("COLMAP_SELECTED_MODEL_PLY_EXPORT_INCOMPLETE")
+    if candidate.is_file():
+        if digest(candidate)==digest(generated):
+            # Only discard our own temporary identical conversion.
+            generated.unlink()
+        else:
+            quarantine_derived(candidate,"different_or_incomplete_colmap_ply")
+            os.replace(generated,candidate)
+    elif candidate.exists():
+        raise RuntimeError("COLMAP_CANDIDATE_UNEXPECTED_EXISTING_NONFILE")
+    else:
+        os.replace(generated,candidate)
     if not candidate.is_file() or candidate.stat().st_size<512:
         raise RuntimeError("COLMAP_INDEPENDENT_SFM_CANDIDATE_EMPTY")
     save_once(experiment/"bim_candidate"/"stage8_handoff.json",{
