@@ -359,6 +359,18 @@ def real_video_cuda_smoke(py: Path, source: Path, scene: Path,
     """
     smoke=Path("/content/MyCON_ColmapGsplat")/"short_real_video_smoke"/experiment.parent.name/experiment.name
     marker=smoke/"mycon_20_step_result.json"
+    durable=experiment/"real_video_gpu_smoke_receipt.json"
+    identity={"source_sha256":digest(experiment/"colmap_receipt.json"),
+              "frame_manifest_sha256":digest(experiment/"frames_receipt.json"),
+              "gsplat_tag":GSPLAT_TAG,"torch_cuda":"2.4.1+cu121",
+              "sm":"7.5","smoke_steps":20}
+    if durable.is_file():
+        row=json.loads(durable.read_text())
+        if row.get("status")!="REAL_20_STEP_VIDEO_T4_PASS" or any(
+                row.get(k)!=v for k,v in identity.items()):
+            raise RuntimeError("MYCON_DURABLE_GPU_SMOKE_IDENTITY_CHANGED_PRESERVE")
+        row["reused_after_runtime_reset"]=True
+        return row
     if marker.is_file():
         row=json.loads(marker.read_text())
         if row.get("status")!="REAL_20_STEP_VIDEO_T4_PASS":
@@ -402,7 +414,9 @@ def real_video_cuda_smoke(py: Path, source: Path, scene: Path,
             "real_registered_video_images":True,
             "max_gpu_allocated_gib":round(float(mem),3),
             "steps":20,"full_training_executed":False}
-    marker.write_text(json.dumps(result,indent=2)+"\n")
+    result.update(identity)
+    atomic_json(marker,result)
+    immutable_json(durable,result)
     return result
 
 
