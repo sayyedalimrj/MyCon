@@ -183,6 +183,29 @@ def run(args) -> dict:
             cmd=base+['--phase',phase]
             invoke_cmd(cmd,experiment_root/'logs'/(phase+'.log'),env=stackenv,
                        cwd=Path(__file__).resolve().parents[1])
+            if phase == 'prepare':
+                # NVIDIA's own MASt3R is the first heavy model used by train.py.
+                # Check actual inference on real prepared frames BEFORE paid training.
+                frames_candidates=list(workspace.glob('*/dataset/images'))
+                if len(frames_candidates)!=1:
+                    raise RuntimeError('MUST_HAVE_SINGLE_VERIFIED_PREPARED_FRAME_DIRECTORY')
+                probe=Path(__file__).with_name('mycon_mast3r_2view_smoke.py')
+                if not probe.is_file():
+                    raise RuntimeError('MAST3R_TWO_VIEW_SMOKE_SCRIPT_MISSING')
+                probe_report=experiment_root/'diagnostics'/'mast3r_two_view_smoke.json'
+                probe_env=dict(stackenv)
+                probe_env['MYCON_EXPECTED_SM']=str(h.sm)
+                invoke_cmd([str(env_root/'bin/python'),str(probe),'--source',str(nvidia_root),
+                            '--frames-dir',str(frames_candidates[0]),
+                            '--report',str(probe_report)],
+                           experiment_root/'logs'/'mast3r_two_view_smoke.log',
+                           env=probe_env,cwd=nvidia_root)
+                evidence=json.loads(probe_report.read_text())
+                if evidence.get('status')!='MAST3R_TWO_VIEW_CUDA_INFERENCE_PASSED':
+                    raise RuntimeError('MAST3R_TWO_VIEW_SMOKE_REPORT_NOT_PASS')
+                runstatus['stages']['mast3r_2view_smoke']={
+                    'status':'ACTUAL_NVIDIA_MAST3R_CUDA_INFERENCE_PASSED_NOT_TRAINING',
+                    'report':str(probe_report)}
             runstatus['stages'][phase]={'status':'COMMAND_EXITED_ZERO_ARTIFACTS_VERIFIED_BY_BRIDGE',
                                         'timestamp_utc':time.strftime('%FT%TZ',time.gmtime())}
             atomic_json(statusfile,runstatus)
