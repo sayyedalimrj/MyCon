@@ -64,3 +64,24 @@ MyDrive/MyCon_R4/research_colmap_gsplat/<archive-sha16>/<ATTEMPT>/
 - کد NVIDIA LongSplat و محیط‌های قبلی در PR و Drive محفوظ‌اند؛ این baseline روش اصلی تجربی ماست تا اول یک مدل واقعی و قابل‌ارزیابی تولید شود.
 
 **پیش‌نیاز پذیرش PR:** preflight واقعی T4 روی ZIP اصلی → آموزش کامل → مشاهده ویدئو/مدل و اندازه‌گیری واقعی QA → سپس جداگانه کنترل متریک Stage8 و پیشرفت Stage9/11. PR تا طی شدن این مراحل ادغام نشود.
+
+## شرط قطعی پژوهشی: مقایسه BIM بر زیبایی رندر اولویت دارد
+
+یک خروجی «موفق پایان‌نامه» هرگز صرفاً فایل `nvs_rgb.mp4`، `point_cloud.ply` یا PSNR خوب نیست. دو خروجی همزمان و مستقل نیاز داریم:
+
+1. **شاخه نمایشی:** LongSplat اصلی NVIDIA + فیلم و مدل 3DGS + held-out QA، بدون ادعای هندسه متریک.
+2. **شاخه هندسی:** عمق خام `train/ours_<N>/depths/<image_name>.npy` و `cameras_all_train.json` به ابرنقاط مستقل (یا COLMAP/MVS در مسیر پشتیبان)؛ داده هندسی باید سپس با نقشه IFC واقعی و اندازه‌های کارگاهی کالیبره شود.
+
+مطابق `NVlabs/LongSplat/render.py` نسخه pin‌شده، depth خام واقعاً با `np.save(... view.image_name + '.npy')` ذخیره می‌شود. تبدیل هندسی MyCON اکنون از intrinsics اصلی `scene/cameras.py` شامل `cx=width/2`, `cy=height/2` استفاده می‌کند و عدم تطابق اندازه دوربین/عمق را خطا می‌داند.
+
+**مراحل اجباری پذیرش Stage 8:**
+- فایل **IFC واقعی همان پروژه** و دستگاه مختصات آن؛ نمونه IFC مصنوعی برای تست کد کافی است ولی مدرک پیشرفت واقعی نیست.
+- **حداقل چهار نقطه متناظر مستقل و غیرهم‌صفحه** در ساختمان، و **دو نقطه دیگر برای آزمون جدا از fit**، با ابعاد واقعی برحسب متر. CSV طبق `metric_anchor_gate.py`.
+- تخمین *Sim(3)* با مقیاس **یکسان در همه محورها**؛ ممنوعیت کشش غیرخطی صرفاً برای چسباندن ابرنقاط به BIM.
+- گزارش خطای fit/hold-out و کنترل جداگانه هم‌خوانی سطوح، پوشش فضایی، پایداری چندنما، خطای ثبت و visibility هر عنصر IFC. پیش‌فرض تحمل anchor `0.05m` فقط یک حد هدف قابل تنظیم است، نه میزان دقت اثبات‌شده.
+- فقط بعد از تأیید مستقل Stage 8، Stage 9 حق محاسبه `observed / not-observed / uncertain` در سطح عناصر IFC با شناسه GlobalId دارد. نبود نقاط در بخش پوشیده **به معنی ساخته‌نشدن قطعی عنصر نیست**.
+- سپس Stage 11 پیشرفت عناصر قابل‌مشاهده را طبق mapping فعالیت‌های زمان‌بندی مقایسه می‌کند.
+
+**وضعیت فعلی:** خود فایل IFC واقعی، نقاط کنترل مستقل و خروجی ثبت متریک روی داده کامل MyCON هنوز تأیید نشده‌اند. بنابراین هیچ گزارش خودکار «پیشرفت واقعی کارگاه» را موفق نمی‌نامیم؛ خروجی فعلی فقط research candidate است. PR تا آزمون GPU، BIM و سطوح میدانی تأیید نشود ادغام نمی‌شود.
+
+**منابع مرتبط:** [LongSplat/render.py](https://github.com/NVlabs/LongSplat/blob/main/render.py)، [Google ARCore Pose](https://developers.google.com/ar/reference/java/com/google/ar/core/Pose.html)، [BIM-Align at ISARC 2026](https://www.iaarc.org/publications/2026_proceedings_of_the_43rd_isarc_singapore/bim_align-an_automatic_framework_for_bim_to_as_built_alignment_with_multi_view_imagery_and_3d_gaussian_splatting.html).
