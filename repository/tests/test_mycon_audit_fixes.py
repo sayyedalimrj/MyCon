@@ -112,7 +112,7 @@ class AuditFixes(unittest.TestCase):
                 if typ=="TXT":
                     dest.mkdir(parents=True,exist_ok=True)
                     (dest/"images.txt").write_text(
-                        "".join(f"{i} 1 0 0 0 0 0 0 1 frame_{i:06d}.jpg\\n\\n"
+                        "".join(f"{i} 1 0 0 0 0 0 0 1 frame_{i:06d}.jpg\n\n"
                                 for i in range(1,151)))
                     (dest/"cameras.txt").write_text("CAMS")
                     (dest/"points3D.txt").write_text("POINTS")
