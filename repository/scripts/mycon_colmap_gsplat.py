@@ -188,7 +188,11 @@ def local_training_scene(scene: Path, experiment: Path, local: Path) -> Path:
     Persistent Drive scene remains immutable; a fresh GPU VM is allowed to
     rebuild this disposable cache without repeating COLMAP or video extraction.
     """
-    model=scene/"sparse/0"
+    receipt=json.loads((experiment/"colmap_receipt.json").read_text())
+    selected=receipt.get("selected_submodel","0")
+    if not re.fullmatch(r"\d+",str(selected)):
+        raise RuntimeError("COLMAP_SELECTED_SUBMODEL_NOT_NUMERIC")
+    model=scene/"sparse"/str(selected)
     if not all((model/n).is_file() for n in ("cameras.bin","images.bin","points3D.bin")):
         raise RuntimeError("CPU_COLMAP_MODEL_MISSING_ON_DRIVE")
     dest=local/"scene_cache"/experiment.parent.name/experiment.name
@@ -234,8 +238,9 @@ def prepare_colmap(scene: Path, experiment: Path, count: int, local: Path, log: 
     receipt=experiment/"colmap_receipt.json"
     if receipt.exists():
         record=json.loads(receipt.read_text())
+        model=scene/"sparse"/str(record.get("selected_submodel","0"))
         for p in ("cameras.bin","images.bin","points3D.bin"):
-            if not (scene/"sparse/0"/p).is_file():
+            if not (model/p).is_file():
                 raise RuntimeError("COLMAP_RECEIPT_WITH_MISSING_MODEL")
         if not (experiment/"bim_candidate"/"colmap_sparse_unscaled.ply").is_file():
             raise RuntimeError("COLMAP_RECEIPT_WITH_MISSING_BIM_CANDIDATE")
@@ -261,15 +266,44 @@ def prepare_colmap(scene: Path, experiment: Path, count: int, local: Path, log: 
         env["OMP_NUM_THREADS"]=str(min(4,max(1,os.cpu_count() or 2)))
         for cmd in supported_colmap_commands(commands_for_scene(scene,database,sparse)):
             run_logged(cmd,log,env=env)
-    model=sparse/"0"
-    if not all((model/n).is_file() for n in ("cameras.bin","images.bin","points3D.bin")):
-        raise RuntimeError("COLMAP_SPARSE_MODEL_NOT_FOUND")
+    candidates=[]
+    for path in sparse.iterdir():
+        if not path.is_dir() or not path.name.isdigit():
+            continue
+        if all((path/n).is_file() for n in ("cameras.bin","images.bin","points3D.bin")):
+            candidates.append(path)
+    if not candidates:
+        raise RuntimeError("COLMAP_SPARSE_MODELS_NOT_FOUND")
+    # A mapper can emit multiple disconnected reconstructions. Never assume
+    # sparse/0 is the largest or geometrically strongest. Keep every model on
+    # Drive and select the best registered-coverage candidate.
+    profiles=[]
+    for path in sorted(candidates,key=lambda p:int(p.name)):
+        candidate_txt=experiment/"colmap_candidate_text"/path.name
+        candidate_txt.mkdir(parents=True,exist_ok=True)
+        if not (candidate_txt/"images.txt").is_file():
+            run_logged(["colmap","model_converter","--input_path",str(path),
+                        "--output_path",str(candidate_txt),"--output_type","TXT"],log)
+        nregistered=count_registered_images(candidate_txt/"images.txt")
+        profiles.append((nregistered,path,candidate_txt))
+    registered,model,from_txt=max(profiles,key=lambda item:item[0])
     txt=experiment/"colmap_text"
+    if txt.exists() and not (txt/"images.txt").is_file() and any(txt.iterdir()):
+        quarantine_derived(txt,"interrupted_colmap_txt")
     txt.mkdir(parents=True,exist_ok=True)
-    run_logged(["colmap","model_converter","--input_path",str(model),
-                "--output_path",str(txt),"--output_type","TXT"],log)
+    for name in ("images.txt","cameras.txt","points3D.txt"):
+        source=from_txt/name
+        target=txt/name
+        if target.is_file():
+            if digest(target)!=digest(source):
+                raise RuntimeError("COLMAP_SELECTED_TXT_PREEXISTING_DIFFERENT")
+        else:
+            shutil.copy2(source,target)
     registered=count_registered_images(txt/"images.txt")
     gate=colmap_gate(registered,count)
+    gate.update(selected_submodel=model.name, candidate_models=[
+        {"submodel":path.name,"registered":n}
+        for n,path,_ in profiles])
     # This is separate COLMAP SfM geometry, NOT the photorealistic Gaussian PLY.
     # Unit scale is arbitrary until independently surveyed control anchors
     # establish the COLMAP-to-BIM similarity transform and held-out residuals.
