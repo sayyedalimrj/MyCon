@@ -1,75 +1,66 @@
-# MyCON — ONE final Colab test path (۱۴ آبان ۱۴۰۵)
+# MyCON — یک مسیر اصلی پایان‌نامه (تثبیت ۱۴ آبان ۱۴۰۵)
 
-> **Start only here:** [MyCON_FINAL_ACCEPTANCE.ipynb](../MyCON_FINAL_ACCEPTANCE.ipynb). The new pull request includes the previously separate LongSplat research and V4 repair branches; do not mix old notebooks, ad-hoc hotfix ZIPs, or host Python with this path.
+> **فقط یک نوت‌بوک:** [MyCON_FINAL_ACCEPTANCE.ipynb](../MyCON_FINAL_ACCEPTANCE.ipynb) در PR #31.
+> **مسیر منتخب:** `BACKEND = "colmap_gsplat"`. مسیر `longsplat` فقط برای مقایسه پژوهشی نگه‌داری شده است.
 
-## Objective and honest acceptance status
+## انتخاب نهایی و دلیل پژوهشی
 
-The target is **real** NVIDIA LongSplat training on the **full, integrity-verified ~96 s native Recorder capture**; actual new-view RGB/depth renders; a 3DGS PLY; a separately labeled depth-geometry candidate; and held-out view QA. No statement about as-built↔BIM metric accuracy is allowed without independent site/BIM control points.
+مرجع تجربی: [SpatialScene3D v10.5](https://github.com/Ziro21/SpatialScene3D).
+این پروژه از **فیلم معمولی موبایل از محیط داخلی** با COLMAP و gsplat به مدل 3DGS رسیده و ۱۵ نمای hold-out با PSNR=28.93، SSIM=0.903 و LPIPS=0.058 منتشر کرده است. توسعه‌دهنده توضیح داده که به علت دشواری کامپایل افزونه‌های native در Colab، مسیر MASt3R-SLAM را با COLMAP عوض کرد. این نتایج مربوط به **ویدئوی نمونه خود آن‌ها** است، نه ویدئوی MyCON.
 
-The baseline evidence is NOT final training success:
-- 769 upright SHA256-inventoried frames at 8 fps / 512 px were prepared.
-- Previous T4/CUDA12.1 environment at `/content/MyCON_agent_cuda121_20261105` passed real native CUDA and rasterizer forward/backward smoke on 2026-11-05.
-- A subsequent V4 launch reinstalled an isolated environment and failed at PyTorch3D dependency installation; the new path first tests whether the proven environment is actually reusable.
-- The previous train invocation began, but no finished model or held-out visual result is certified.
+ما کد بدون لایسنسِ منتشرشده آن نوت‌بوک را کپی نکرده‌ایم. **روش پردازش موفق آن** را با مسیر خودمان تطبیق داده‌ایم و برای مرحله آموزش، **کد رسمی و مستقل Apache-2.0** از [gsplat v1.5.3](https://github.com/nerfstudio-project/gsplat/tree/v1.5.3/examples) را در یک checkout مجزا اجرا می‌کنیم. این نسخه wheel از پیش‌کامپایل‌شده Python3.10/Torch2.4/CUDA12.1 دارد؛ **هرگز `gsplat/main` متغیر و وابسته به Torch جدیدتر را استفاده نکنید.**
 
-## User procedure (ONLY two modes in the same notebook)
+## اتصال دقیق به پایان‌نامه MyCON
 
-1. Select Colab **Runtime → GPU**. Open `repository/MyCON_FINAL_ACCEPTANCE.ipynb` from **this PR branch**.
-2. Run the single main cell with `MODE = "preflight"`. It mounts Google Drive, obtains one pinned repository checkout, validates original Recorder SHA256 and 90–110 s duration, reuses only GPU-verified CUDA environment or installs an isolated new prefix, verifies upstream NVIDIA checkout and MASt3R weight SHA, prepares full frames, **runs real MASt3R two-view inference on the actual prepared capture**, and **stops before training**. The full CUDA native smoke is required by the controller. It is NOT a certification of the model or real BIM.
-3. If no ZIP is found unambiguously, set `CAPTURE_ZIP` to the existing **full original Recorder ZIP** in Drive. Never use the 10-second clip. The notebook will refuse to guess.
-4. The status cell must report **`PREFLIGHT_PASSED_CUDA_AND_MAST3R_NO_TRAINING`** and the `mast3r_2view_smoke` stage must have passed. If either is missing, **do not launch training**. Only after this passes, set `MODE = "all"` in the same cell to explicitly authorize a **new** GPU training run, renderer, export, geometry candidate and view audit. Training may take significant GPU time and may still encounter native upstream model/data errors; no hidden retry/reset.
-5. Run the status cell. Inspect the `run_summary.json` and stage logs under:
-   `MyDrive/MyCon_R4/research_longsplat_auto/<capture_sha16>/<profile>/attempts/stabilization_20261105/`.
-6. If training stops halfway without a supported checkpoint, **do not delete or restart over the same folder**. Preserve the folder and use a new explicit attempt name after diagnosing the error. The upstream adapter does not support a proven mid-training resume.
-
-The Colab interpreter is called using `python` (not Windows `py`). The new NVIDIA environment remains separate from the user's main R4 environment. The official source and trained models are never silently rewritten.
-
-## Stage gates and verdicts
-
-| Gate | Pass evidence | Not proven by that gate |
+| کار پژوهشی | انجام دهنده در این PR | خروجی / شرط |
 |---|---|---|
-| Source integrity | Original ZIP + sidecar SHA/CRC, complete ~96 s video, source checkout and submodules | Visual accuracy |
-| GPU/native | Matching Torch/CUDA/SM and executable native forward/backward CUDA kernels | Successful LongSplat training |
-| Real-model preflight | NVIDIA's MASt3R infers finite 3D points from two verified frames; separate receipt | Optimization, full reconstruction or metric BIM |
-| Preparation | Full upright frame inventory; parameter identity; separate attempt directory | 3D model |
-| Training | Authentic LongSplat checkpoint/iteration and successful train phase | Novel-view correctness |
-| Render/export | Actual novel-view RGB/depth and 3DGS PLY | Metric surfaces or BIM |
-| Appearance QA | Measured held-out source views (PSNR etc.) with visible inspected outputs | Arbitrary never-seen views |
-| BIM acceptance | Independent survey/BIM anchors including held-out points and actual Stage 8/9 evaluation | Nothing until site geometry is supplied |
+| برداشت واقعی | `MyCON_recorder` موجود | ZIP اصلی حدود ۹۶ ثانیه، pose/IMU/metadata با SHA256 |
+| انتخاب فریم | `mycon_colmap_gsplat.py` | حدود ۱۹۲ فریم تمام مدت، ۲fps، ۶۴۰px، چرخش یک‌باره |
+| تعیین دوربین و هندسه | COLMAP اصلی + SIFT sequential | مدل `sparse/0`، حداقل ۶۰ دوربین و ۶۵٪ ثبت؛ هندسه کاندید غیرمتریک |
+| بازسازی بصری | gsplat v1.5.3 official `simple_trainer.py` | GPU واقعی T4، Gaussian checkpoint، PLY و ویدئوی نماهای جدید |
+| آزمون کیفیت | معیارهای خود gsplat در ۱/۸ تصاویر ثبت‌شده | JSON واقعی `PSNR/SSIM/LPIPS`، بدون جعل |
+| بررسی هندسی BIM | `bim_candidate/colmap_sparse_unscaled.ply` و `stage8_handoff.json` | **مقیاس دلخواه**؛ Stage8/9 و پیشرفت BIM تا ثبت مستقل و QA ممنوع |
+| زمان‌بندی و داشبورد | Stage 9/11 موجود MyCON | پس از عبور Stage8 از کنترل متریک؛ فعلاً از مدل بصری خروجی پیشرفت جعل نمی‌شود |
 
-The training subprocess now sends rate-limited progress markers to Colab and stores full original logs on Drive, including source error tails when upstream exits nonzero.
+دقت کن: Hold-out مدل gsplat روی تصاویر کنارگذاشته‌شده از آموزش است؛ دوربین آن تصاویر قبلاً در COLMAP ثبت شده، بنابراین این یک آزمون **کیفیت ظاهر** است، نه اعتبارسنجی مستقل هندسه یا وضعیت دوربین.
 
-The default 8fps × 512 px × 20,000 iterations is a T4 resource profile, **not** a promise of accuracy. Upstream NVIDIA LongSplat is noncommercial research/evaluation only.
+## فقط این روش را اجرا کن
 
-## Safety invariants
+1. [نوت‌بوک واحد](https://colab.research.google.com/github/sayyedalimrj/MyCon/blob/feature/mycon-single-final-acceptance-20261105/repository/MyCON_FINAL_ACCEPTANCE.ipynb) را باز کن. Runtime را GPU/T4 بگذار.
+2. فقط در سلول اول: `BACKEND = "colmap_gsplat"` و `MODE = "preflight"`. ZIP اصلی به‌صورت خودکار تشخیص داده می‌شود؛ اگر چند ZIP بزرگ پیدا شد `CAPTURE_ZIP` را با مسیر واقعی وارد کن.
+3. `preflight` **آموزش ندارد**؛ از ZIP اصلی استفاده می‌کند، COLMAP را اجرا و کیفیت ثبت دوربین را می‌سنجد، سپس محیط Python3.10/Torch2.4.1+cu121 و **کرنل واقعی gsplat Forward/Backward** را در محیط جدا بررسی می‌کند.
+4. سلول وضعیت را بزن. فقط وقتی دقیقاً `PREFLIGHT_COLMAP_AND_GSPLAT_CUDA_PASSED_NO_TRAINING` آمد، می‌توانی `MODE = "all"` را با اجازه مصرف GPU اجرا کنی.
+5. `all` از مدل دوربین موجود استفاده می‌کند، آموزش اولیه **۷۰۰۰ مرحله‌ای** را با gsplat رسمی آغاز می‌کند و checkpoint، PLY، ویدئوی نماهای جدید و JSON ارزیابی را بررسی می‌کند. ۷۰۰۰ مرحله «نقطه شروع قابل‌آزمایش» است، نه تضمین کیفیت پایان‌نامه.
+6. اگر آموزش قطع شد، **همان پوشه مدل نیمه‌کاره را پاک یا overwrite نکن**. از لاگ‌ها علت را مشخص کن؛ هر آزمایش تازه با شناسه `ATTEMPT` مستقل انجام می‌شود.
 
-- Never delete or edit any original Recorder archive, camera/pose/IMU data, pretrained weight cache, existing checkpoints or training folders.
-- The `--attempt-id` guard accepts only strict safe names; the old experiment root remains unchanged.
-- Existing CUDA environments are only adopted after **live GPU kernel tests**, never solely by a receipt or import.
-- Incomplete isolated envs fail closed; select a different prefix rather than overwriting/reinstalling in place.
-- New GPU training requires `--approve-new-training` (automatically passed by the **explicit** notebook `all` or `train` mode only).
-- A process exit code of 0 means that stage commands exited successfully, **not** a peer-reviewed thesis, verified metric BIM, or universally correct new-view geometry.
+## مسیر خروجی روی Drive
 
-## Offline tests and live acceptance
-
-Run offline inside repo:
-```bash
-cd repository
-python -m pytest -q tests/test_mycon_thesis_one_run.py tests/test_mycon_colab_gpu_auto.py
+```text
+MyDrive/MyCon_R4/research_colmap_gsplat/<archive-sha16>/<ATTEMPT>/
+  input_contract.json                # هویت ثابت آزمایش
+  frames_receipt.json                # SHA فریم‌ها و پارامترها
+  colmap_receipt.json                # تعداد واقعی دوربین ثبت‌شده
+  scene/images/                      # فریم‌های استخراج‌شده غیرمخرب
+  scene/sparse/0/                    # مدل رسمی COLMAP
+  bim_candidate/
+      colmap_sparse_unscaled.ply     # هندسه SfM جدا از Gaussian PLY
+      stage8_handoff.json            # ممنوعیت پیشرفت BIM تا کنترل متریک
+  gsplat_result/
+      ckpts/ckpt_*.pt                # پارامترهای آموزش
+      ply/point_cloud_*.ply          # مدل نمایشی Gaussian
+      videos/traj_*.mp4              # جابه‌جایی نما
+      stats/val_step*.json           # PSNR/SSIM/LPIPS واقعی
+  logs/pipeline.log
+  logs/train.log
+  status.json
 ```
 
-Offline tests cover input ambiguity, mode separation, checkpoint attempt isolation, pathname guards, live-verified env selection and fail-closed behavior. Actual Colab T4 execution is a separate **mandatory** test before PR merge or public claims of end-to-end success.
+## محدودیت‌های صریح
 
-## Provenance
+- **اجرای T4 روی داده خود MyCON هنوز تأیید نشده است.** تست GitHub فقط Python/Notebook/قراردادها را بدون GPU بررسی می‌کند. وابستگی fused_ssim هنوز به نصب/کامپایل native نیاز دارد؛ wheel رسمی gsplat یک بخش مهم از ریسک را حذف می‌کند، نه تمام آن را.
+- COLMAP در محیط‌های کم‌بافت، پرتاب‌دار یا فیلم‌های سریع ممکن است کمتر از شرط ثبت دوربین را بگیرد. در آن حالت آموزش GPU عمداً شروع نمی‌شود. شواهد فعلی تضمین نمی‌کنند ضبط ۹۶ ثانیه‌ای تو به شرط ۶۵٪ می‌رسد.
+- داده `pose.csv`/IMU اصلی تغییر نمی‌کند و نباید با دوربین‌های SfM مخلوط یا بدون اعتبارسنجی به مقیاس متریک تعبیر شود.
+- بدون کنترل مستقل هندسی سایت/BIM، مدل Gaussian یا COLMAP Sparse مستقیماً پیشرفت عناصر یا ابعاد دقیق را ثابت نمی‌کند.
+- کد NVIDIA LongSplat و محیط‌های قبلی در PR و Drive محفوظ‌اند؛ این baseline روش اصلی تجربی ماست تا اول یک مدل واقعی و قابل‌ارزیابی تولید شود.
 
-- Original NVIDIA code: https://github.com/NVlabs/LongSplat — pinned source commit and original research licence verified by existing adapter.
-- LongSplat research integration: `docs/longsplat_thesis_integration.md` in this branch.
-- V4 repairs: `docs/colab_v4_execution_20261103.md` in this branch.
-- Earlier upstream PRs: #29 (new-view and geometry), #30 (V4 preflight repairs). This new PR is intentionally opened against `main` as the **single consolidated review target**, without deleting or rewriting old PRs.
-
-
-## Why we use NVIDIA scripts rather than an alleged official Colab notebook
-
-The [official NVlabs/LongSplat repository](https://github.com/NVlabs/LongSplat) documents its ready-made **shell scripts** `scripts/train_custom.sh`, `train.py`, `render.py`, and `metrics.py`, plus an **optional CroCo RoPE CUDA build**. It does not provide a verified official LongSplat Colab notebook in the reviewed source tree. This MyCON notebook is our controlled wrapper around the **pinned original NVIDIA code**, not an official NVIDIA notebook.
-
-The core official custom-video path is followed (source frames under `data/<scene>/images`, pose estimation, training, rendering). We explicitly use `-r 1` because frame preparation has already resized to 512px, whereas NVIDIA's example `-r 4` targets not-yet-resized original images. Conversion to general 3DGS is a separate NVIDIA command. The independent held-out appearance audit is maintained as a separate research gate; neither this check nor NVIDIA's training exit establishes BIM metric accuracy.
+**پیش‌نیاز پذیرش PR:** preflight واقعی T4 روی ZIP اصلی → آموزش کامل → مشاهده ویدئو/مدل و اندازه‌گیری واقعی QA → سپس جداگانه کنترل متریک Stage8 و پیشرفت Stage9/11. PR تا طی شدن این مراحل ادغام نشود.
