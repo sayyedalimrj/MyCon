@@ -50,6 +50,11 @@ class BimGeometryHandoff(unittest.TestCase):
             self.assertFalse(result["stage9_progress_authorized"])
             self.assertFalse(result["stage11_schedule_authorized"])
             self.assertTrue((out/"stage8_review_config.yaml").is_file())
+            import yaml
+            review=yaml.safe_load((out/"stage8_review_config.yaml").read_text())
+            self.assertEqual(review["paths"]["bim_aligned_dir"],str(out/"stage8_outputs/aligned"))
+            self.assertEqual(review["bim"]["scan_aligned_ply"],str(out/"stage8_outputs/aligned/scan_aligned.ply"))
+            self.assertEqual(review["bim"]["registration_report_json"],str(out/"stage8_outputs/registration_report.json"))
             self.assertEqual(before,cloud.read_bytes())
             self.assertEqual(result,aligned_colmap_cloud(cloud,anchors,ifc,out,
                                                         .05,cfg))
