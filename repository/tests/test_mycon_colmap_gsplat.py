@@ -74,9 +74,10 @@ class BaselineGuards(unittest.TestCase):
                 p.parent.mkdir(parents=True,exist_ok=True)
                 p.write_bytes(b"dummy artifact")
             actual=m.evidence(root)
-            self.assertTrue(actual["ply_present"])
-            self.assertTrue(actual["checkpoints_present"])
-            self.assertTrue(actual["novel_view_video_present"])
+            self.assertFalse(actual["ply_present"])
+            self.assertFalse(actual["checkpoints_present"])
+            self.assertFalse(actual["novel_view_video_present"])
+            self.assertFalse(actual["canonical_artifact_hashes_verified"])
             self.assertFalse(actual["metric_BIM_validated"])
 
     def test_status_mode_is_read_only_and_never_claims_run(self):
@@ -140,7 +141,7 @@ class BaselineGuards(unittest.TestCase):
                   patch.object(m,"prepare_frames",side_effect=AssertionError("FRAMES PROCESSED")),
                   patch.object(m,"ensure_source",side_effect=AssertionError("SOURCE FETCHED")),
                   patch.object(m,"setup_gsplat",side_effect=AssertionError("CUDA INSTALLED"))):
-                with self.assertRaisesRegex(RuntimeError,"PREFLIGHT_MUST_PASS"):
+                with self.assertRaisesRegex(RuntimeError,"(MYCON_CPU_SOURCE_LOCK_MISSING|PREFLIGHT_MUST_PASS)"):
                     m.run(a)
 
     def test_preflight_without_verified_cpu_receipt_fails_without_gpu(self):
