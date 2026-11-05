@@ -152,16 +152,14 @@ def render_and_evaluate_if_missing(py: Path, source: Path, scene: Path,
         if video.parent.is_dir() and any(video.parent.iterdir()):
             quarantine_derived(video.parent,"partial_eval_video")
     # Always (re)compute derived outputs when the verified receipt was absent.
-    if True:
-        # Official --ckpt is EVAL-ONLY, which is why both assets are derived
-        # from the new canonical ckpt and its unchanged COLMAP coordinate frame.
-        cmd=[str(py),str(trainer),"default",
-             "--data_dir",str(scene),"--data_factor","1",
-             "--result_dir",str(canonical),"--test_every","8",
-             "--max_steps",str(expected_step+1),
-             "--disable_viewer","--packed","--ckpt",str(ckpt)]
-        run_logged(cmd,result.parent/"logs"/"final_canonical_eval.log",
-                   cwd=source/"examples",env=_cuda_env(py),live=True)
+    # Official --ckpt is EVAL-ONLY: evaluate and render the SAME canonical ckpt.
+    cmd=[str(py),str(trainer),"default",
+         "--data_dir",str(scene),"--data_factor","1",
+         "--result_dir",str(canonical),"--test_every","8",
+         "--max_steps",str(expected_step+1),
+         "--disable_viewer","--packed","--ckpt",str(ckpt)]
+    run_logged(cmd,result.parent/"logs"/"final_canonical_eval.log",
+               cwd=source/"examples",env=_cuda_env(py),live=True)
     if not (validate_artifact_file(stats,20) and validate_artifact_file(video)):
         raise RuntimeError("MYCON_CANONICAL_EVAL_MISSING")
     measured=json.loads(stats.read_text())
