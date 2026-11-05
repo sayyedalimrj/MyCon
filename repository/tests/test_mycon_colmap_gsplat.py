@@ -127,12 +127,34 @@ class BaselineGuards(unittest.TestCase):
                 drive_root=root,local_root=root/"scratch",capture=capture,
                 approve_training=True)
             native={"archive_sha256":"a"*64,"full_video_duration_s":96}
+            folder=root/"research_colmap_gsplat"/("a"*16)/"trial_01"
+            folder.mkdir(parents=True)
+            (folder/"verified_capture_cpu.json").write_text(json.dumps(native))
+            (folder/"colmap_receipt.json").write_text(json.dumps({"registered":170}))
+            candidate=folder/"bim_candidate"/"colmap_sparse_unscaled.ply"
+            candidate.parent.mkdir()
+            candidate.write_bytes(b"not-real-cloud")
             with (patch.object(m,"find_capture",return_value=capture),
-                  patch.object(m,"prepare_capture",return_value=native),
+                  patch.object(m,"digest",return_value="a"*64),
+                  patch.object(m,"prepare_capture",side_effect=AssertionError("ZIP EXTRACTED")),
                   patch.object(m,"prepare_frames",side_effect=AssertionError("FRAMES PROCESSED")),
                   patch.object(m,"ensure_source",side_effect=AssertionError("SOURCE FETCHED")),
                   patch.object(m,"setup_gsplat",side_effect=AssertionError("CUDA INSTALLED"))):
                 with self.assertRaisesRegex(RuntimeError,"PREFLIGHT_MUST_PASS"):
+                    m.run(a)
+
+    def test_preflight_without_verified_cpu_receipt_fails_without_gpu(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            capture=root/"original.zip"
+            capture.write_bytes(b"dummy")
+            a=SimpleNamespace(mode="preflight",attempt="trial_01",
+                drive_root=root,local_root=root/"scratch",capture=capture,
+                approve_training=False)
+            with (patch.object(m,"find_capture",return_value=capture),
+                  patch.object(m,"digest",return_value="a"*64),
+                  patch.object(m,"setup_gsplat",side_effect=AssertionError("CUDA INSTALLED"))):
+                with self.assertRaisesRegex(RuntimeError,"CPU_SOURCE_AND_GEOMETRY_RECEIPT_MISSING"):
                     m.run(a)
 
     def test_cpu_verify_is_separate_from_all_native_packages(self):
