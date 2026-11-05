@@ -9,6 +9,7 @@ import unittest
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 import mycon_thesis_one_run as m
+import mycon_longsplat_auto_run as runner
 
 
 class TestOneRun(unittest.TestCase):
@@ -79,6 +80,19 @@ class TestOneRun(unittest.TestCase):
                     m.choose_env(local,{'gpu':{'sm':75},'torch_cuda_wheel':'cu121'},
                                  root/'logs')
             self.assertTrue((bad/'bin/python').exists())
+
+
+    def test_attempt_isolated_without_changing_legacy_default(self):
+        root=Path('/experiments/quality_8fps')
+        self.assertEqual(runner.isolate_attempt(root,None),root)
+        self.assertEqual(runner.isolate_attempt(root,'trial_1'),
+                         root/'attempts/trial_1')
+
+    def test_attempt_cannot_escape_checkpoint_root(self):
+        root=Path('/experiments/quality_8fps')
+        for attack in ('../checkpoints','a/b','..','a b'):
+            with self.assertRaises(ValueError):
+                runner.isolate_attempt(root,attack)
 
     def test_read_only_status_has_no_fabricated_success(self):
         with tempfile.TemporaryDirectory() as td:
