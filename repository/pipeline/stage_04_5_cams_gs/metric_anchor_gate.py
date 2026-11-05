@@ -23,8 +23,16 @@ def estimate_sim3(points_source, points_target):
         raise ValueError('Anchor positions must be finite')
     src_mean=source.mean(axis=0);tar_mean=target.mean(axis=0)
     x=source-src_mean;y=target-tar_mean
-    if np.linalg.matrix_rank(x,tol=1e-6)<2 or np.linalg.matrix_rank(y,tol=1e-6)<2:
-        raise ValueError('Degenerate collinear anchor geometry')
+    # Metric 3D BIM alignment requires independently measured anchors that
+    # constrain ALL three axes. Four coplanar points cannot establish a robust
+    # out-of-plane registration error bound; reject ill-conditioned geometry.
+    if np.linalg.matrix_rank(x,tol=1e-6)<3 or np.linalg.matrix_rank(y,tol=1e-6)<3:
+        raise ValueError('3D metric comparison requires four non-coplanar fitting anchors')
+    src_svd=np.linalg.svd(x,compute_uv=False)
+    dst_svd=np.linalg.svd(y,compute_uv=False)
+    if (src_svd[-1]/max(src_svd[0],1e-12)<1e-3
+        or dst_svd[-1]/max(dst_svd[0],1e-12)<1e-3):
+        raise ValueError('Anchor geometry nearly degenerate: use spatially spread 3D site points')
     u,_,vt=np.linalg.svd((x.T@y))
     reflection=np.diag([1.,1.,np.linalg.det(u@vt)])
     rot=(u@reflection@vt).T
