@@ -192,6 +192,18 @@ def local_training_scene(scene: Path, experiment: Path, local: Path) -> Path:
     model=scene/"sparse"/str(selected)
     if not all((model/n).is_file() for n in ("cameras.bin","images.bin","points3D.bin")):
         raise RuntimeError("CPU_COLMAP_MODEL_MISSING_ON_DRIVE")
+    # Lock exact SfM geometry and image names, not only registration counts.
+    recorded=receipt.get("selected_model_sha256")
+    if not isinstance(recorded,dict) or any(
+        recorded.get(n)!=digest(model/n)
+        for n in ("cameras.bin","images.bin","points3D.bin")
+    ):
+        raise RuntimeError("CPU_COLMAP_BINARY_MODEL_SHA_CHANGED_AFTER_RUNTIME_SWITCH")
+    if receipt.get("registered_images_txt_sha256")!=digest(experiment/"colmap_text/images.txt"):
+        raise RuntimeError("CPU_COLMAP_REGISTERED_IMAGE_LIST_SHA_CHANGED")
+    candidate=experiment/"bim_candidate/colmap_sparse_unscaled.ply"
+    if receipt.get("sparse_candidate_ply_sha256")!=digest(candidate):
+        raise RuntimeError("CPU_SPARSE_CLOUD_SHA_CHANGED")
     dest=local/"scene_cache"/experiment.parent.name/experiment.name
     dest_images=dest/"images"
     dest_sparse=dest/"sparse/0"
@@ -239,8 +251,14 @@ def prepare_colmap(scene: Path, experiment: Path, count: int, local: Path, log: 
         for p in ("cameras.bin","images.bin","points3D.bin"):
             if not (model/p).is_file():
                 raise RuntimeError("COLMAP_RECEIPT_WITH_MISSING_MODEL")
-        if not (experiment/"bim_candidate"/"colmap_sparse_unscaled.ply").is_file():
+        candidate=experiment/"bim_candidate"/"colmap_sparse_unscaled.ply"
+        if not candidate.is_file():
             raise RuntimeError("COLMAP_RECEIPT_WITH_MISSING_BIM_CANDIDATE")
+        if (record.get("selected_model_sha256")!={n:digest(model/n)
+                for n in ("cameras.bin","images.bin","points3D.bin")}
+            or record.get("registered_images_txt_sha256")!=digest(experiment/"colmap_text/images.txt")
+            or record.get("sparse_candidate_ply_sha256")!=digest(candidate)):
+            raise RuntimeError("COLMAP_IMMUTABLE_RECEIPT_MODEL_OR_CLOUD_SHA_MISMATCH")
         return colmap_gate(record["registered"],count)
     if shutil.which("colmap") is None:
         raise RuntimeError("COLMAP_NOT_INSTALLED: Colab installs apt colmap in notebook bootstrap")
@@ -333,6 +351,10 @@ def prepare_colmap(scene: Path, experiment: Path, count: int, local: Path, log: 
             "align to BIM with held-out metric validation",
             "run geometric coverage and per-element residual checks"]
     })
+    gate.update(selected_model_sha256={
+        n:digest(model/n) for n in ("cameras.bin","images.bin","points3D.bin")},
+        registered_images_txt_sha256=digest(txt/"images.txt"),
+        sparse_candidate_ply_sha256=digest(candidate))
     save_once(receipt,gate)
     return gate
 
