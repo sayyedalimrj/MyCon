@@ -31,6 +31,8 @@ jobs:
           python -m py_compile repository/scripts/mycon_mast3r_2view_smoke.py
           python -m py_compile repository/scripts/mycon_colmap_gsplat.py
           python -m py_compile repository/scripts/mycon_colmap_gsplat_env.py
+          python -m py_compile repository/scripts/mycon_gsplat_resume_patch.py
+          python -m py_compile repository/scripts/mycon_gsplat_finish.py
           python -m py_compile repository/pipeline/stage_04_5_cams_gs/longsplat_research.py
           python -m py_compile repository/pipeline/stage_04_5_cams_gs/metric_anchor_gate.py
           python -m py_compile repository/pipeline/stage_04_5_cams_gs/longsplat_depth_geometry.py
@@ -53,6 +55,26 @@ jobs:
           python -m unittest discover -s repository/tests -p test_mycon_mast3r_2view_smoke.py -v
           python -m unittest discover -s repository/tests -p test_mycon_nvidia_progress.py -v
           python -m unittest discover -s repository/tests -p test_mycon_colmap_gsplat.py -v
+          python -m unittest discover -s repository/tests -p test_mycon_gsplat_resume_and_runtime.py -v
+      - name: Verify patch matches exact official gsplat v1.5.3 without GPU
+        run: |
+          curl --fail --location --retry 3 --silent --show-error \
+            https://raw.githubusercontent.com/nerfstudio-project/gsplat/v1.5.3/examples/simple_trainer.py \
+            --output /tmp/mycon-official-gsplat-v153.py
+          python - <<'PY'
+          import ast
+          import hashlib
+          import sys
+          from pathlib import Path
+          sys.path.insert(0,'repository/scripts')
+          from mycon_gsplat_resume_patch import patch_source
+          original=Path('/tmp/mycon-official-gsplat-v153.py').read_text()
+          patched=patch_source(original)
+          ast.parse(patched)
+          assert 'MYCON_RESUME_RESTORED_FULL_STATE_AFTER_STEP' in patched
+          assert 'MYCON_IMMUTABLE_RECOVERY_SAVED' in patched
+          print('OFFICIAL_GSPLAT_V153_RESUME_PATCH_SYNTAX_PASS',hashlib.sha256(original.encode()).hexdigest())
+          PY
       - name: Validate genuine depth-to-geometry and noncoplanar BIM anchor guards
         run: |
           python -m pip install -q numpy pillow pytest
