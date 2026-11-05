@@ -88,8 +88,8 @@ def count_registered_images(images_txt: Path) -> int:
     # COLMAP alternates camera lines and 2D observations; blank second
     # lines are legal, so simply counting nonempty lines gives wrong totals.
     cameras=[line for line in images_txt.read_text().splitlines()
-             if re.match(r"^\\s*\\d+\\s+",line) and
-                re.search(r"\\bframe_\\d{6}\\.jpg\\s*$",line)]
+             if re.match(r"^\s*\d+\s+",line) and
+                re.search(r"\bframe_\d{6}\.jpg\s*$",line)]
     return len(cameras)
 
 
