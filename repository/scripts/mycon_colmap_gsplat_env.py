@@ -122,6 +122,10 @@ def setup(prefix: Path, work: Path, source: Path, log: Path) -> Path:
         raise RuntimeError("GSPLAT_GPU_COMPUTE_CAPABILITY_UNREADABLE") from exc
     if round(capability*10)!=75:
         raise RuntimeError("GSPLAT_PINNED_BASELINE_REQUIRES_T4_SM75; got SM"+str(round(capability*10)))
+    # Disk check before cloning CUDA toolkit / downloading multi-GB Torch wheels.
+    available=shutil.disk_usage(str(work)).free if work.is_dir() else shutil.disk_usage(str(work.parent)).free
+    if available < 18*(1024**3):
+        raise RuntimeError(f"GPU_PREFLIGHT_LOCAL_DISK_LT_18_GIB: {available/1024**3:.1f} GiB")
     py=prefix/"bin/python"
     receipt=prefix.parent/(prefix.name+"_verified.json")
     env=os.environ.copy()
