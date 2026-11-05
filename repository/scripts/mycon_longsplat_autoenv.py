@@ -206,7 +206,7 @@ def install(profile: dict,source: Path,root: Path,log: Path, *, repair_partial: 
             print('NVIDIA_OPTIONAL_CROCO_ROPE_KERNEL_BUILT',flush=True)
         except (RuntimeError,OSError) as exc:
             with log.open('a',encoding='utf-8') as f:
-                f.write('\\nOPTIONAL_CROCO_ROPE_BUILD_WARNING: '+str(exc)+'\\n')
+                f.write('\nOPTIONAL_CROCO_ROPE_BUILD_WARNING: '+str(exc)+'\n')
             print('OPTIONAL_CROCO_ROPE_KERNEL_UNAVAILABLE; real MASt3R inference smoke remains mandatory',
                   flush=True)
     # Test (and run) only after the environment is fully provisioned.
