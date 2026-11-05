@@ -91,11 +91,72 @@ class BaselineGuards(unittest.TestCase):
             prefix=root/"env"
             prefix.mkdir()
             (prefix/"protected_checkpoints.txt").write_text("not to delete")
-            with patch.object(env.subprocess,"run",
-                              return_value=SimpleNamespace(returncode=0,stdout="7.5")):
+            with (patch.object(env.subprocess,"run",
+                               return_value=SimpleNamespace(returncode=0,stdout="7.5")),
+                  patch.object(env.shutil,"disk_usage",
+                               return_value=SimpleNamespace(free=40*(1024**3)))):
                 with self.assertRaisesRegex(RuntimeError,"PARTIAL_ENV_PRESERVED"):
                     env.setup(prefix,root,root/"gsplat",root/"log")
             self.assertTrue((prefix/"protected_checkpoints.txt").exists())
+
+    def test_cpu_geometry_does_not_install_gpu_libs_or_training(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            capture=root/"original.zip"
+            capture.write_bytes(b"not opened in mocked test")
+            a=SimpleNamespace(mode="geometry",attempt="trial_01",
+                drive_root=root,local_root=root/"scratch",capture=capture,
+                approve_training=False)
+            native={"archive_sha256":"a"*64,"full_video_duration_s":96}
+            with (patch.object(m,"find_capture",return_value=capture),
+                  patch.object(m,"prepare_capture",return_value=native),
+                  patch.object(m,"prepare_frames",return_value=180),
+                  patch.object(m,"prepare_colmap",return_value={"registered":170}),
+                  patch.object(m,"ensure_source",side_effect=AssertionError("GPU SOURCE FETCHED")),
+                  patch.object(m,"setup_gsplat",side_effect=AssertionError("GPU ENV INSTALLED"))):
+                status=m.run(a)
+            self.assertEqual(status["status"],"GEOMETRY_PREPARED_COLMAP_REGISTERED_NO_GPU")
+            self.assertFalse(status["training_executed"])
+
+    def test_gpu_all_without_preflight_cannot_start_costly_steps(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            capture=root/"original.zip"
+            capture.write_bytes(b"not opened in mocked test")
+            a=SimpleNamespace(mode="all",attempt="trial_01",
+                drive_root=root,local_root=root/"scratch",capture=capture,
+                approve_training=True)
+            native={"archive_sha256":"a"*64,"full_video_duration_s":96}
+            with (patch.object(m,"find_capture",return_value=capture),
+                  patch.object(m,"prepare_capture",return_value=native),
+                  patch.object(m,"prepare_frames",side_effect=AssertionError("FRAMES PROCESSED")),
+                  patch.object(m,"ensure_source",side_effect=AssertionError("SOURCE FETCHED")),
+                  patch.object(m,"setup_gsplat",side_effect=AssertionError("CUDA INSTALLED"))):
+                with self.assertRaisesRegex(RuntimeError,"PREFLIGHT_MUST_PASS"):
+                    m.run(a)
+
+    def test_cpu_verify_is_separate_from_all_native_packages(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            capture=root/"original.zip"
+            capture.write_bytes(b"fake")
+            a=SimpleNamespace(mode="verify",attempt="trial_01",
+                drive_root=root,local_root=root/"scratch",capture=capture,
+                approve_training=False)
+            with (patch.object(m,"find_capture",return_value=capture),
+                  patch.object(m,"verify_original_archive",
+                               return_value={"status":"CPU_SOURCE_AND_RECORDER_SCHEMA_PASS_NOT_GPU_OR_TRAINING"}),
+                  patch.object(m,"prepare_capture",side_effect=AssertionError("ZIP EXTRACTED")),
+                  patch.object(m,"setup_gsplat",side_effect=AssertionError("GPU INSTALLED"))):
+                result=m.run(a)
+            self.assertEqual(result["status"],"CPU_SOURCE_AND_RECORDER_SCHEMA_PASS_NOT_GPU_OR_TRAINING")
+
+    def test_not_yet_verified_runtime_refuses_training_without_pip(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            with patch.object(env,"run_logged",side_effect=AssertionError("PIP INVOKED")):
+                with self.assertRaisesRegex(RuntimeError,"NOT_ALREADY_PREFLIGHT_VERIFIED"):
+                    env.verify_existing(root/"missing_env",root/"gsplat",root/"log")
 
     def test_unsafe_attempt_cannot_change_write_root(self):
         with tempfile.TemporaryDirectory() as d:
