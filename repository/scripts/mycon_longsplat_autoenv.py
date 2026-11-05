@@ -195,6 +195,20 @@ def install(profile: dict,source: Path,root: Path,log: Path, *, repair_partial: 
     for ext in ('simple-knn','diff-gaussian-rasterization','fused-ssim'):
         run_logged([str(py),'-m','pip','install','--no-build-isolation',str(source/'submodules'/ext)],
                    log,env=env,cwd=source,timeout_s=3600)
+    # Official NVIDIA README: CroCo/DUSt3R RoPE CUDA kernel is optional but
+    # recommended. Attempt once in the isolated CUDA 12.1 compiler environment.
+    # Do not report training readiness from this optional compilation alone.
+    rope=source/'submodules/mast3r/dust3r/croco/models/curope'
+    if (rope/'setup.py').is_file():
+        try:
+            run_logged([str(py),'setup.py','build_ext','--inplace'],
+                       log,env=env,cwd=rope,timeout_s=1200)
+            print('NVIDIA_OPTIONAL_CROCO_ROPE_KERNEL_BUILT',flush=True)
+        except (RuntimeError,OSError) as exc:
+            with log.open('a',encoding='utf-8') as f:
+                f.write('\\nOPTIONAL_CROCO_ROPE_BUILD_WARNING: '+str(exc)+'\\n')
+            print('OPTIONAL_CROCO_ROPE_KERNEL_UNAVAILABLE; real MASt3R inference smoke remains mandatory',
+                  flush=True)
     # Test (and run) only after the environment is fully provisioned.
     verify_cuda(py,profile,log,env)
     report={**marker,'python':str(py),'cuda_verified':True,'status':'ISOLATED_ENV_CUDA_IMPORT_SMOKE_PASSED',
