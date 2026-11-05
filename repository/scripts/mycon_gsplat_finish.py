@@ -128,7 +128,31 @@ def render_and_evaluate_if_missing(py: Path, source: Path, scene: Path,
     canonical=result/"canonical"
     stats=canonical/"stats"/f"val_step{expected_step:04d}.json"
     video=canonical/"videos"/f"traj_{expected_step}.mp4"
-    if not (stats.is_file() and video.is_file()):
+    marker=canonical/"canonical_evaluation.json"
+    if marker.is_file():
+        previous=json.loads(marker.read_text())
+        identity=json.loads((canonical/"canonical_model.json").read_text())
+        if (previous.get("canonical_checkpoint_sha256")!=identity["canonical_sha256"]
+            or previous.get("ply_sha256")!=identity["ply_sha256"]):
+            raise RuntimeError("MYCON_CANONICAL_EVAL_SOURCE_CHANGED")
+        if (validate_artifact_file(stats,20) and validate_artifact_file(video)
+            and previous.get("stats_sha256")==sha256(stats)
+            and previous.get("video_sha256")==sha256(video)
+            and metrics_valid(previous.get("metrics",{}))):
+            return {"checkpoint":str(ckpt),
+                    "ply":str(canonical/"ply"/f"point_cloud_{expected_step}.ply"),
+                    "video":str(video),"metrics":previous["metrics"],
+                    "canonical_identity":previous,"training_restarted":False}
+        # Same canonical model, broken derived evaluation; retain all existing
+        # evidence before regenerating. Never alter the canonical ckpt or PLY.
+        quarantine_derived(marker,"interrupted_eval_receipt")
+    if stats.exists() or video.exists():
+        if stats.parent.is_dir() and any(stats.parent.iterdir()):
+            quarantine_derived(stats.parent,"partial_eval_stats")
+        if video.parent.is_dir() and any(video.parent.iterdir()):
+            quarantine_derived(video.parent,"partial_eval_video")
+    # Always (re)compute derived outputs when the verified receipt was absent.
+    if True:
         # Official --ckpt is EVAL-ONLY, which is why both assets are derived
         # from the new canonical ckpt and its unchanged COLMAP coordinate frame.
         cmd=[str(py),str(trainer),"default",
@@ -150,7 +174,6 @@ def render_and_evaluate_if_missing(py: Path, source: Path, scene: Path,
                 "stats_sha256":sha256(stats),"video_sha256":sha256(video),
                 "metrics":measured,
                 "metric_geometry_validated":False}
-    marker=canonical/"canonical_evaluation.json"
     if marker.is_file() and json.loads(marker.read_text())!=evaluation:
         raise RuntimeError("MYCON_CANONICAL_EVAL_CHANGED_NEVER_SILENTLY_OVERWRITE")
     atomic_json(marker,evaluation)
