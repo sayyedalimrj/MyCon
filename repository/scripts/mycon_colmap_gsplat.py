@@ -354,9 +354,13 @@ def prepare_colmap(scene: Path, experiment: Path, count: int, local: Path, log: 
         os.replace(generated,candidate)
     if not candidate.is_file() or candidate.stat().st_size<512:
         raise RuntimeError("COLMAP_INDEPENDENT_SFM_CANDIDATE_EMPTY")
-    save_once(experiment/"bim_candidate"/"stage8_handoff.json",{
-        "schema":"mycon.stage8.geometry_candidate.v1",
+    handoff={
+        "schema":"mycon.stage8.geometry_candidate.v2",
         "candidate_ply":str(candidate),
+        "candidate_ply_sha256":digest(candidate),
+        "selected_submodel":str(model.name),
+        "selected_model_sha256":{n:digest(model/n) for n in (
+            "cameras.bin","images.bin","points3D.bin")},
         "origin":"COLMAP_SFM_SPARSE_POINTS_NOT_RENDERER_DEPTH",
         "unit_system":"ARBITRARY_SCALE_NONMETRIC",
         "independent_site_anchors_present":False,
@@ -366,7 +370,16 @@ def prepare_colmap(scene: Path, experiment: Path, count: int, local: Path, log: 
             "collect independent site/BIM points",
             "align to BIM with held-out metric validation",
             "run geometric coverage and per-element residual checks"]
-    })
+    }
+    handoff_path=experiment/"bim_candidate"/"stage8_handoff.json"
+    if handoff_path.exists():
+        try:
+            previous=json.loads(handoff_path.read_text())
+        except (OSError,ValueError):
+            previous={}
+        if previous!=handoff:
+            quarantine_derived(handoff_path,"outdated_colmap_model_handoff")
+    save_once(handoff_path,handoff)
     gate.update(selected_model_sha256={
         n:digest(model/n) for n in ("cameras.bin","images.bin","points3D.bin")},
         registered_images_txt_sha256=digest(txt/"images.txt"),
