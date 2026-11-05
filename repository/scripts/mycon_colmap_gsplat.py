@@ -129,6 +129,70 @@ def prepare_frames(video: Path, scene: Path, experiment: Path, log: Path) -> int
     return len(frames)
 
 
+def verify_prepared_frames(scene: Path, experiment: Path) -> int:
+    """Reuse Drive frames after Runtime reset; NEVER reopen a vanished local MP4."""
+    receipt=experiment/"frames_receipt.json"
+    if not receipt.is_file():
+        raise RuntimeError("CPU_FRAMES_RECEIPT_MISSING_ON_DRIVE")
+    row=json.loads(receipt.read_text())
+    images=sorted((scene/"images").glob("frame_*.jpg"))
+    if len(images)!=row.get("count") or not 80 <= len(images) <= 240:
+        raise RuntimeError("CPU_FRAMES_INCOMPLETE_AFTER_RUNTIME_SWITCH")
+    if digest(images[0])!=row.get("first_sha256") or digest(images[-1])!=row.get("last_sha256"):
+        raise RuntimeError("CPU_FRAMES_SHA_MISMATCH_AFTER_RUNTIME_SWITCH")
+    if any(p.stat().st_size<1000 for p in images):
+        raise RuntimeError("CPU_FRAMES_ZERO_OR_CORRUPTED")
+    return len(images)
+
+
+def local_training_scene(scene: Path, experiment: Path, local: Path) -> Path:
+    """Copy only registered COLMAP images+model onto fast /content local disk.
+
+    Persistent Drive scene remains immutable; a fresh GPU VM is allowed to
+    rebuild this disposable cache without repeating COLMAP or video extraction.
+    """
+    model=scene/"sparse/0"
+    if not all((model/n).is_file() for n in ("cameras.bin","images.bin","points3D.bin")):
+        raise RuntimeError("CPU_COLMAP_MODEL_MISSING_ON_DRIVE")
+    dest=local/"scene_cache"/experiment.parent.name/experiment.name
+    dest_images=dest/"images"
+    dest_sparse=dest/"sparse/0"
+    names=[]
+    path=experiment/"colmap_text/images.txt"
+    if not path.is_file():raise RuntimeError("CPU_COLMAP_IMAGES_LIST_MISSING")
+    for line in path.read_text().splitlines():
+        match=re.search(r"\\b(frame_\\d{6}\\.jpg)\\s*$",line)
+        if match and re.match(r"^\\s*\\d+\\s+",line):
+            names.append(match.group(1))
+    if len(names)!=len(set(names)) or len(names)<MIN_REGISTERED:
+        raise RuntimeError("COLMAP_REGISTERED_IMAGE_NAMES_INVALID")
+    # Disk/space check protects against failed half-copy and CUDA env crowding.
+    required=sum((scene/"images"/n).stat().st_size for n in names)
+    required+=sum((model/n).stat().st_size for n in ("cameras.bin","images.bin","points3D.bin"))
+    available=shutil.disk_usage(local).free
+    if available < required+18*(1024**3):
+        raise RuntimeError(f"INSUFFICIENT_LOCAL_DISK_FOR_CUDA_AND_SCENE: need {(required+18*1024**3)/1024**3:.1f} GiB")
+    dest_images.mkdir(parents=True,exist_ok=True)
+    dest_sparse.mkdir(parents=True,exist_ok=True)
+    for name in names:
+        source=scene/"images"/name
+        target=dest_images/name
+        if target.exists():
+            if target.stat().st_size!=source.stat().st_size:
+                raise RuntimeError("GPU_LOCAL_CACHE_IMAGE_MISMATCH_PRESERVE")
+        else:shutil.copy2(source,target)
+    for name in ("cameras.bin","images.bin","points3D.bin"):
+        source=model/name;target=dest_sparse/name
+        if target.exists():
+            if digest(target)!=digest(source):
+                raise RuntimeError("GPU_LOCAL_CACHE_COLMAP_MISMATCH_PRESERVE")
+        else:shutil.copy2(source,target)
+    # pycolmap's images all refer to original registered names
+    if set(p.name for p in dest_images.glob("frame_*.jpg"))!=set(names):
+        raise RuntimeError("GPU_CACHE_HAS_UNEXPECTED_OR_MISSING_IMAGES")
+    return dest
+
+
 def prepare_colmap(scene: Path, experiment: Path, count: int, local: Path, log: Path) -> dict:
     receipt=experiment/"colmap_receipt.json"
     if receipt.exists():
@@ -311,8 +375,15 @@ def run(args: argparse.Namespace) -> dict:
         prefix=local/"gsplat_py310_torch24_cu121"
         if not (prefix/"bin/python").is_file():
             raise RuntimeError("PREFLIGHT_PYTHON_ENV_NOT_PRESENT_CURRENT_RUNTIME")
-    n=prepare_frames(local/"verified_recorder_input/raw_capture.mp4",scene,experiment,log)
-    gate=prepare_colmap(scene,experiment,n,local,log)
+    if args.mode in ("preflight","all"):
+        n=verify_prepared_frames(scene,experiment)
+        # The COLMAP stage has already run on CPU and its receipt survives
+        # Colab's full CPU -> GPU VM teardown.
+        record=json.loads((experiment/"colmap_receipt.json").read_text())
+        gate=colmap_gate(record["registered"],n)
+    else:
+        n=prepare_frames(local/"verified_recorder_input/raw_capture.mp4",scene,experiment,log)
+        gate=prepare_colmap(scene,experiment,n,local,log)
     if args.mode=="geometry":
         # Safe, CPU-only COLMAP stage. Can run before assigning a Colab GPU;
         # all extracted frames / SfM geometry receipts live on Drive and
@@ -334,6 +405,7 @@ def run(args: argparse.Namespace) -> dict:
     gs_source=local/"official_gsplat_v153"
     if args.mode=="all" and accepted.get("registered")!=gate["registered"]:
         raise RuntimeError("PREFLIGHT_COLMAP_REGISTRATION_CHANGED")
+    training_scene=local_training_scene(scene,experiment,local)
     ensure_source(gs_source,log)
     if args.mode=="preflight":
         # Explicit GPU prerequisites are checked now, before training.
@@ -376,7 +448,7 @@ def run(args: argparse.Namespace) -> dict:
            "bim_metric_validated":False}
     statusfile.write_text(json.dumps(state,indent=2)+"\n")
     try:
-        run_logged(gsplat_command(py,gs_source,scene,resultdir),experiment/"logs"/"train.log",
+        run_logged(gsplat_command(py,gs_source,training_scene,resultdir),experiment/"logs"/"train.log",
                    cwd=gs_source/"examples",live=True)
     except Exception as exc:
         state.update(status="TRAINING_FAILED_PRESERVE_PARTIAL",error=str(exc)[-900:])
