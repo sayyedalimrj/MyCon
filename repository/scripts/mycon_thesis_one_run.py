@@ -107,7 +107,8 @@ def evidence_for_attempt(attempt_root: Path) -> dict:
     candidates=list((attempt_root/'workspace').glob('*/longsplat_model'))
     if len(candidates)!=1:
         return {'model_directories_found':len(candidates),'checkpoint_ply_present_not_training_complete':False,
-                'novel_view_rgb_exists':False,'gaussian_3dgs_exists':False}
+                'novel_view_rgb_exists':False,'gaussian_3dgs_exists':False,
+                'novel_view_qa_exists':False,'metric_bim_validated':False}
     model=candidates[0]
     finals=sorted(model.glob('point_cloud/iteration_*/point_cloud.ply'),
                   key=lambda p:int(p.parent.name.split('_')[-1])
