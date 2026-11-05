@@ -24,7 +24,7 @@ class OneRuntimeNoWastedCredits(unittest.TestCase):
             model=scene/"sparse/0"
             images.mkdir(parents=True)
             model.mkdir(parents=True)
-            names=[f"frame_{i:06d}.jpg" for i in range(70)]
+            names=[f"frame_{i:06d}.jpg" for i in range(80)]
             for name in names:(images/name).write_bytes(b"safe image content"*100)
             lines=["# COLMAP images.txt\n"]
             for i,name in enumerate(names):
@@ -39,13 +39,13 @@ class OneRuntimeNoWastedCredits(unittest.TestCase):
                 "first_sha256":c.digest(images/names[0]),
                 "last_sha256":c.digest(images/names[-1]),
             }))
-            self.assertEqual(c.verify_prepared_frames(scene,exp),70)
+            self.assertEqual(c.verify_prepared_frames(scene,exp),80)
             local=tmp/"gpu"
             local.mkdir()
             with patch.object(c.shutil,"disk_usage",
                               return_value=SimpleNamespace(free=40*1024**3)):
                 staged=c.local_training_scene(scene,exp,local)
-            self.assertEqual(len(list((staged/"images").glob("*.jpg"))),70)
+            self.assertEqual(len(list((staged/"images").glob("*.jpg"))),80)
             self.assertEqual(
                 c.digest(staged/"sparse/0"/"points3D.bin"),
                 c.digest(model/"points3D.bin"))
