@@ -308,7 +308,7 @@ def real_video_cuda_smoke(py: Path, source: Path, scene: Path,
             "real_registered_video_images":True,
             "max_gpu_allocated_gib":round(float(mem),3),
             "steps":20,"full_training_executed":False}
-    marker.write_text(json.dumps(result,indent=2)+"\\n")
+    marker.write_text(json.dumps(result,indent=2)+"\n")
     return result
 
 
@@ -423,7 +423,8 @@ def run(args: argparse.Namespace) -> dict:
         if not statusfile.is_file():
             raise RuntimeError("PREFLIGHT_MUST_PASS_BEFORE_GPU_TRAINING")
         accepted=json.loads(statusfile.read_text())
-        if (accepted.get("status")!="PREFLIGHT_COLMAP_AND_GSPLAT_CUDA_PASSED_NO_TRAINING"
+        if (accepted.get("status") not in ("PREFLIGHT_REAL_VIDEO_GPU_SMOKE_PASSED_NO_FULL_TRAINING",
+                                           "TRAINING_STARTED","TRAINING_FAILED_PRESERVE_PARTIAL")
             or accepted.get("source_sha256")!=original["archive_sha256"]):
             raise RuntimeError("SAME_CAPTURE_COLMAP_AND_CUDA_PREFLIGHT_REQUIRED")
         prefix=local/"gsplat_py310_torch24_cu121"
@@ -488,7 +489,8 @@ def run(args: argparse.Namespace) -> dict:
     if not statusfile.is_file():
         raise RuntimeError("PREFLIGHT_MUST_PASS_BEFORE_GPU_TRAINING")
     accepted=json.loads(statusfile.read_text())
-    if (accepted.get("status")!="PREFLIGHT_COLMAP_AND_GSPLAT_CUDA_PASSED_NO_TRAINING"
+    if (accepted.get("status") not in ("PREFLIGHT_REAL_VIDEO_GPU_SMOKE_PASSED_NO_FULL_TRAINING",
+                                           "TRAINING_STARTED","TRAINING_FAILED_PRESERVE_PARTIAL")
         or accepted.get("source_sha256")!=original["archive_sha256"]
         or accepted.get("registered")!=gate["registered"]):
         raise RuntimeError("SAME_CAPTURE_COLMAP_AND_CUDA_PREFLIGHT_REQUIRED")
