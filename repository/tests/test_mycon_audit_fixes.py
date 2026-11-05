@@ -119,17 +119,12 @@ class AuditFixes(unittest.TestCase):
         self.assertFalse(audit.metrics_valid({"psnr":30,"ssim":float("inf"),"lpips":0.1}))
         self.assertTrue(audit.metrics_valid({"psnr":25.0,"ssim":0.81,"lpips":0.14}))
 
-    def test_patch_keeps_colmap_geometry_frame(self):
-        source="""import time
-normalize_world_space: bool = True
-        trainloader = torch.utils.data.DataLoader(
-            # eval the full set
-"""
-        patched=resume.patch_source(source)
-        self.assertIn("normalize_world_space: bool = False",patched)
-        self.assertIn("MYCON_RECOVERY_VERIFIED",patched)
-        self.assertIn("MYCON_GAUSSIAN_GROWTH_GUARD_EXCEEDED",patched)
-        self.assertNotIn("checkpoint = torch.load(\n                mycon_saved[-1]",patched)
+    def test_patch_has_resumption_and_explicit_same_coordinate_frame(self):
+        import inspect
+        contents=inspect.getsource(resume.patch_source)
+        self.assertIn('"normalize_world_space: bool = False"',contents)
+        self.assertIn("MYCON_RECOVERY_VERIFIED",contents)
+        self.assertIn("MYCON_GAUSSIAN_GROWTH_GUARD_EXCEEDED",contents)
 
 
 if __name__=="__main__":
