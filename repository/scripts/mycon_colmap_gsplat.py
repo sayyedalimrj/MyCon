@@ -217,6 +217,34 @@ def evidence(result: Path) -> dict:
             "note":"Checkpoint/PLY presence alone never certifies model quality or metric geometry"}
 
 
+def verify_original_archive(archive: Path, local: Path) -> dict:
+    """No GPU, no pip, no apt: validate native Recorder contract and disk."""
+    import zipfile
+    from mycon_capture_safe import source_members
+    if archive.stat().st_size < 2_000_000:
+        raise RuntimeError("ORIGINAL_RECORDER_ZIP_SUSPICIOUSLY_SMALL")
+    if not local.parent.exists():
+        # /content should exist in Colab; don't create a mutable workdir
+        raise RuntimeError("LOCAL_CONTENT_ROOT_MISSING")
+    free=shutil.disk_usage(local.parent).free
+    with zipfile.ZipFile(archive) as z:
+        _prefix,_entries,_mapping,record=source_members(z)
+        video=z.getinfo(record["video_full"])
+        if video.file_size < 25_000_000:
+            raise RuntimeError("RECORDER_FULL_VIDEO_TOO_SMALL")
+        if free < video.file_size*2+2_000_000_000:
+            raise RuntimeError("CPU_DISK_NOT_ENOUGH_FOR_VERIFIED_INPUT_AND_FRAMES")
+        if z.testzip() is not None:
+            raise RuntimeError("RECORDER_ZIP_CRC_FAILURE")
+    return {"status":"CPU_SOURCE_AND_RECORDER_SCHEMA_PASS_NOT_GPU_OR_TRAINING",
+            "archive":str(archive),"archive_sha256":digest(archive),
+            "archive_bytes":archive.stat().st_size,
+            "video_bytes":video.file_size,
+            "local_free_gib":round(free/2**30,2),
+            "training_executed":False,"cuda_compatibility_checked":False,
+            "metric_BIM_validated":False}
+
+
 def run(args: argparse.Namespace) -> dict:
     attempt=validate_attempt(args.attempt)
     drive=args.drive_root.expanduser().resolve()
@@ -234,6 +262,8 @@ def run(args: argparse.Namespace) -> dict:
         return {"status":"PLAN_ONLY","backend":"COLMAP_GSPLAT_V153",
                 "source_capture":str(archive),"fps":EXPECTED_FPS,"width":EXPECTED_WIDTH,
                 "training_authorized":False}
+    if args.mode=="verify":
+        return verify_original_archive(archive,local)
     local.mkdir(parents=True,exist_ok=True)
     original=prepare_capture(archive,local/"verified_recorder_input",verified_rotation_cw=90)
     if not 90 <= original["full_video_duration_s"] <= 110:
@@ -331,7 +361,7 @@ def run(args: argparse.Namespace) -> dict:
 
 def main(argv=None) -> int:
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--mode",choices=("plan","geometry","preflight","all","status"),default="preflight")
+    p.add_argument("--mode",choices=("plan","verify","geometry","preflight","all","status"),default="preflight")
     p.add_argument("--capture",type=Path)
     p.add_argument("--drive-root",type=Path,default=DRIVE)
     p.add_argument("--local-root",type=Path,default=LOCAL)
