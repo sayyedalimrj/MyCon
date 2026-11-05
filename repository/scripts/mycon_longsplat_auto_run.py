@@ -110,6 +110,13 @@ def run(args) -> dict:
     captured_sha=native['archive_sha256']
     key=profile_key(profile)
     experiment_root=status_root/captured_sha[:16]/key
+    # Explicit attempts are isolated: no model/checkpoint overwrite and no fake resume.
+    attempt=getattr(args,'attempt_id',None)
+    if attempt is not None:
+        import re
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,47}',attempt):
+            raise ValueError('ATTEMPT_ID_INVALID: refusing unsafe output directory')
+        experiment_root=experiment_root/'attempts'/attempt
     workspace=experiment_root/'workspace'
     experiment_root.mkdir(parents=True,exist_ok=True)
     stable=experiment_root/'gpu_profile.json'
@@ -209,6 +216,7 @@ def main():
     p.add_argument('--nvidia-root',type=Path,help='Reuse an existing checkout; still verifies the pinned commit and submodules')
     p.add_argument('--env-root',type=Path,help='Reuse an existing isolated environment; still verifies its receipt and CUDA kernels')
     p.add_argument('--quality',choices=('quality','conservative'),default='quality')
+    p.add_argument('--attempt-id',help='Isolated trial directory; original experiment and checkpoints stay untouched')
     p.add_argument('--stop-after',choices=('prepare','train','render','export','geometry','audit'))
     p.add_argument('--plan-only',action='store_true')
     p.add_argument('--approve-new-training',action='store_true',help='Only set after explicit approval for the new training budget')
