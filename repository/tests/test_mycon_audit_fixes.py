@@ -90,6 +90,24 @@ class AuditFixes(unittest.TestCase):
             self.assertEqual(candidate.read_bytes(),payload)
             self.assertTrue((exp/"colmap_receipt.json").is_file())
 
+    def test_verified_20_step_gpu_smoke_reused_across_colab_disconnect(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);exp=root/"exp";exp.mkdir()
+            (exp/"colmap_receipt.json").write_text(json.dumps({"registered":154}))
+            (exp/"frames_receipt.json").write_text(json.dumps({"count":190}))
+            identity={"source_sha256":c.digest(exp/"colmap_receipt.json"),
+                      "frame_manifest_sha256":c.digest(exp/"frames_receipt.json"),
+                      "gsplat_tag":"v1.5.3","torch_cuda":"2.4.1+cu121",
+                      "sm":"7.5","smoke_steps":20}
+            audit.atomic_json(exp/"real_video_gpu_smoke_receipt.json",{
+                **identity,"status":"REAL_20_STEP_VIDEO_T4_PASS",
+                "steps":20,"max_gpu_allocated_gib":2.1})
+            with patch.object(c,"run_logged",side_effect=AssertionError("GPU_SMOKE_REPEATED")):
+                reused=c.real_video_cuda_smoke(
+                    root/"env/bin/python",root/"source",root/"scene",exp,root/"trainer")
+            self.assertTrue(reused["reused_after_runtime_reset"])
+            self.assertEqual(reused["steps"],20)
+
     def test_canonical_checkpoint_and_ply_share_one_source_hash(self):
         with tempfile.TemporaryDirectory() as td:
             result=Path(td)
