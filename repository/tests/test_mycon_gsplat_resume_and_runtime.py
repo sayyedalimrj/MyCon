@@ -60,6 +60,13 @@ class OneRuntimeNoWastedCredits(unittest.TestCase):
                 c.digest(staged/"sparse/0"/"points3D.bin"),
                 c.digest(model/"points3D.bin"))
             self.assertFalse((local/"verified_recorder_input/raw_capture.mp4").exists())
+            # The original CPU model cannot change silently between the
+            # first and second Colab VM. No GPU training should follow.
+            original=(model/"points3D.bin").read_bytes()
+            (model/"points3D.bin").write_bytes(b"tampered camera/point map")
+            with self.assertRaisesRegex(RuntimeError,"CPU_COLMAP_BINARY_MODEL_SHA_CHANGED"):
+                c.local_training_scene(scene,exp,local)
+            (model/"points3D.bin").write_bytes(original)
             # Same registered images are correctly reused and never overwritten.
             with patch.object(c.shutil,"disk_usage",
                               return_value=SimpleNamespace(free=40*1024**3)):
