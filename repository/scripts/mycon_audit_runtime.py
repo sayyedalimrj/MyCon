@@ -16,7 +16,8 @@ from pathlib import Path
 
 CORE_FILES=("mycon_colmap_gsplat.py","mycon_colmap_gsplat_env.py",
             "mycon_gsplat_resume_patch.py","mycon_gsplat_finish.py",
-            "mycon_audit_runtime.py")
+            "mycon_audit_runtime.py","mycon_capture_safe.py",
+            "mycon_thesis_one_run.py","mycon_longsplat_autoenv.py")
 
 
 def sha256(path: Path) -> str:
