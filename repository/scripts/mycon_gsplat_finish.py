@@ -11,7 +11,7 @@ import json
 import os
 from pathlib import Path
 from mycon_colmap_gsplat_env import run_logged
-from mycon_audit_runtime import sha256, atomic_json, metrics_valid, validate_artifact_file
+from mycon_audit_runtime import sha256, atomic_json, metrics_valid, validate_artifact_file, quarantine_derived
 
 
 def _cuda_env(py: Path) -> dict:
@@ -64,14 +64,18 @@ def make_final_model(py: Path, result: Path, *, expected_step: int=6999) -> Path
         for k,v in identity.items():
             if previous.get(k)!=v:
                 raise RuntimeError("MYCON_CANONICAL_MODEL_PROVENANCE_CHANGED")
-        if not (validate_artifact_file(canonical,2048) and
+        if (validate_artifact_file(canonical,2048) and
                 validate_artifact_file(ply,1024)
                 and previous.get("canonical_sha256")==sha256(canonical)
                 and previous.get("ply_sha256")==sha256(ply)):
-            raise RuntimeError("MYCON_CANONICAL_MODEL_HASH_OR_ARTIFACT_INCOMPLETE")
-        return canonical
-    if canonical.exists() or ply.exists():
-        raise RuntimeError("MYCON_CANONICAL_PARTIAL_OUTPUT_PRESERVED_USE_DIAGNOSTICS")
+            return canonical
+        # Same source but an interrupted write: preserve the complete derived
+        # canonical folder, then regenerate once from immutable source.
+        quarantine_derived(target,"incomplete_canonical_model")
+    elif target.exists() and any(target.iterdir()):
+        # No published provenance: a previous VM died mid-PLY or torch.save.
+        # Save entire old folder as-is before recreating output.
+        quarantine_derived(target,"unreceipted_canonical_model")
     # A single Python/CUDA process loads source checkpoint, writes exact model
     # and exports PLY from the SAME tensor dictionary. No official ckpt mixup.
     code=r'''import os,sys,torch
