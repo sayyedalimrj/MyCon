@@ -1,0 +1,44 @@
+name: MyCON final acceptance — offline safety gates
+
+on:
+  pull_request:
+    paths:
+      - 'repository/scripts/mycon_*'
+      - 'repository/tests/test_mycon_*'
+      - 'repository/MyCON_FINAL_ACCEPTANCE.ipynb'
+      - '.github/workflows/mycon-final-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pinned PR source
+        uses: actions/checkout@v4
+      - name: Configure Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check Python syntax (no GPU needed)
+        run: |
+          python -m py_compile repository/scripts/mycon_thesis_one_run.py
+          python -m py_compile repository/scripts/mycon_longsplat_auto_run.py
+          python -m py_compile repository/scripts/mycon_longsplat_autoenv.py
+      - name: Reject notebook syntax and malformed JSON
+        run: |
+          python - <<'PY'
+          import ast
+          import json
+          from pathlib import Path
+          book = json.loads(Path('repository/MyCON_FINAL_ACCEPTANCE.ipynb').read_text())
+          assert book['nbformat'] == 4
+          for cell in book['cells']:
+              if cell['cell_type'] == 'code':
+                  ast.parse(''.join(cell['source']))
+          print('NOTEBOOK_JSON_AND_PYTHON_SYNTAX_PASS')
+          PY
+      - name: Run non-destructive acceptance unit tests
+        run: python -m unittest discover -s repository/tests -p test_mycon_thesis_one_run.py -v
