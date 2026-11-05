@@ -277,6 +277,18 @@ def run(args: argparse.Namespace) -> dict:
     save_once(experiment/"input_contract.json",inputrec)
     scene=experiment/"scene"
     log=experiment/"logs"/"pipeline.log"
+    if args.mode=="all":
+        # Check the exact experiment and preflight before extracting video,
+        # processing COLMAP, downloading source, or installing dependencies.
+        if not statusfile.is_file():
+            raise RuntimeError("PREFLIGHT_MUST_PASS_BEFORE_GPU_TRAINING")
+        accepted=json.loads(statusfile.read_text())
+        if (accepted.get("status")!="PREFLIGHT_COLMAP_AND_GSPLAT_CUDA_PASSED_NO_TRAINING"
+            or accepted.get("source_sha256")!=original["archive_sha256"]):
+            raise RuntimeError("SAME_CAPTURE_COLMAP_AND_CUDA_PREFLIGHT_REQUIRED")
+        prefix=local/"gsplat_py310_torch24_cu121"
+        if not (prefix/"bin/python").is_file():
+            raise RuntimeError("PREFLIGHT_PYTHON_ENV_NOT_PRESENT_CURRENT_RUNTIME")
     n=prepare_frames(local/"verified_recorder_input/raw_capture.mp4",scene,experiment,log)
     gate=prepare_colmap(scene,experiment,n,local,log)
     if args.mode=="geometry":
@@ -298,6 +310,8 @@ def run(args: argparse.Namespace) -> dict:
         statusfile.write_text(json.dumps(result,indent=2)+"\n")
         return result
     gs_source=local/"official_gsplat_v153"
+    if args.mode=="all" and accepted.get("registered")!=gate["registered"]:
+        raise RuntimeError("PREFLIGHT_COLMAP_REGISTRATION_CHANGED")
     ensure_source(gs_source,log)
     if args.mode=="preflight":
         # Explicit GPU prerequisites are checked now, before training.
