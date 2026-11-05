@@ -51,13 +51,10 @@ def save_once(path: Path, data: dict) -> None:
         if json.loads(path.read_text()) != data:
             raise RuntimeError("IMMUTABLE_RECEIPT_CONFLICT: "+str(path))
         return
-    tmp=path.with_name(path.name+".partial")
-    if tmp.exists():raise RuntimeError("PARTIAL_RECEIPT_PRESERVED: "+str(tmp))
-    try:
-        tmp.write_text(json.dumps(data,indent=2,ensure_ascii=False,sort_keys=True)+"\n")
-        os.replace(tmp,path)
-    finally:
-        if tmp.exists():tmp.unlink()
+    # An old .partial file from an interrupted Drive FUSE write is evidence,
+    # not a permanent blocker. atomic_json uses a new unique temporary path
+    # and leaves old partials untouched for diagnostics.
+    atomic_json(path,data)
 
 
 def check_source(root: Path) -> None:
