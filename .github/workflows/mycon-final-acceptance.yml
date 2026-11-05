@@ -46,3 +46,4 @@ jobs:
         run: |
           python -m unittest discover -s repository/tests -p test_mycon_thesis_one_run.py -v
           python -m unittest discover -s repository/tests -p test_mycon_mast3r_2view_smoke.py -v
+          python -m unittest discover -s repository/tests -p test_mycon_nvidia_progress.py -v
