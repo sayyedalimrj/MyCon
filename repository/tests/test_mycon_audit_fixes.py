@@ -104,6 +104,8 @@ class AuditFixes(unittest.TestCase):
             old=b"ply"+b"OLD_OTHER_SUBMODEL"*80
             corrected=b"ply"+b"TRUE_SELECTED_SUBMODEL"*80
             candidate.write_bytes(old)
+            old_handoff=candidate.parent/"stage8_handoff.json"
+            old_handoff.write_text(json.dumps({"schema":"legacy","candidate_ply":str(candidate)}))
             def convert(cmd,log,*args,**kwargs):
                 if cmd[1]!="model_converter":
                     raise AssertionError("MAPPER SHOULD BE REUSED")
@@ -129,6 +131,13 @@ class AuditFixes(unittest.TestCase):
                 "colmap_sparse_unscaled.ply.preserved_different_or_incomplete_colmap_ply_*"))
             self.assertEqual(len(backups),1)
             self.assertEqual(backups[0].read_bytes(),old)
+            handoff=json.loads(old_handoff.read_text())
+            self.assertEqual(handoff["selected_submodel"],"1")
+            self.assertEqual(handoff["candidate_ply_sha256"],c.digest(candidate))
+            old_handoffs=list(old_handoff.parent.glob(
+                "stage8_handoff.json.preserved_outdated_colmap_model_handoff_*"))
+            self.assertEqual(len(old_handoffs),1)
+            self.assertEqual(json.loads(old_handoffs[0].read_text())["schema"],"legacy")
             self.assertEqual(
                 json.loads((exp/"colmap_receipt.json").read_text())[
                     "sparse_candidate_ply_sha256"],c.digest(candidate))
