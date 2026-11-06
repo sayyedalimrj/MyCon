@@ -112,7 +112,7 @@ def gsplat_cuda_smoke(py: Path, source: Path, env: dict, log: Path) -> None:
     code=r'''import torch,gsplat
 from gsplat.rendering import rasterization
 assert torch.__version__.startswith("2.4.1+cu121"),torch.__version__
-assert gsplat.__version__=="1.5.3",gsplat.__version__
+assert gsplat.__version__=="1.5.3+pt24cu121",gsplat.__version__
 from importlib.metadata import version
 assert version("gsplat")=="1.5.3+pt24cu121",version("gsplat")
 assert torch.cuda.is_available()
