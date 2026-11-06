@@ -98,6 +98,8 @@ class OneRuntimeNoWastedCredits(unittest.TestCase):
             (exp/"verified_capture_cpu.json").write_text(json.dumps({
                 "archive_sha256":sha,"full_video_duration_s":96.0}))
             (exp/"colmap_receipt.json").write_text(json.dumps({"registered":160}))
+            (exp/"temporal_coverage_qa.json").write_text(json.dumps({
+                "status":"PASS","source_frames":180,"registered_frames":160}))
             output=exp/"bim_candidate"/"colmap_sparse_unscaled.ply"
             output.parent.mkdir()
             output.write_bytes(b"ply\n"*200)
