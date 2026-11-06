@@ -25,7 +25,7 @@ class AuditFixes(unittest.TestCase):
             self.assertFalse(list(root.glob("*.partial.*")))
             manifest=audit.require_source_lock(root,ROOT/"scripts",create=True)
             self.assertEqual(manifest,audit.require_source_lock(root,ROOT/"scripts",create=False))
-            self.assertEqual(len(manifest["files"]),9)
+            self.assertEqual(len(manifest["files"]),10)
             with patch.object(audit,"source_identity",
                               return_value={"schema":"changed","files":{}}):
                 with self.assertRaisesRegex(RuntimeError,"SOURCE_CHANGED"):
