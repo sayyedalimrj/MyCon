@@ -22,6 +22,7 @@ from mycon_thesis_one_run import find_capture, validate_attempt
 from mycon_colmap_gsplat_env import setup as setup_gsplat, run_logged
 from mycon_gsplat_resume_patch import ensure_trainer
 from mycon_gsplat_finish import render_and_evaluate_if_missing,source_checkpoint
+from mycon_scene_qa import frame_quality_candidates, temporal_coverage
 from mycon_audit_runtime import (
     atomic_json, immutable_json, quarantine_derived, frame_manifest,
     validate_frame_manifest, require_source_lock, metrics_valid, validate_artifact_file,
@@ -677,9 +678,41 @@ def run(args: argparse.Namespace) -> dict:
         # Colab's full CPU -> GPU VM teardown.
         record=json.loads((experiment/"colmap_receipt.json").read_text())
         gate=colmap_gate(record["registered"],n)
+        # CPU coverage diagnostics must survive the CPU->T4 runtime switch.
+        # Refuse an older receipt that counted registrations but ignored
+        # unregistered contiguous parts of the full recording.
+        coverage_file=experiment/"temporal_coverage_qa.json"
+        if not coverage_file.is_file():
+            raise RuntimeError("MYCON_CPU_TEMPORAL_COVERAGE_QA_REQUIRED_BEFORE_GPU")
+        coverage=json.loads(coverage_file.read_text())
+        if (coverage.get("status")!="PASS"
+            or coverage.get("source_frames")!=n
+            or coverage.get("registered_frames")!=gate["registered"]):
+            raise RuntimeError("MYCON_CPU_TEMPORAL_COVERAGE_QA_INVALID_BEFORE_GPU")
     else:
         n=prepare_frames(local/"verified_recorder_input/raw_capture.mp4",scene,experiment,log)
+        # Only actual verified CPU frame-extraction runs produce this receipt;
+        # legacy mocked unit fixtures intentionally do not.
+        if (experiment/"frames_receipt.json").is_file():
+            quality_file=experiment/"derived_frame_quality_qa.json"
+            if not quality_file.is_file():
+                save_once(quality_file,frame_quality_candidates(scene/"images",
+                                                              fps=EXPECTED_FPS))
+            quality=json.loads(quality_file.read_text())
+            if (quality.get("source_frame_count")!=n
+                or not quality.get("all_original_frames_preserved")):
+                raise RuntimeError("MYCON_DERIVED_FRAME_QUALITY_QA_INCONSISTENT")
         gate=prepare_colmap(scene,experiment,n,local,log)
+        if (experiment/"frames_receipt.json").is_file():
+            coverage=temporal_coverage(experiment/"colmap_text/images.txt",n,
+                                       fps=EXPECTED_FPS)
+            # Persist failing evidence BEFORE refusing GPU or training.
+            coverage_file=experiment/"temporal_coverage_qa.json"
+            save_once(coverage_file,coverage)
+            if coverage["status"]!="PASS":
+                raise RuntimeError("MYCON_FULL_VIDEO_TEMPORAL_COVERAGE_FAILED: "+
+                                   ",".join(coverage["fail_reasons"])+
+                                   "; inspect "+str(coverage_file))
     if args.mode=="geometry":
         # Safe, CPU-only COLMAP stage. Can run before assigning a Colab GPU;
         # all extracted frames / SfM geometry receipts live on Drive and
