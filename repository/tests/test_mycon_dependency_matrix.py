@@ -48,8 +48,8 @@ class LongSplatSupportedABI(unittest.TestCase):
             (old/"bin").mkdir(parents=True)
             (old/"bin/python").write_bytes(b"old torch2.5.1 environment")
             actual=profile.profile_for(self.hw())
-            with patch.object(one,"KNOWN_ENV",root/"other"),
-                 patch.object(one,"verify_cuda",side_effect=RuntimeError("old ABI")):
+            with (patch.object(one,"KNOWN_ENV",root/"other"),
+                  patch.object(one,"verify_cuda",side_effect=RuntimeError("old ABI"))):
                 new_path,status=one.choose_env(root,actual,root/"logs")
             self.assertEqual(status,"NEW_ISOLATED_ENV_NO_OLD_DELETION")
             self.assertEqual(new_path.name,"mycon_stabilized_sm75_cu121_pt241")
