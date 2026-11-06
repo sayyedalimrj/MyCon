@@ -103,9 +103,11 @@ def profile_for(h: Hardware, quality: str='quality') -> dict:
         vision='0.22.1'
         family='BLACKWELL_EXPERIMENTAL'
     elif h.sm>=89:
-        wheel='cu121';torch='2.5.1';vision='0.20.1';family='ADA_OR_HOPPER'
+        # NVIDIA LongSplat pins PyTorch3D v0.7.8, officially compatible
+        # with torch 2.1..2.4.1. Avoid experimental 2.5.1 ABI for CUDA ops.
+        wheel='cu121';torch='2.4.1';vision='0.19.1';family='ADA_OR_HOPPER'
     else:
-        wheel='cu121';torch='2.5.1';vision='0.20.1';family='TURING_AMPERE'
+        wheel='cu121';torch='2.4.1';vision='0.19.1';family='TURING_AMPERE'
     if h.vram_mib<20000:
         fps,width,post=8.0,512,20000
     elif h.vram_mib<35000:
