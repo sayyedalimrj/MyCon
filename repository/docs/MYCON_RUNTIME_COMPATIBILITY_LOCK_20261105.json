@@ -48,13 +48,17 @@
   "research_longsplat": {
     "upstream": "https://github.com/NVlabs/LongSplat",
     "upstream_sha": "19750775a9d19f30aa05a8333c4c6c231b2d5f4a",
-    "torch_pinned_in_existing_auto_profile": "2.5.1+cu121 (T4)",
-    "torchvision": "0.20.1",
-    "pytorch3d": "source pinned to 0.7.8 SHA 75ebee...",
-    "issue": "Official PyTorch3D compatibility table lists PyTorch through 2.4.1; existing LongSplat T4 profile 2.5.1 is NOT a compatibility-certified combination.",
-    "state": "research comparator only; require successful NVIDIA full real CUDA+MASt3R preflight; do not claim low-risk until that passes",
+    "torch_pinned_in_existing_auto_profile": "2.4.1+cu121 (new T4/L4/A100/H100 isolated profiles; previous 2.5.1 checkpoints untouched)",
+    "torchvision": "0.19.1+cu121",
+    "pytorch3d": "official v0.7.8 source commit 75ebeeaea0908c5527e7b1e305fbc7681382db47",
+    "issue": "Previous torch2.5.1/PyTorch3D0.7.8 unsupported pairing corrected in source; real CUDA/MASt3R end-to-end on user T4 remains unverified.",
+    "state": "offline compatibility aligned; GPU runtime smoke is a mandatory external gate, not a completed success",
     "preserves_existing_experiments": true,
-    "noncommercial_research_license": true
+    "noncommercial_research_license": true,
+    "numpy": "1.26.4",
+    "torch_scatter": "only binary wheel from https://data.pyg.org/whl/torch-2.4.0+cu121.html",
+    "legacy_env_policy": "keep existing profiles/checkpoints; never silently adopt old incompatible Torch2.5.1; new ABI suffix _pt241",
+    "blackwell_policy": "torch2.7.1/CUDA12.8 remains experimental and explicitly refused by PyTorch3D0.7.8 installer preflight"
   },
   "notes": [
     "GitHub CI contains no Colab GPU. A green status never certifies a working NVIDIA driver or trained model.",
