@@ -23,11 +23,15 @@ from pathlib import Path
 def run_logged(cmd: list[str], log: Path, env: dict | None=None, cwd: Path | None=None,
                timeout_s: int=3600) -> None:
     log.parent.mkdir(parents=True,exist_ok=True)
+    # Colab's inherited inline Matplotlib backend cannot be imported by an
+    # isolated micromamba env. Use a headless backend only in subprocesses.
+    child_env = dict(os.environ if env is None else env)
+    child_env['MPLBACKEND'] = 'Agg'
     with log.open('a',encoding='utf-8') as f:
         f.write('\n>>> '+' '.join(cmd)+'\n')
         f.flush()
         try:
-            p=subprocess.run(cmd,env=env,cwd=cwd,stdout=f,stderr=subprocess.STDOUT,
+            p=subprocess.run(cmd,env=child_env,cwd=cwd,stdout=f,stderr=subprocess.STDOUT,
                              timeout=timeout_s,check=False)
         except subprocess.TimeoutExpired as e:
             raise RuntimeError('INSTALL_STEP_TIMEOUT: '+cmd[0]+'; see '+str(log)) from e
