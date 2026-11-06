@@ -147,6 +147,18 @@ def install(profile: dict,source: Path,root: Path,log: Path, *, repair_partial: 
         if probe.returncode or json.loads(probe.stdout) != [[3,10],torch,expected_cuda]:
             raise RuntimeError('PARTIAL_ENV_IDENTITY_MISMATCH: preserve existing environment')
         print('REPAIRING_PACKAGES_IN_PLACE_NO_DELETION',flush=True)
+    # CUDA 12.1 native extensions need a supported host compiler.
+    # Resolve this BEFORE any multi-GB conda/pip install, not after failure
+    # while building simple-knn / fused-ssim on a paid T4.
+    if not (Path('/usr/bin/gcc-12').is_file() and
+            Path('/usr/bin/g++-12').is_file()):
+        if not (hasattr(os,'geteuid') and os.geteuid()==0 and shutil.which('apt-get')):
+            raise RuntimeError('LONGSPLAT_GCC12_REQUIRED_BEFORE_NATIVE_CUDA_INSTALL')
+        run_logged(['apt-get','update','-qq'],log,timeout_s=900)
+        run_logged(['apt-get','install','-y','gcc-12','g++-12'],log,timeout_s=1200)
+        if not (Path('/usr/bin/gcc-12').is_file() and
+                Path('/usr/bin/g++-12').is_file()):
+            raise RuntimeError('LONGSPLAT_GCC12_INSTALL_FAILED')
     mm=micromamba(root.parent/'tools'/'micromamba',log)
     env=effective_env(profile,root)
     if not partial:
@@ -183,8 +195,11 @@ def install(profile: dict,source: Path,root: Path,log: Path, *, repair_partial: 
     run_logged([str(py),'-m','pip','install','--index-url',wheels,
                 f'torch=={torch}',f'torchvision=={vision}'],log,env=env)
     constraints=root.parent/(root.name+'_torch_constraints.txt')
-    constraints.write_text(f'torch=={torch}\ntorchvision=={vision}\n')
+    constraints.write_text(f'torch=={torch}\ntorchvision=={vision}\nnumpy==1.26.4\n')
     env['PIP_CONSTRAINT']=str(constraints)
+    # Avoid NumPy 2.x ABI clashes with older Torch/PyTorch3D/compiled ops.
+    run_logged([str(py),'-m','pip','install','numpy==1.26.4'],
+               log,env=env,timeout_s=900)
     # This installs upstream Python deps, including their upstream PyTorch3D
     # Git reference. CUDA extension builds can fail on some GPUs/Colab images;
     # never declare readiness until actual import and CUDA computation pass.
