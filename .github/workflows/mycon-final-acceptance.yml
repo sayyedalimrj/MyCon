@@ -1,0 +1,119 @@
+name: MyCON final acceptance — offline safety gates
+
+on:
+  pull_request:
+    paths:
+      - 'repository/scripts/mycon_*'
+      - 'repository/pipeline/stage_04_5_cams_gs/**'
+      - 'repository/tests/test_mycon_*'
+      - 'repository/MyCON_FINAL_ACCEPTANCE.ipynb'
+      - '.github/workflows/mycon-final-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pinned PR source
+        uses: actions/checkout@v4
+      - name: Configure Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check Python syntax (no GPU needed)
+        run: |
+          python -m py_compile repository/scripts/mycon_thesis_one_run.py
+          python -m py_compile repository/scripts/mycon_longsplat_auto_run.py
+          python -m py_compile repository/scripts/mycon_longsplat_autoenv.py
+          python -m py_compile repository/scripts/mycon_gpu_autoprofile.py
+          python -m py_compile repository/scripts/mycon_mast3r_2view_smoke.py
+          python -m py_compile repository/scripts/mycon_colmap_gsplat.py
+          python -m py_compile repository/scripts/mycon_scene_qa.py
+          python -m py_compile repository/scripts/mycon_longsplat_data.py
+          python -m py_compile repository/scripts/mycon_colmap_gsplat_env.py
+          python -m py_compile repository/scripts/mycon_gsplat_resume_patch.py
+          python -m py_compile repository/scripts/mycon_gsplat_finish.py
+          python -m py_compile repository/scripts/mycon_audit_runtime.py
+          python -m py_compile repository/scripts/mycon_colmap_bim_adapter.py
+          python -m py_compile repository/pipeline/stage_04_5_cams_gs/longsplat_research.py
+          python -m py_compile repository/pipeline/stage_04_5_cams_gs/metric_anchor_gate.py
+          python -m py_compile repository/pipeline/stage_04_5_cams_gs/longsplat_depth_geometry.py
+      - name: Reject notebook syntax and malformed JSON
+        run: |
+          python - <<'PY'
+          import ast
+          import json
+          from pathlib import Path
+          book = json.loads(Path('repository/MyCON_FINAL_ACCEPTANCE.ipynb').read_text())
+          assert book['nbformat'] == 4
+          for cell in book['cells']:
+              if cell['cell_type'] == 'code':
+                  ast.parse(''.join(cell['source']))
+          print('NOTEBOOK_JSON_AND_PYTHON_SYNTAX_PASS')
+          PY
+      - name: Verify notebook source version is immutable and matches every executing script
+        run: |
+          PINNED=$(python - <<'PY'
+          import ast,json
+          from pathlib import Path
+          book=json.loads(Path('repository/MyCON_FINAL_ACCEPTANCE.ipynb').read_text())
+          source='\n'.join(''.join(c['source']) for c in book['cells'] if c['cell_type']=='code')
+          tree=ast.parse(source)
+          matches=[n.value.value for n in tree.body
+                   if isinstance(n,ast.Assign) and any(
+                       isinstance(t,ast.Name) and t.id=='PINNED_SOURCE_SHA'
+                       for t in n.targets) and isinstance(n.value,ast.Constant)]
+          assert len(matches)==1 and len(matches[0])==40
+          assert '"checkout","--detach",PINNED_SOURCE_SHA' in source
+          assert '"pull","--ff-only"' not in source
+          print(matches[0])
+          PY
+          )
+          git fetch --no-tags --depth=1 origin "$PINNED"
+          for source in mycon_colmap_gsplat.py mycon_colmap_gsplat_env.py mycon_gsplat_resume_patch.py mycon_gsplat_finish.py mycon_audit_runtime.py mycon_capture_safe.py mycon_thesis_one_run.py mycon_longsplat_autoenv.py mycon_scene_qa.py mycon_longsplat_data.py mycon_gpu_autoprofile.py; do
+            git show "$PINNED:repository/scripts/$source" | cmp - "repository/scripts/$source"
+          done
+          echo "CPU_GPU_PINNED_SCRIPTS_MATCH_EXACT_VERSION $PINNED"
+      - name: Run non-destructive acceptance unit tests
+        run: |
+          python -m unittest discover -s repository/tests -p test_mycon_thesis_one_run.py -v
+          python -m unittest discover -s repository/tests -p test_mycon_mast3r_2view_smoke.py -v
+          python -m unittest discover -s repository/tests -p test_mycon_nvidia_progress.py -v
+          python -m unittest discover -s repository/tests -p test_mycon_colmap_gsplat.py -v
+          python -m unittest discover -s repository/tests -p test_mycon_gsplat_resume_and_runtime.py -v
+          python -m unittest discover -s repository/tests -p test_mycon_audit_fixes.py -v
+          python -m unittest discover -s repository/tests -p test_mycon_scene_qa.py -v
+          python -m unittest discover -s repository/tests -p test_mycon_longsplat_data.py -v
+          python -m unittest discover -s repository/tests -p test_mycon_dependency_matrix.py -v
+          python -m unittest discover -s repository/tests -p test_mycon_colab_backend.py -v
+          python -m unittest discover -s repository/tests -p test_mycon_colmap_scene_cache_disk.py -v
+          python -m unittest discover -s repository/tests -p test_mycon_real_gpu_log_regressions.py -v
+      - name: Verify patch matches exact official gsplat v1.5.3 without GPU
+        run: |
+          curl --fail --location --retry 3 --silent --show-error \
+            https://raw.githubusercontent.com/nerfstudio-project/gsplat/v1.5.3/examples/simple_trainer.py \
+            --output /tmp/mycon-official-gsplat-v153.py
+          python - <<'PY'
+          import ast
+          import hashlib
+          import sys
+          from pathlib import Path
+          sys.path.insert(0,'repository/scripts')
+          from mycon_gsplat_resume_patch import patch_source
+          original=Path('/tmp/mycon-official-gsplat-v153.py').read_text()
+          patched=patch_source(original)
+          ast.parse(patched)
+          assert 'MYCON_RESUME_RESTORED_FULL_STATE_AFTER_STEP' in patched
+          assert 'MYCON_IMMUTABLE_HASH_VERIFIED_RECOVERY_SAVED' in patched
+          assert 'normalize_world_space: bool = False' in patched
+          assert 'MYCON_RECOVERY_VERIFIED' in patched
+          print('OFFICIAL_GSPLAT_V153_RESUME_PATCH_SYNTAX_PASS',hashlib.sha256(original.encode()).hexdigest())
+          PY
+      - name: Validate genuine depth-to-geometry and noncoplanar BIM anchor guards
+        run: |
+          python -m pip install -q numpy pillow pytest plyfile pyyaml
+          python -m pytest -q repository/tests/test_longsplat_research_backend.py
+          python -m unittest discover -s repository/tests -p test_mycon_colmap_bim_adapter.py -v
