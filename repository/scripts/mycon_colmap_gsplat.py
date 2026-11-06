@@ -639,11 +639,11 @@ def run(args: argparse.Namespace) -> dict:
         if not 90 <= original["full_video_duration_s"] <= 110:
             raise RuntimeError("WRONG_CAPTURE_EXPECT_96_SECOND_RECORDER")
         experiment=drive/"research_colmap_gsplat"/original["archive_sha256"][:16]/attempt
-        if args.mode=="geometry":
+        if args.mode in ("geometry","longsplat-dataset"):
             save_once(experiment/"verified_capture_cpu.json",original)
     experiment.mkdir(parents=True,exist_ok=True)
     require_source_lock(experiment,Path(__file__).resolve().parent,
-                        create=(args.mode=="geometry"))
+                        create=(args.mode in ("geometry","longsplat-dataset")))
     statusfile=experiment/"status.json"
     inputrec={"source_sha256":original["archive_sha256"],"method":"COLMAP+gsplat",
               "gsplat_tag":GSPLAT_TAG,"fps":EXPECTED_FPS,"width":EXPECTED_WIDTH,
@@ -651,6 +651,17 @@ def run(args: argparse.Namespace) -> dict:
     save_once(experiment/"input_contract.json",inputrec)
     scene=experiment/"scene"
     log=experiment/"logs"/"pipeline.log"
+    if args.mode=="longsplat-dataset":
+        # CPU-only independent input. Never mix with 2fps COLMAP scene or
+        # start the existing NVIDIA GPU training from this notebook.
+        if shutil.which("nvidia-smi") is not None:
+            raise RuntimeError("LONGSPLAT_DATA_PREPARATION_CPU_ONLY_AVOID_PAID_GPU")
+        from mycon_longsplat_data import prepare_longsplat_frames
+        return prepare_longsplat_frames(
+            local/"verified_recorder_input/raw_capture.mp4",
+            experiment/"longsplat_video8fps_512",log,
+            capture_sha256=original["archive_sha256"],
+            duration_s=float(original["full_video_duration_s"]))
     if args.mode in ("preflight","all"):
         # A GPU runtime must NEVER spend time doing CPU-only SfM because the
         # operator forgot to run the free CPU geometry step first.
@@ -845,7 +856,7 @@ def run(args: argparse.Namespace) -> dict:
 
 def main(argv=None) -> int:
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--mode",choices=("plan","verify","geometry","preflight","all","status"),default="preflight")
+    p.add_argument("--mode",choices=("plan","verify","longsplat-dataset","geometry","preflight","all","status"),default="preflight")
     p.add_argument("--capture",type=Path)
     p.add_argument("--drive-root",type=Path,default=DRIVE)
     p.add_argument("--local-root",type=Path,default=LOCAL)
