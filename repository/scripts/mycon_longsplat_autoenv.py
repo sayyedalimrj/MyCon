@@ -233,6 +233,10 @@ def install(profile: dict,source: Path,root: Path,log: Path, *, repair_partial: 
 
 def verify_cuda(py: Path,profile: dict,log: Path,env: dict):
     script=r'''import torch,importlib,json
+assert torch.__version__.split('+')[0] == EXPECTED_TORCH_VERSION, ('torch ABI', torch.__version__)
+assert torch.version.cuda == EXPECTED_CUDA_VERSION, ('torch CUDA', torch.version.cuda)
+import torchvision
+assert torchvision.__version__.split('+')[0] == EXPECTED_VISION_VERSION, ('torchvision ABI', torchvision.__version__)
 assert torch.cuda.is_available(),'GPU inaccessible to torch'
 c=torch.cuda.get_device_capability(0)
 assert c[0]*10+c[1]==EXPECTED_SM,(c,EXPECTED_SM)
@@ -253,7 +257,10 @@ from pytorch3d.ops import knn_points
 p=torch.rand((1,10,3),device='cuda');assert knn_points(p,p,K=1).dists.isfinite().all()
 torch.cuda.synchronize()
 print(json.dumps({'torch':torch.__version__,'cuda':torch.version.cuda,'sm':c,'extension_cuda_kernels':'PASS'}))
-'''.replace('EXPECTED_SM',str(profile['gpu']['sm']))
+'''.replace('EXPECTED_SM',str(profile['gpu']['sm'])) \
+   .replace('EXPECTED_TORCH_VERSION',repr(profile['torch_version'])) \
+   .replace('EXPECTED_VISION_VERSION',repr(profile['torchvision_version'])) \
+   .replace('EXPECTED_CUDA_VERSION',repr('12.8' if profile['torch_cuda_wheel']=='cu128' else '12.1'))
     run_logged([str(py),'-c',script],log,env=env,timeout_s=180)
     run_logged([str(py),str(Path(__file__).with_name('mycon_cuda_raster_smoke.py'))],log,env=env,timeout_s=180)
 
