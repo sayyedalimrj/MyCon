@@ -88,6 +88,7 @@ jobs:
           python -m unittest discover -s repository/tests -p test_mycon_scene_qa.py -v
           python -m unittest discover -s repository/tests -p test_mycon_longsplat_data.py -v
           python -m unittest discover -s repository/tests -p test_mycon_dependency_matrix.py -v
+          python -m unittest discover -s repository/tests -p test_mycon_real_gpu_log_regressions.py -v
       - name: Verify patch matches exact official gsplat v1.5.3 without GPU
         run: |
           curl --fail --location --retry 3 --silent --show-error \
