@@ -62,7 +62,12 @@ def choose_env(local: Path, profile: dict, diagnostics: Path,
     if explicit is not None:
         return explicit.expanduser().resolve(), 'USER_SELECTED_VALIDATED_BY_CONTROLLER'
     h = profile['gpu']
-    new_env = local / f"mycon_stabilized_sm{h['sm']}_{profile['torch_cuda_wheel']}"
+    # Include Torch ABI in the isolated prefix. Old 2.5.1 research
+    # environments/checkpoints remain untouched after the supported
+    # PyTorch3D 0.7.8 -> torch 2.4.1 compatibility correction.
+    pinned_torch = profile.get('torch_version')
+    torch_suffix = '_pt' + str(pinned_torch).replace('.', '') if pinned_torch else ''
+    new_env = local / f"mycon_stabilized_sm{h['sm']}_{profile['torch_cuda_wheel']}{torch_suffix}"
     legacy = local / f"longsplat_py310_sm{h['sm']}_{profile['torch_cuda_wheel']}"
     diagnostics.mkdir(parents=True, exist_ok=True)
     for root in (KNOWN_ENV, legacy, new_env):
