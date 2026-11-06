@@ -268,8 +268,17 @@ def local_training_scene(scene: Path, experiment: Path, local: Path) -> Path:
     required=sum((scene/"images"/n).stat().st_size for n in names)
     required+=sum((model/n).stat().st_size for n in ("cameras.bin","images.bin","points3D.bin"))
     available=shutil.disk_usage(local).free
-    if available < required+18*(1024**3):
-        raise RuntimeError(f"INSUFFICIENT_LOCAL_DISK_FOR_CUDA_AND_SCENE: need {(required+18*1024**3)/1024**3:.1f} GiB")
+    # On resumed T4, an already installed CUDA environment legitimately
+    # occupies the installation reserve. Count only missing scene files here.
+    # The environment installer independently checks its own 18 GiB reserve
+    # before a truly new installation, never while adopting a verified env.
+    remaining=sum((scene/"images"/n).stat().st_size for n in names
+                  if not (dest_images/n).is_file())
+    remaining+=sum((model/n).stat().st_size
+                   for n in ("cameras.bin","images.bin","points3D.bin")
+                   if not (dest_sparse/n).is_file())
+    if available < remaining + 512*(1024**2):
+        raise RuntimeError(f"INSUFFICIENT_LOCAL_DISK_FOR_MISSING_SCENE_CACHE: need {(remaining+512*1024**2)/1024**3:.1f} GiB")
     dest_images.mkdir(parents=True,exist_ok=True)
     dest_sparse.mkdir(parents=True,exist_ok=True)
     for name in names:
