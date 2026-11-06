@@ -93,6 +93,15 @@ def install(profile: dict,source: Path,root: Path,log: Path, *, repair_partial: 
     torch=profile['torch_version'];vision=profile['torchvision_version']
     wheel=profile['torch_cuda_wheel'];arch=profile['torch_cuda_arch']
     assert wheel in ('cu121','cu128')
+    # Currently pinned NVIDIA dependency includes PyTorch3D v0.7.8:
+    # upstream officially supports torch 2.1..2.4.1, not 2.5/2.7.
+    # Do not spend Colab GPU installation time on an unsupported ABI.
+    if (wheel,torch,vision)!=('cu121','2.4.1','0.19.1'):
+        raise RuntimeError(
+            'LONGSPLAT_PYTORCH3D_V078_UNSUPPORTED_TORCH_ABI: '
+            f'{torch}/{vision}/{wheel}; supported pinned profile is '
+            'torch2.4.1 torchvision0.19.1 CUDA12.1. '
+            'Use a new isolated environment; old checkpoints remain unchanged.')
     root=root.expanduser().resolve();root.parent.mkdir(parents=True,exist_ok=True)
     py=root/'bin/python'
     receipt=root.parent/(root.name+'_installed.json')
@@ -181,9 +190,13 @@ def install(profile: dict,source: Path,root: Path,log: Path, *, repair_partial: 
     # never declare readiness until actual import and CUDA computation pass.
     # Build against the installed Torch; PEP517 isolation cannot import it.
     # Reuse an official prebuilt scatter kernel when available for this wheel.
-    if wheel == 'cu121' and torch == '2.5.1':
-        run_logged([str(py),'-m','pip','install','--only-binary=:all:',
-                    'torch_scatter','-f','https://data.pyg.org/whl/torch-2.5.1+cu121.html'],log,env=env)
+    if wheel == 'cu121' and torch == '2.4.1':
+        # The PyG index is named for torch-2.4.0 but also serves 2.4.1;
+        # use ONLY binary CUDA121 wheels, never a silent source fallback.
+        run_logged([str(py),'-m','pip','install','--no-index','--no-deps',
+                    '--only-binary=:all:','torch_scatter','-f',
+                    'https://data.pyg.org/whl/torch-2.4.0+cu121.html'],
+                   log,env=env,timeout_s=900)
     run_logged([str(py),'-m','pip','install','iopath','fvcore'],log,env=env)
     requirements = source/'requirements.txt'
     pinned = root.parent/(root.name+'_requirements.txt')
