@@ -45,7 +45,7 @@ class LongSplatDataSafety(unittest.TestCase):
                     video, dataset, root / "log", capture_sha256="a"*64,
                     duration_s=10.0)
             self.assertIn("VERIFIED", reuse["status"])
-            (dataset / "images/frame_000042.jpg").write_bytes(b"altered")
+            (dataset / "images/frame_000042.jpg").write_bytes(b"Z"*1300)
             with self.assertRaisesRegex(RuntimeError, "FRAME_HASH_INTEGRITY_FAILED"):
                 m.prepare_longsplat_frames(
                     video, dataset, root / "log", capture_sha256="a"*64,
