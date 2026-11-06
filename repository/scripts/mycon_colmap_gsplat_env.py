@@ -193,8 +193,8 @@ def setup(prefix: Path, work: Path, source: Path, log: Path) -> Path:
         raise RuntimeError("GSPLAT_PINNED_BASELINE_REQUIRES_T4_SM75; got SM"+str(round(capability*10)))
     # Disk check before cloning CUDA toolkit / downloading multi-GB Torch wheels.
     available=shutil.disk_usage(str(work)).free if work.is_dir() else shutil.disk_usage(str(work.parent)).free
-    if available < 18*(1024**3):
-        raise RuntimeError(f"GPU_PREFLIGHT_LOCAL_DISK_LT_18_GIB: {available/1024**3:.1f} GiB")
+    # Existing verified/complete environments need no new multi-GB install:
+    # postpone the 18 GiB install budget check until after attempted reuse.
     py=prefix/"bin/python"
     receipt=prefix.parent/(prefix.name+"_verified.json")
     env=os.environ.copy()
@@ -255,6 +255,11 @@ def setup(prefix: Path, work: Path, source: Path, log: Path) -> Path:
         stamp.write_text(json.dumps({"status":"REPAIR_IN_PROGRESS_NO_DELETION",
                                      "prefix":str(prefix)},indent=2)+"\n")
         print("MYCON_ONCE_ONLY_REPAIRING_PARTIAL_ENV_WITHOUT_DELETION",flush=True)
+    # Real installation/repair may require multiple GB. Do not reject a
+    # ready verified environment merely because it has already used disk.
+    available=shutil.disk_usage(str(work)).free if work.is_dir() else shutil.disk_usage(str(work.parent)).free
+    if available < 18*(1024**3):
+        raise RuntimeError(f"GPU_NEW_INSTALL_LOCAL_DISK_LT_18_GIB: {available/1024**3:.1f} GiB")
     if not partial and not intent.is_file():
         intent.write_text(json.dumps({
             "pinned":"gsplat-v1.5.3-torch2.4.1-cu121-t4",
