@@ -25,12 +25,17 @@ def run_logged(cmd: list[str], log: Path, *, cwd: Path | None = None,
     import threading
     import time
     log.parent.mkdir(parents=True,exist_ok=True)
+    # In Colab, MPLBACKEND may point to the notebook-only inline backend.
+    # The isolated Python 3.10 training runtime has no matplotlib_inline.
+    # Set a headless backend for this child process only; do not alter Colab UI.
+    child_env = dict(os.environ if env is None else env)
+    child_env["MPLBACKEND"] = "Agg"
     with log.open("a",encoding="utf-8") as f:
         f.write("\n>>> "+json.dumps(cmd)+"\n")
         f.flush()
         if not live:
             try:
-                proc=subprocess.run(cmd,cwd=cwd,env=env,stdout=f,
+                proc=subprocess.run(cmd,cwd=cwd,env=child_env,stdout=f,
                                     stderr=subprocess.STDOUT,stdin=subprocess.DEVNULL,
                                     check=False,timeout=timeout_s)
             except subprocess.TimeoutExpired as exc:
@@ -40,7 +45,7 @@ def run_logged(cmd: list[str], log: Path, *, cwd: Path | None = None,
                 raise RuntimeError("COMMAND_FAILED(exit="+str(proc.returncode)+"): "+
                                    str(cmd[0])+"; log="+str(log))
             return
-        proc=subprocess.Popen(cmd,cwd=cwd,env=env,stdin=subprocess.DEVNULL,
+        proc=subprocess.Popen(cmd,cwd=cwd,env=child_env,stdin=subprocess.DEVNULL,
                               stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
                               text=True,errors="replace",bufsize=1)
         started=time.monotonic()
