@@ -28,6 +28,7 @@ jobs:
           python -m py_compile repository/scripts/mycon_thesis_one_run.py
           python -m py_compile repository/scripts/mycon_longsplat_auto_run.py
           python -m py_compile repository/scripts/mycon_longsplat_autoenv.py
+          python -m py_compile repository/scripts/mycon_gpu_autoprofile.py
           python -m py_compile repository/scripts/mycon_mast3r_2view_smoke.py
           python -m py_compile repository/scripts/mycon_colmap_gsplat.py
           python -m py_compile repository/scripts/mycon_scene_qa.py
@@ -72,7 +73,7 @@ jobs:
           PY
           )
           git fetch --no-tags --depth=1 origin "$PINNED"
-          for source in mycon_colmap_gsplat.py mycon_colmap_gsplat_env.py mycon_gsplat_resume_patch.py mycon_gsplat_finish.py mycon_audit_runtime.py mycon_capture_safe.py mycon_thesis_one_run.py mycon_longsplat_autoenv.py mycon_scene_qa.py mycon_longsplat_data.py; do
+          for source in mycon_colmap_gsplat.py mycon_colmap_gsplat_env.py mycon_gsplat_resume_patch.py mycon_gsplat_finish.py mycon_audit_runtime.py mycon_capture_safe.py mycon_thesis_one_run.py mycon_longsplat_autoenv.py mycon_scene_qa.py mycon_longsplat_data.py mycon_gpu_autoprofile.py; do
             git show "$PINNED:repository/scripts/$source" | cmp - "repository/scripts/$source"
           done
           echo "CPU_GPU_PINNED_SCRIPTS_MATCH_EXACT_VERSION $PINNED"
@@ -86,6 +87,7 @@ jobs:
           python -m unittest discover -s repository/tests -p test_mycon_audit_fixes.py -v
           python -m unittest discover -s repository/tests -p test_mycon_scene_qa.py -v
           python -m unittest discover -s repository/tests -p test_mycon_longsplat_data.py -v
+          python -m unittest discover -s repository/tests -p test_mycon_dependency_matrix.py -v
       - name: Verify patch matches exact official gsplat v1.5.3 without GPU
         run: |
           curl --fail --location --retry 3 --silent --show-error \
