@@ -178,8 +178,16 @@ def pinned_source(paths: dict[str, Path], *, fetch: bool) -> Path:
     rev = subprocess.check_output(["git","-C",str(repo),"rev-parse","HEAD"],text=True).strip()
     if "NVlabs/LongSplat" not in origin or rev != LONGSPLAT_COMMIT:
         raise RuntimeError("MYCON_OFFICIAL_LONGSPLAT_SOURCE_UNTRUSTED_OR_UNPINNED")
-    if not (repo/"train.py").is_file() or not (repo/"submodules/mast3r").is_dir():
-        raise RuntimeError("MYCON_LONGSPLAT_REQUIRED_SOURCES_MISSING")
+    # A Colab disconnect can interrupt a shallow submodule checkout.
+    # Re-run only the missing submodule fetch, never delete the pinned tree.
+    if not (repo/"train.py").is_file():
+        raise RuntimeError("MYCON_LONGSPLAT_PINNED_TRAINER_MISSING")
+    required = (repo/"submodules/mast3r"/"mast3r", repo/"submodules/simple-knn"/"setup.py")
+    if any(not p.exists() for p in required) and fetch:
+        run_command(["git","submodule","update","--init","--recursive","--depth","1"],
+                    paths["new"]/"logs"/"submodules_resume.log",cwd=repo,timeout=3600)
+    if any(not p.exists() for p in required):
+        raise RuntimeError("MYCON_LONGSPLAT_SUBMODULES_INCOMPLETE_RETRY_FETCH_SOURCE")
     return repo
 
 
