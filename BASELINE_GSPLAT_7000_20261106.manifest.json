@@ -1,0 +1,59 @@
+{
+  "schema": "mycon.frozen_baseline.v1",
+  "baseline_id": "MYCON-GSPLAT-7000-20261106",
+  "status": "FROZEN_REFERENCE_DO_NOT_RETRAIN_OR_OVERWRITE",
+  "recorded_at_utc": "2026-11-09",
+  "completed_at_utc": "2026-11-06",
+  "repo": "sayyedalimrj/MyCon",
+  "source_commit_pinned_for_cpu_gpu": "abc97337e5268d82e49cec4623c0cf5730386b19",
+  "note": "Actual Colab v9 execution included documented runtime-only hotfixes for gsplat local version, free-space re-use and MPLBACKEND=Agg. Frozen source commit alone is not byte-identical to patched process memory.",
+  "experiment": "MyDrive/MyCon_R4/research_colmap_gsplat/811c5a1323e45e2a/mycon_abi_audited_v6_20261106",
+  "capture_archive_sha256": "811c5a1323e45e2a4ef635eeda9f4335be06ef01ccb74ed3b431328400f862b6",
+  "colmap": {
+    "registered_images": 192,
+    "registered_images_sha256": "b5b6d85cc739ec29a853e9fa593dcc5b3ef2058e9c50a29636ac6593fa37cb94",
+    "sparse_points": 51894,
+    "sparse_points_sha256": "a735bdbcb15c58e5e9ccb0357f76ad7fbc969d6345e83084cd9fceba0330fbed",
+    "camera_file_sha256": "4630c9deee24da80337e0d8c70d46077c395c2c0ae24e693343839b06e4e1b14",
+    "scale": "arbitrary_SfM_units"
+  },
+  "model": {
+    "backend": "gsplat-v1.5.3",
+    "steps": 7000,
+    "last_step": 6999,
+    "gaussians": 1477725,
+    "source_checkpoint_sha256": "1eae847caa3a1e3bf390fb5f710b734bbfc865b68174c96688c628d7ead46b22",
+    "ply_sha256": "afd378d8849b31c1455c1f73e4faaac9cb5188b5d4502355bd2b2fdbcbaa64ec",
+    "video_sha256": "bfb3793b5908c005f6a5d3cfc3f00666b5f57be954856bda640162d6b920dcf5",
+    "checkpoint_url": "https://drive.google.com/file/d/1kUHTWhpjj5WCmAWTDNSbJpwKOeZgUBEx/view",
+    "ply_url": "https://drive.google.com/file/d/1ebbWKdP76PcxhXCfAtO8A-3DqgypPpXe/view",
+    "trajectory_video_url": "https://drive.google.com/file/d/1uEaMlMby0uEcfLp249zIw72Ia3YFztO7/view"
+  },
+  "validation": {
+    "PSNR_dB": 20.73590087890625,
+    "SSIM": 0.617592453956604,
+    "LPIPS": 0.5218572020530701,
+    "metric_geometry_validated": false,
+    "bim_element_comparison_validated": false,
+    "free_view_quality_accepted": false,
+    "checkpoint_and_ply_sha256_source": "canonical_evaluation.json"
+  },
+  "phase2": {
+    "new_tasks_passed": 11,
+    "total": 12,
+    "mesh_status": "BLOCKED_OPEN3D_NOT_INSTALLED",
+    "derived_depth_cloud_points": 104161,
+    "derived_cloud_metric": false,
+    "phase2_output_folder_url": "https://drive.google.com/drive/folders/1_pGh0pvNgeVOJQbCWWbZD4aoEUT45yG5"
+  },
+  "rules": [
+    "Never rewrite baseline model/checkpoint/Recorder files.",
+    "Next experiments must use separate attempt and output directories.",
+    "Do not treat 3DGS render as survey-grade mesh.",
+    "Before asserting improvement, use matching camera/view test suites and independent surveyed anchors."
+  ],
+  "evidence_file_urls": [
+    "https://drive.google.com/file/d/1I8Bi7im8xRy31Bk_-zrXaVJotO69TKHR/view",
+    "https://drive.google.com/file/d/1CnLW5mOZGLaynIEy6GxsKvsdrxKGat2F/view"
+  ]
+}
