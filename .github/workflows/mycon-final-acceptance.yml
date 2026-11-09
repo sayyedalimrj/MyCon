@@ -1,6 +1,9 @@
 name: MyCON final acceptance — offline safety gates
 
 on:
+  push:
+    branches:
+      - feature/novel-view-pose-longsplat-20261109
   pull_request:
     paths:
       - 'repository/scripts/mycon_*'
