@@ -34,6 +34,10 @@ def _deterministic_mock_observations(metrics: dict[str, Any], quality_gate: dict
 
 def run_vlm_qa(cfg: Any, *, force: bool = False, log_level: str = "INFO") -> dict[str, Any]:
     started = time.perf_counter()
+    provider = str(cfg_get(cfg, "vlm_qa.provider", cfg_get(cfg, "copilot.vlm.provider", "mock")))
+    if provider not in {"mock", "deterministic"}:
+        raise RuntimeError("Stage 7.5 performs deterministic QA only; requested real VLM provider "
+                           f"{provider!r} is unsupported here. Use Stage 10 for grounded VLM inference.")
     paths = stage75_paths(cfg)
 
     missing = missing_required_inputs(paths)
@@ -47,11 +51,12 @@ def run_vlm_qa(cfg: Any, *, force: bool = False, log_level: str = "INFO") -> dic
     max_render_points = cfg_int(cfg, "vlm_qa.max_render_points", 50000)
     render_paths = render_stage75_views(paths, metrics, quality_gate, max_points=max_render_points)
 
-    provider = str(cfg_get(cfg, "vlm_qa.provider", cfg_get(cfg, "copilot.vlm.provider", "mock")))
     evidence = {
         "stage": "stage_07_5_vlm_qa",
         "project": {"name": project_name(cfg), "run_id": run_id(cfg)},
         "provider": provider,
+        "vlm_inference_executed": False,
+        "qa_origin": "deterministic_metrics_and_mock_observations_only",
         "status": quality_gate["status"],
         "confidence": quality_gate["confidence"],
         "inputs": {
