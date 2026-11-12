@@ -101,7 +101,7 @@ def alignment_residuals(scan_anchor_m: Any, bim_anchor_m: Any) -> dict[str, Any]
         "registration_error_rmse_m": float(np.sqrt(np.mean(diff ** 2))),
         "registration_error_median_m": float(np.median(diff)),
         "registration_error_max_m": float(np.max(diff)),
-        "provenance": "independent_corresponding_anchors_after_alignment",
+        "provenance": "user_supplied_corresponding_anchors_independence_unverified",
     }
 
 
@@ -185,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
     a = p.parse_args(argv)
     if not a.assert_bim_world_meters:
         p.error("Refusing unverified units/frames; specify --assert-bim-world-meters")
-    if "geom-" not in a.output.parts:
+    if not any(part.startswith("geom-") and len(part) > 5 for part in a.output.parts):
         p.error("Output MUST live in a geom-* research run (runs/geom-.../geometry/)")
     try:
         result = run_file_comparison(
