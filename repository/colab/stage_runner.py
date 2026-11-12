@@ -160,7 +160,7 @@ STAGE_CATALOG: list[StageSpec] = [
         runner="run_stage",
         target="stage_07_5_vlm_qa",
         heavy=False,
-        description="Pre-BIM visual QA. Uses mock VLM unless a real one is provisioned.",
+        description="Pre-BIM deterministic/mock-only QA. Real local VLM is Stage 10.",
         outputs=["runs/**/reports/vlm_qa_summary.json", "data/vlm_qa/**/*.json"],
         deps=["stage_02_keyframes"],
     ),
@@ -245,12 +245,11 @@ STAGE_CATALOG: list[StageSpec] = [
 STAGES_BY_KEY: dict[str, StageSpec] = {s.key: s for s in STAGE_CATALOG}
 
 # Default selection when the user clicks "Run Colab-safe pipeline".
+# Video-only smoke pipeline. Do not run downstream VLM/schedule with missing
+# geometry, IFC and activity evidence as a misleading 'safe' default.
 COLAB_SAFE_DEFAULT_KEYS: tuple[str, ...] = (
     "stage_01_ingest",
     "stage_02_keyframes",
-    "stage_07_5_vlm_qa",
-    "stage_07_6_viewer_export",
-    "stage_11_schedule_variance",
 )
 
 # Full end-to-end reconstruction + BIM + VLM ordering. Stages that lack
