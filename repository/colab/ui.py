@@ -375,7 +375,7 @@ def build_ui(*, repo_root: Path, log: Optional[LogBuffer] = None,
                             log.text(tail=400), _stage_status_table(state))
             except (OSError, ValueError, TypeError) as exc:
                 return (f"Cannot verify metric anchors: {exc}",
-                        log.text(tail=400), _stage_status_table(state)
+                        log.text(tail=400), _stage_status_table(state))
         if not spec_keys:
             return "ERROR: select at least one stage", log.text(tail=400), _stage_status_table(state)
         if state.last_run_thread is not None and state.last_run_thread.is_alive():
