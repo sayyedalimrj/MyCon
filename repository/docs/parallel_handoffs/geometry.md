@@ -65,3 +65,53 @@
 7. C owns independent scientific benchmarking; A's point sampled diagnostics are not C's benchmark or construction completion metrics.
 
 **Overall status:** implemented and versioned on A branch; independent CPU math sanity 3/3 successful; new repo pytest + GPU/real-case execution **not verified**. PR should remain **Draft/unmerged** until coordinator approves the blockers.
+
+---
+
+# Model-agnostic geometry readiness — final A extension (2026-11-12)
+
+**Governing Integration ref:** `repository/docs/integration/model_agnostic_geometry_readiness_contract_20261112.md`. The latest PR #38 coordinator correction supersedes the earlier room-specific MAX/IFC proposal: **NO target reference, alignment, MAX/BIM/IFC import or new metric claim was used here.** This is an A-owned, create-only Stage-7 companion output. Previous Stage-8 A→B IFC-specific optional interface is retained and left untouched.
+
+## Actual new commits / changed paths
+
+- `repository/pipeline/stage_07_cleanup/comparison_ready.py` — Python CPU implementation of `mycon.comparison_ready_geometry.v1`; committed initially `30bf0075473ba7ad3743494aa8732a933809641b`, corrected `6c80c84aaaf89030bb6d383ce3ed18936f68970c`. Actual local module SHA-256: `82b82da594082ec6e8b4a53b0be437001bdaf532aa50e4317d48bf0ea219ecdc`.
+- `repository/pipeline/stage_07_cleanup/run_cleanup.py` — optional config gate and independent create-only companion processing after legacy Stage 7; non-destructive opt-in guards and fail-closed failure handling. Last implementation commit `2ec5567fd0eb01ad3ecfa3a292eef9b254dad6d1`.
+- `repository/tests/test_research_geometry_comparison_ready.py` — 12 isolated deterministic CPU tests; commit `0d82c76076983ca549c3d7b070ddc7933122e83a`.
+- `repository/docs/research_geometry/comparison_ready.md` — schema, CLI, input units, QA limitations, room synthetic reference and safety. Commit `5896b8a7768d20c012f581503b3fcf87c15c8bd6`.
+- `repository/docs/research_geometry/generate_comparison_ready_fixture.py` — explicitly labeled **synthetic** reproducibility script; commit `b651d1ccc78f5b456346e156a13a6319a92e4eb1`.
+- `repository/docs/research_geometry/comparison_ready_synthetic_qa_20261112.json` — machine-readable executed synthetic findings/hashes; commit `b352b9de829ba1dfea8828c741f7c6616809a99e`.
+- `repository/requirements-research-geometry.txt` — additive `trimesh` and optional `matplotlib` dependencies; commit `23f2796a9bf3b739219b0f293bae4395fd6eb748`.
+- This file updated in the current extension commit; **actual final PR SHA must be taken from PR #38 after this write**, not confused with the preceding file-specific commits.
+- **No changes made to B/C files, Stage 9/11, common code, integration branch, main, original video, checkpoint, camera/calibration or PLY. PR remains Draft and unmerged.**
+
+## Versioned output contract (new optional additive interface)
+
+Independent run ID **must** match `geom-ready-*`. Under `runs/<run_id>/geometry/`, produce `clean_cloud.ply` (original vertex RGB preserved if present), `clean_cloud.npy` (float64 XYZ), `normal_samples.npz`, `planes.json`, `edges.json`, `corners.json`, `comparison_ready.json`, `xy_geometry_preview.png`, `xyz_geometry_preview.png`. Every file is SHA-256 recorded in manifest and never overwritten.
+
+- Manifest: `schema_version=mycon.comparison_ready_geometry.v1`, unique run ID, source SHA-256/path, optional source camera-spec SHA, source frame, units (or explicit unknown), seed, versions, cleaning counters, thresholds, counts and nonmetric status.
+- Planes: normalized signed SVD-refitted [n_x,n_y,n_z,d], observed finite 3D/UV convex-hull patch, point indices, P95 fitting residual, deterministic run-local ID and signature.
+- Edges: pairwise non-parallel line intersections restricted to *both* local sets of observed points and their overlapping finite intervals. Unsupported/short segments omitted rather than invented.
+- Corners: nondegenerate trihedral solutions, three plane and optional three edge IDs, local support and finite-patch validation, repeatability across two point-density levels. Status `observed_supported`, `candidate_extrapolated`, or `unknown`. No `observed_supported` promotion when multiscale consistency fails.
+- Normal QA: up to 10,000 sampled PCA normals, local curvature quantiles, sign/orientation explicitly unverified. Operator-supplied gravity may classify surfaces as horizontal/vertical/sloped *candidates*; floor versus ceiling remains ambiguous absent semantic/height evidence.
+- Image reprojection: only user-provided verified calibrated COLMAP/OpenCV cameras in **same frame**; returns in-FOV candidates with occlusion unverified, or unknown/invalid. No camera/visibility ground truth fabricated.
+- RGB, checkpoint, mesh, depth, texture, camera and source input files stay read-only; the original source path/hash is referenced for later recovery.
+- `metric_scale_verified=false` and `registration_verified=false` remain **hard-coded**. This is not geometrically certified as-built measurement; no IFC `global_id`, physical progress or reference-fit is inferred.
+
+## Actual executed commands and results
+
+**CPU environment:** Linux x86_64, Python 3.13.5, NumPy 2.3.5, SciPy 1.17.0, pytest 9.0.2, trimesh 4.11.1, matplotlib 3.10.8; Open3D not installed, CUDA/GPU trainer not invoked.
+
+1. **Syntax/import on local A package copy:** `python -m py_compile .../comparison_ready.py` **exit 0**. Imports and execution of this new module were exercised locally. This is NOT full repository clone/CI.
+2. **Twelve synthetic tests:** `cd /mnt/data/mycon_ready_work/repository && PYTHONPATH=. pytest -q tests/test_research_geometry_comparison_ready.py` **exit 0, 12 passed, 0 failed, approximately 2 s**. Tests cover finite 3-plane/corner, color-preserving conservative cleaning, rotated and non-Manhattan geometry, missing corner support, parallel degeneracy, FOV projection uncertainty, actual binary PLY/NPY and hashed manifest generation, create-only immutability, arbitrary units, repeatability, density perturbation and occlusion. One isolated-layout `PytestUnknownMarkWarning` because local skeleton did not contain real repository pytest marker configuration (actual repo registers `lightweight`).
+3. **Full synthetic CLI end-to-end:** `cd /mnt/data/mycon_ready_work/repository && PYTHONPATH=. python -m pipeline.stage_07_cleanup.comparison_ready --input-ply /mnt/data/mycon_ready_work/local_run/synthetic_three_planes.ply --project-root /mnt/data/mycon_ready_work/local_run --run-id geom-ready-qa-20261112 --threshold .02 --min-plane-points 90 --trials 350`: **exit 0**. Input **2352**, clean **2352**, removed **0**, observed finite planes **3**, candidate supported edges **3**, observed-supported trihedral corner **1**. The source is **entirely synthetic** with added Gaussian noise std=0.001 *reconstruction units*.
+4. QA: 3 planar P95 residuals approx `0.002047/0.002031/0.001980` reconstruction units; candidate corner offset from known synthetic origin ~`0.000158` source units; multiscale drift ~`0.0001484` source units. These are **not metres**, and NOT field accuracy, precision, false-positive rate or publication metrics. Preview images inspected in 3D locally.
+5. Synthetic input SHA-256: `509bde00a3509600a4ef3ecd1a20b7fea7834ca99dea23e0263f51512e7fac63`. Output hashes are saved in `comparison_ready_synthetic_qa_20261112.json`; the source and eight output files plus code/tests are in the downloadable local inspection ZIP.
+
+## Field-data, scientific and release blockers (do not label 'passed')
+
+- **Real project PLY pipeline: blocked_missing_input.** The original `point_cloud_6999.ply` and `ckpt_6999_rank0.pt` each exceed the connected Drive 256 MiB download limit (~349 MB). This revision therefore did **not** execute full real-collected-cloud RANSAC/surface/corner extraction. Execute `comparison_ready` next to the source on its original Drive-mounted Colab/workstation for read-only processing.
+- **GPU gsplat replay, 3DGS-to-PC, SuGaR and 2DGS: not_executed.** Gaussian centres cannot be assumed to lie on engineering surfaces. The existing historical 181-frame video confirms prior render provenance only, not metric geom. No matching real geometry outputs or CUDA environment here.
+- **Full Git checkout Stage 3–8 regressions: blocked_network_and_dependencies.** Outbound GitHub DNS resolution fails in local container; only the authenticated GitHub connector can read/write the repo, and Open3D is absent. Do **not** label the 12 local tests as full-checkout regression or GPU validation. Stage-7 opt-in integration was source-integrated and reviewed but its full Open3D pipeline smoke was not executed here.
+- **Scientific external GT:** no independent surveyed dimensions, capture-session-separated test images, ICP survey anchors, room/full building correspondences, or ground-truth corners available. Thus real false-corner rate, registration RMSE, surface accuracy and scale remain `not_executed` / `unknown`.
+- **Known algorithmic limitations:** RANSAC is sensitive to threshold, finite convex hulls can bridge occluded holes, short/curved features need further verification, unoriented normals cannot imply actual wall/floor/ceiling identity, and multi-scale consistency at only two densities is diagnostic not independent GT.
+- **Merge blockers:** coordinator must run project-source checkout pytest + Stage3–8 smoke, source-side real PLY extraction + visual human QA + split/camera provenance checks, preserve B/C contract and verify hashes before approving PR #38. No automatic merge or release promotion.
