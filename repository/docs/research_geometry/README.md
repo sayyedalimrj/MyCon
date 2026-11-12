@@ -140,3 +140,69 @@ Optionally `--anchors-json /measured/independent_anchors.json` with `{"scan_alig
 - Historical logs show an actual gsplat render, but its outputs are not hosted as GitHub tracked code/artifacts and were not executed in this patch.
 - Not run here: GPU `ns-train`, gsplat restore/eval, VGGT inference, DUSt3R inference, actual Stage 8 registration on site data, independently validated novel-view rendering or BIM geometry accuracy.
 - No claim of GPU validation or ground-truth scientific metrics. The coordinator must verify full dependency installation, existing lightweight regression suite, frame units, original asset hashes, split segregation, and baseline vs variants before approving integration.
+
+
+## 7. Round 2 — Versioned A→B IFC element surface and camera contract
+
+Coordinator authority: `repository/docs/parallel_research_round2_contract_20261112.md` on **integration**; this geometry-branch extension is **opt-in**, additive, and never changes Stage 9/11/C outputs.
+
+**Producer:** `pipeline.stage_08_bim_eval.bim_geometry_evidence`.
+**Validator:** `pipeline.stage_08_bim_eval.bim_geometry_contract`.
+**Manifest schema:** `mycon.bim_geometry_evidence.v1`.
+**Output:** `runs/geom-<unique-id>/reports/bim_geometry_evidence.v1.json`.
+
+The immutable manifest references SHA-256-validated project-relative JSONL files:
+- `bim_surface_samples.v1.jsonl`: stable `sample_id`, `global_id`, `ifc_class`, `geometry_id`, `geometry_version`, `surface_id`, `triangle_id`, `xyz_m`, `normal`, `triangle_area_m2`, `ownership`, `candidate_global_ids`. One deterministic centroid per IFC-owned triangle, capped per element. Face/vertex offsets are checked. Actual coincident triangles with multiple different owners are explicitly ambiguous; overlapping AABBs are NEVER used for ownership.
+- `bim_camera_poses.v1.jsonl`: `view_id`, `capture_session_id`, image hash, intrinsics (3×3), resolution, verified BIM-world-to-camera 4×4, calibration QA. No synthetic or auto-assumed real camera.
+- `bim_element_visibility.v1.jsonl`: keys (`global_id`, `view_id`, session), `state` in `visible | occluded | out_of_fov | ambiguous | unknown`, nullable visible/eligible sample counts, method `raycast_zbuffer` only for metrically and camera-calibrated rays, QA. Unknown/null does NOT imply unfinished construction.
+
+The producer rejects existing output files and requires `geom-*` IDs. The versioned manifest includes IFC/scan/registration SHA256, transform, independent held-out survey-control evidence, QA gates, per-capture source provenance, geometry version and seed. A strict B consumer must **reject or leave observability unknown** if scale, independent survey controls, Stage8 registration gate, camera calibration/session, source hashes, or IDs fail. `registration_quality_gate.status` is deliberately fail-closed. Registration fitness / ICP self-fit alone cannot establish meter scale; survey controls marked `used_for_registration: false` are used for separate validation. For a COLMAP camera, use the supplied `colmap_camera_to_bim_w2c` helper to preserve proper rigid camera rotations under a Sim(3) scale; avoid naïve 4×4 composition. Physical progress and BOQ quantity evidence remain separate.
+
+### Stage8 config opt-in
+
+Use a **fresh** output run and set under `bim`:
+```yaml
+bim:
+  geometry_evidence_enabled: true
+  geometry_evidence_run_id: geom-site01-round2-001
+  geometry_evidence_cameras_json: /absolute/calibrated_camera_manifest.json
+  geometry_evidence_independent_controls_json: /absolute/independent_heldout_survey.json
+  geometry_evidence_control_rmse_limit_m: 0.05
+  geometry_evidence_code_commit: "<40-character-verified-commit-sha>"
+```
+Legacy `scan_aligned.ply`, `bim_reference.ply`, `bim_elements.jsonl`, and registration report paths are unchanged. Never run destructive `--force` against populated legacy outputs. Stage8 already blocks clearing populated aligned directories.
+
+### Standalone CPU inspection and execution
+
+From the `repository/` working directory, with existing *real* Stage8 IFC surface mesh and per-element metadata:
+```bash
+python -m pipeline.stage_08_bim_eval.bim_geometry_evidence \
+  --project-root /abs/mycon_project --run-id geom-site01-round2-001 \
+  --project-id site01 --ifc /read-only/site01.ifc \
+  --scan /read-only/scan_aligned.ply \
+  --registration-report /read-only/registration_report.json \
+  --transform-json /read-only/transform_scan_to_bim.json \
+  --mesh-ply /read-only/bim_reference_mesh.ply \
+  --elements-jsonl /read-only/bim_elements.jsonl --ifc-units METRE \
+  --camera-json /read-only/calibrated_cameras.json \
+  --controls-json /read-only/heldout_survey_controls.json \
+  --code-commit <actual-producer-commit-sha> --inspect
+# Remove --inspect to create a NEW, immutable runs/geom-*/reports/ artifact.
+python -m pipeline.stage_08_bim_eval.bim_geometry_contract \
+  --project-root /abs/mycon_project \
+  --manifest /abs/mycon_project/runs/geom-site01-round2-001/reports/bim_geometry_evidence.v1.json
+```
+`--mesh-json` with keys `vertices` and `triangles` replaces `--mesh-ply` only for CPU fixture testing, and requires a matching `--elements-jsonl` face/vertex partition. The survey JSON requires `source="independent_survey"`, `units="m"`, nonblank `survey_id`, at least three distinct `controls` each with `id`, `scan_xyz`, `bim_xyz`, `role="validation"`, `used_for_registration=false`; points cannot be registration fit controls. Camera JSON requires `coordinate_frame="bim_world"`, `units="m"`, per camera `view_id`, `capture_session_id`, `image_path`, pixel `width`/`height`, 3×3 `intrinsics`, `world_to_camera_4x4`, QA flags `calibrated=true`, `frame_verified=true`. Project root must match the run workspace, and input images must exist. The CLI does not fetch or fabricate any original data.
+
+### Safe synthetic fixture for B/C contract tests
+
+Checked in: `docs/research_geometry/fixture_project/geom-round2-unknown/bim_geometry_evidence.v1.json`, with adjacent `bim_surface_samples.v1.jsonl`, `bim_camera_poses.v1.jsonl`, `bim_element_visibility.v1.jsonl`. **This fixture is synthetic, contains no real IFC, survey or camera, and deliberately has `metric_scale_verified=false`.** It is intended to pass schema-only inspection and fail real observability acceptance:
+```bash
+python -m pipeline.stage_08_bim_eval.bim_geometry_contract \
+ --project-root docs/research_geometry/fixture_project \
+ --manifest docs/research_geometry/fixture_project/geom-round2-unknown/bim_geometry_evidence.v1.json \
+ --allow-unknown
+# Omit --allow-unknown to test that strict B consumption fails closed.
+```
+
+For read-only historical 3DGS/video QA, see `docs/research_geometry/round2_historical_video_qa_20261112.json`. Note: actual historical video hash and frame decode have been verified, **not the >256 MiB checkpoint/PLY tensors or 3DGS GPU execution**. Historical PSNR/SSIM/LPIPS are not independently held-out metrics. No real-site IFC/survey evidence or publication-ready 3D accuracy is reported.
