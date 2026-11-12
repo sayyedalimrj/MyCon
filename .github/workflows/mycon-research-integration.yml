@@ -53,6 +53,17 @@ jobs:
           path: MyCON_Integration_RC_CPU.zip
           if-no-files-found: error
           retention-days: 14
+      - name: Produce and verify official server handoff package
+        run: |
+          python scripts/export_server_handoff_zip.py --output dist/MyCON_Integration_Server_Handoff_RC.zip
+          python -m scripts.verify_server_handoff_zip dist/MyCON_Integration_Server_Handoff_RC.zip
+          sha256sum dist/MyCON_Integration_Server_Handoff_RC.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MyCON_Integration_Server_Handoff_RC
+          path: repository/dist/MyCON_Integration_Server_Handoff_RC.zip
+          if-no-files-found: error
+          retention-days: 14
       - name: Save exact commit and installed package versions
         if: always()
         run: |
