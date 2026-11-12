@@ -1,0 +1,50 @@
+name: MyCON Colab notebook runtime smoke
+on:
+  push:
+    branches:
+      - research/mycon-integration-20261112
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  colab-compat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    defaults:
+      run:
+        working-directory: repository
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install notebook and UI runtime (no GPU or model download)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=1.26,<2" "PyYAML>=6" "pytest>=8,<10" "gradio>=5,<7"
+      - name: Validate notebook generator, Python cell syntax, both Run-All paths, Gradio UI construction, resume
+        run: |
+          python -m pytest -q \
+            tests/test_final_colab_notebook_integration.py \
+            tests/test_colab_notebook_runall_dryrun.py \
+            tests/test_colab_stage_runner_and_models.py \
+            tests/test_colab_drive_and_config.py
+      - name: Static notebook run metadata
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from colab._build_notebook import NOTEBOOK
+          nb=json.loads(Path('MyCon_Colab_Pipeline.ipynb').read_text())
+          assert nb == NOTEBOOK
+          for i, c in enumerate(nb['cells']):
+              if c['cell_type'] == 'code':
+                  compile(''.join(c['source']), f'colab-cell-{i}', 'exec')
+          print('COLAB_NOTEBOOK_SMOKE_OK', len(nb['cells']), 'cells')
+          PY
