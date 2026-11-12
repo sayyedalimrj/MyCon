@@ -221,6 +221,16 @@ def install_python_dependencies(
     else:
         results.append(StepResult("requirements-core", False, f"missing: {core}"))
 
+    # Geometry readiness and independent benchmark dependencies (CPU).
+    # Required by opt-in Stage 7 comparison_ready and research scoring CLI.
+    for req in ("requirements-research-geometry.txt", "requirements-research-validation.txt"):
+        research = repo_root / req
+        if research.exists():
+            rc = _pip_install(["-r", str(research)], log=log)
+            results.append(StepResult(req, rc == 0, f"rc={rc}"))
+        else:
+            results.append(StepResult(req, False, f"missing: {research}"))
+
     # Step 3: requirements-da3 (heavy, transformers stack). Optional.
     if install_da3:
         da3 = repo_root / "requirements-da3.txt"
