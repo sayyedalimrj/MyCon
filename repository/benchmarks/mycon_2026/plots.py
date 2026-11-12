@@ -27,7 +27,7 @@ def render(result_dir: Path, *, metric="fscore_at_tau", task="reconstruction") -
         if lo is not None and hi is not None:
             ax.errorbar(i, val, yerr=[[max(0, val - lo)], [max(0, hi - val)]],
                         color="black", fmt="none", capsize=3)
-        ax.annotate(f"n={r['n_buildings']} buildings", (i, val),
+        ax.annotate(f"n={r.get('n_sites', 0)} independent sites / {r['n_buildings']} buildings", (i, val),
                     xytext=(0, 8), textcoords="offset points", ha="center", fontsize=8)
     ax.set_xticks(range(len(labels)), labels, rotation=20, ha="right")
     ax.set_ylabel(metric.replace("_", " "))
