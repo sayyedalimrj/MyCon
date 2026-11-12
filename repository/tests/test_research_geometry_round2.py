@@ -61,6 +61,17 @@ def test_overlap_coincidence_ambiguous_never_double_owned():
     assert all(x['global_id'] is None and x['ownership']=='ambiguous_coincident_ifc_surfaces' for x in a)
     assert all(x['candidate_global_ids']==['COLUMN_001','WALL_001'] for x in a)
 
+def test_shared_centroid_but_distinct_triangles_keep_source_ifc_ownership():
+    v,f,e=geometry()
+    # A vertical triangle and horizontal triangle share centroid (0,0,2),
+    # but not geometry. Centroid-only overlap detection is a false positive.
+    v[3:]=np.array([[0,-2,2],[0,1,1],[0,1,3]],dtype=float)
+    a,_=sample_ifc_triangles(v,f,e,'abc')
+    assert len(a)==2
+    assert {x['global_id'] for x in a}=={'WALL_001','COLUMN_001'}
+    assert all(x['ownership']=='ifc_triangle_face' for x in a)
+    assert len({x['sample_id'] for x in a})==2
+
 def test_visibility_real_rays_visible_and_occluded_on_cpu_fixture(tmp_path):
     v,f,e=geometry();samples,_=sample_ifc_triangles(v,f,e,'abc')
     *_,camera=inputs(tmp_path)
