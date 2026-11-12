@@ -70,6 +70,10 @@ class MappingEntry:
     weight: float = 1.0
     # Optional v2 provenance. Legacy three-argument constructors remain valid.
     weight_basis: str = ""
+    weight_approval_id: str = ""
+    weight_approved_by: str = ""
+    weight_approved_at_utc: str = ""
+    weight_document_sha256: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -207,6 +211,10 @@ def load_mapping_csv(path: Path | str) -> BimScheduleMapping:
             ifc_global_id=e,
             weight=parsed_weight,
             weight_basis=weight_basis,
+            weight_approval_id=(row.get("weight_approval_id") or "").strip(),
+            weight_approved_by=(row.get("weight_approved_by") or "").strip(),
+            weight_approved_at_utc=(row.get("weight_approved_at_utc") or "").strip(),
+            weight_document_sha256=(row.get("weight_document_sha256") or "").strip().lower(),
         ))
 
     by_activity: dict[str, list[MappingEntry]] = defaultdict(list)
