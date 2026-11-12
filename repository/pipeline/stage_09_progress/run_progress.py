@@ -249,6 +249,7 @@ def _fieldnames(*, include_bidirectional: bool = False, include_distance_ci: boo
         "evidence_calibration_ref", "quantity_audit_gate", "physical_progress_reason_codes",
         "geometry_adapter_schema", "geometry_adapter_valid", "geometry_manifest_sha256",
         "geometry_evidence_reason_codes", "geometry_conformance_state",
+        "geometry_quality_gate", "geometry_n_views",
     ])
     return base
 
