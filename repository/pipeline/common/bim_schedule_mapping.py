@@ -67,6 +67,8 @@ class MappingEntry:
     activity_id: str
     ifc_global_id: str
     weight: float = 1.0
+    # Optional v2 provenance. Legacy three-argument constructors remain valid.
+    weight_basis: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -185,7 +187,12 @@ def load_mapping_csv(path: Path | str) -> BimScheduleMapping:
         e = (row.get("ifc_global_id") or "").strip()
         if not a or not e:
             continue
-        entries.append(MappingEntry(activity_id=a, ifc_global_id=e, weight=_parse_weight(row.get("weight"))))
+        entries.append(MappingEntry(
+            activity_id=a,
+            ifc_global_id=e,
+            weight=_parse_weight(row.get("weight")),
+            weight_basis=(row.get("weight_basis") or "").strip().lower(),
+        ))
 
     by_activity: dict[str, list[MappingEntry]] = defaultdict(list)
     by_element: dict[str, list[MappingEntry]] = defaultdict(list)
