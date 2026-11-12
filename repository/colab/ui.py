@@ -238,7 +238,16 @@ def build_ui(*, repo_root: Path, log: Optional[LogBuffer] = None):
             video_path = retained(video_path, "video")
             ifc_path = retained(ifc_path, "ifc")
             schedule_path = retained(schedule_path, "schedule")
-            if not any((video_file, ifc_file, schedule_file)) and not (user_overrides_yaml or "").strip():
+            requested_overrides = yaml.safe_load(user_overrides_yaml or "") or {}
+            if not isinstance(requested_overrides, dict):
+                raise ValueError("Overrides must be a YAML mapping")
+            # After a site was actually processed, changing source files under
+            # the SAME run-id would make checkpoint completion untrustworthy.
+            completed = (state.checkpoint is not None and
+                         any(v == "ok" for v in state.checkpoint.status_map().values()))
+            if completed and any((video_file, ifc_file, schedule_file)):
+                raise ValueError("Completed run is immutable: use a NEW Run ID for different video/IFC/schedule")
+            if not any((video_file, ifc_file, schedule_file)) and not requested_overrides:
                 log.append("[ui] No new inputs/overrides: preserved current config without rewriting")
                 ok, detail = _config_manager.validate_effective_config(
                     config_path=paths.active_config_path, repo_root=repo_root
