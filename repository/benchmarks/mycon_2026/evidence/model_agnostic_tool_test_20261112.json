@@ -1,0 +1,76 @@
+{
+  "schema_version": "mycon.model_agnostic_tool_test.v1",
+  "recorded_date_utc": "2026-11-12",
+  "run_id": "bench-bimfree-fixture-20261112",
+  "environment": {
+    "python": "3.13.5",
+    "os": "Linux x86_64",
+    "cpu_count": 5,
+    "gpu": "not_measured",
+    "versions": {
+      "pytest": "9.0.2",
+      "numpy": "2.3.5",
+      "scipy": "1.17.0",
+      "matplotlib": "3.10.8",
+      "pillow": "12.3.0",
+      "scikit_image": "0.26.0"
+    }
+  },
+  "provenance": {
+    "local_source": "Prior C snapshot plus separately implemented local prototype. Local prototype test bytes are NOT identical to the newer GitHub model_agnostic.py module; newly committed GitHub model_agnostic.py tests have not run in a real checkout.",
+    "git_clone": "failed",
+    "git_clone_exit_code": 128,
+    "clone_error": "Could not resolve host: github.com"
+  },
+  "commands": [
+    {
+      "cmd": "python -m pytest -q tests/test_research_validation_metrics.py tests/test_research_validation_round2_contract.py tests/test_research_validation_geometry_ready.py",
+      "exit_code": 0,
+      "result": "42 passed, 0 failed on local prototype"
+    },
+    {
+      "cmd": "python -m benchmarks.mycon_2026.readiness --help",
+      "exit_code": 0,
+      "result": "local prototype"
+    },
+    {
+      "cmd": "python -m benchmarks.mycon_2026.readiness --manifest /mnt/data/work_mycon_c/cli_fixture_data/data/benchmark_manifest.json --output-root /mnt/data/work_mycon_c/out_bench --run-id bench-bimfree-fixture-20261112 --include-fixtures",
+      "exit_code": 0,
+      "result": "1 synthetic scored, 0 scientific"
+    },
+    {
+      "cmd": "python -m benchmarks.mycon_2026.readiness_plots --result-dir /mnt/data/work_mycon_c/out_bench/bench-bimfree-fixture-20261112",
+      "exit_code": 0,
+      "result": "figures all not_executed"
+    },
+    {
+      "cmd": "python -m benchmarks.mycon_2026.runner --help",
+      "exit_code": 0
+    }
+  ],
+  "sha256": {
+    "input_manifest": "7a881304f4f1dbf6c0a4803f03caf91cd0bc7dce897a5d6924ebddccdcda88a0",
+    "A_synthetic_comparison_ready": "1e10882a59bddcd29d159890d930463d19abbc5cbb45c9c89eccc6354ae06663",
+    "independent_synthetic_gt": "a2655a87b816a9abc4c746678a5df628f18b7bfd75162927776d5440de5527b1",
+    "cases_json": "7fe01ca5bd339efac0bc2c442d950af2ac37d34f6eedfc50bddf3f70d7769893",
+    "scientific_results_json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+    "stress_ledger_json": "96349d9802b56c2943224f71a602e8a034364ff51184ed1de72b1dbb770cecef"
+  },
+  "sample_count": {
+    "synthetic": 1,
+    "real": 0,
+    "independent_real_sites": 0,
+    "scientific_cells": 0
+  },
+  "status": {
+    "scorer_implementation": "implemented",
+    "local_prototype_unit_tests": "passed",
+    "github_committed_code_pytest": "not_executed",
+    "full_repository_checkout": "blocked_DNS",
+    "real_A_producer_artifact": "not_executed",
+    "real_colmap_or_GS_baselines": "not_executed",
+    "real_survey_GT": "not_executed",
+    "publication_ready": false
+  },
+  "note": "No synthetic numerical value may be used as field geometry accuracy or manuscript comparison."
+}
