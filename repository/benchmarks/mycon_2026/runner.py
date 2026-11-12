@@ -226,6 +226,21 @@ def _valid_anchor_partition(sample):
     return len(fit) == len(set(fit)) and len(heldout) == len(set(heldout)) and not set(fit) & set(heldout)
 
 
+def _verified_gt_digest(root, sample, gt_key):
+    """Require precommitted independent-GT hash; actual runtime hashing alone is insufficient."""
+    truth_map = sample.get("ground_truth") or {}
+    expected = (sample.get("ground_truth_sha256") or {}).get(gt_key)
+    if not isinstance(expected, str) or len(expected) != 64 or gt_key not in truth_map:
+        return False
+    if any(c not in "0123456789abcdef" for c in expected.lower()):
+        return False
+    try:
+        path = resolve_input(root, truth_map[gt_key])
+        return path.is_file() and sha256(path).lower() == expected.lower()
+    except (OSError, ValueError, TypeError):
+        return False
+
+
 def _pkg_version(name):
     try:
         return importlib.metadata.version(name)
@@ -285,6 +300,9 @@ def run(manifest_path: Path, output_root: Path, *, run_id: str, include_fixtures
                     and sha256(resolve_input(root, sample["source_path"])) == sample["source_sha256"]
                 ):
                     result["reason"] = "capture_missing_or_sha256_mismatch"
+                elif (sample.get("data_kind") == "real" and TASK_INPUTS[task][0] is not None
+                      and not _verified_gt_digest(root, sample, TASK_INPUTS[task][0])):
+                    result["reason"] = "missing_or_mismatched_independent_gt_sha256"
                 elif task == "registration" and sample.get("data_kind") == "real" and not _valid_anchor_partition(sample):
                     result["reason"] = "missing_disjoint_heldout_anchor_partition"
                 elif not isinstance(pred, dict):
