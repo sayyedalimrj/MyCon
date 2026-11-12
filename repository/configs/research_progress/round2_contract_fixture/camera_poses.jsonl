@@ -1,0 +1,1 @@
+{"capture_session_id": "SYNTH-SESSION-1", "image_height": 1080, "image_sha256": "4444444444444444444444444444444444444444444444444444444444444444", "image_width": 1920, "intrinsics": {"cx": 960.0, "cy": 540.0, "fx": 1200.0, "fy": 1200.0}, "pose_quality_ref": "SYNTH-POSE-QA-1", "view_id": "V1", "world_to_camera_4x4": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]}

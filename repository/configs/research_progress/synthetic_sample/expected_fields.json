@@ -1,0 +1,15 @@
+{
+  "fixture": "SYNTHETIC_EXPECTED_NOT_FIELD_MEASURED",
+  "schema_version": "mycon.scientific_progress.v2",
+  "activity_id": "A1",
+  "physical_progress_estimate": null,
+  "physical_progress_lower_bound_pct": 60.0,
+  "physical_progress_upper_bound_pct": 85.0,
+  "observability_ratio": null,
+  "evidence_confidence": null,
+  "planned_percent_complete": 50.0,
+  "schedule_variance_percent": null,
+  "schedule_variance_bounds_pct": [10.0, 35.0],
+  "schedule_variance_status": "unknown_evidence",
+  "important": "These bounds are NOT 95% confidence intervals."
+}

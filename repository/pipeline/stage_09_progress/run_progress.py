@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import html
 import math
 import time
@@ -18,6 +20,10 @@ from .io_utils import read_csv, read_json, read_jsonl, write_csv_atomic, write_j
 from .decision_enrichment import enrich_progress_decisions_from_config
 from .bidirectional_metrics import BidirectionalResult, compute_bidirectional
 from .uncertainty import bootstrap_ci
+from .point_assignment import assign_exclusive_points, nearest_element_distances
+from .evidence_metrics import element_scientific_fields, as_utc, valid_sha256
+from .geometry_evidence_adapter import load_geometry_evidence_manifest
+from .comparison_ready_adapter import load_comparison_ready_geometry, comparison_for_element
 
 from pipeline.common.determinism import derived_seed, project_seed
 
@@ -233,6 +239,27 @@ def _fieldnames(*, include_bidirectional: bool = False, include_distance_ci: boo
             "f_score_wilson_hi",
             "bidirectional_notes",
         ])
+    base.extend([
+        "assigned_scan_point_count", "ambiguous_scan_point_count",
+        "ambiguous_bim_point_count", "scan_candidate_point_count",
+        "physical_progress_estimate", "observability_ratio", "evidence_confidence",
+        "physical_progress_status", "geometry_evidence_state", "scientific_metrics_schema",
+        "planned_quantity", "executed_quantity", "quantity_verified", "quantity_source", "quantity_unit",
+        "observability_source", "evidence_confidence_source",
+        "planned_quantity_unit", "executed_quantity_unit",
+        "quantity_record_id", "quantity_approval_id", "quantity_approved_by",
+        "quantity_approved_at_utc", "quantity_as_of_utc", "quantity_document_sha256",
+        "evidence_calibration_ref", "quantity_audit_gate", "physical_progress_reason_codes",
+        "geometry_adapter_schema", "geometry_adapter_valid", "geometry_manifest_sha256",
+        "geometry_evidence_reason_codes", "geometry_conformance_state",
+        "geometry_quality_gate", "geometry_n_views",
+        "comparison_ready_schema", "comparison_ready_manifest_sha256",
+        "comparison_ready_valid", "comparison_coordinate_units",
+        "comparison_coordinate_frame", "comparison_metric_scale_verified",
+        "comparison_registration_verified", "comparison_ifc_quality_gate",
+        "comparison_feature_ids", "geometric_agreement_state",
+        "comparison_visibility_state", "comparison_evidence_reason_codes",
+    ])
     return base
 
 
@@ -339,6 +366,8 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
     bim_points = _points(bim)
 
     elements = read_jsonl(paths["bim_elements"])
+    # Stage 8 supplies only coarse AABBs, not per-element mesh ownership.
+    # Disjoint owners are safe; ambiguous overlaps are explicitly excluded.
     reg_report = read_json(paths["registration_report"])
     schedule_rows = read_csv(paths["schedule_csv"])
     map_rows = read_csv(paths["element_activity_map"])
@@ -350,6 +379,66 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
     partial_observed_threshold = cfg_float(cfg, "progress.partial_observed_threshold", 0.20)
     bbox_margin = cfg_float(cfg, "progress.element_bbox_margin_m", max(0.05, threshold * 2.0))
     reg_quality = _registration_confidence(reg_report, cfg)
+    scan_owners, scan_candidates = assign_exclusive_points(scan_points, elements, bbox_margin)
+    bim_owners, bim_candidates = assign_exclusive_points(bim_points, elements, bbox_margin)
+
+    # Optional A->B contract, always fail closed on missing trust anchors.
+    scientific_data_date = as_utc(cfg_get(cfg, "progress.data_date_utc"))
+    evidence_manifest_raw = cfg_get(cfg, "progress.geometry_evidence_manifest_json")
+    expected_hashes = (
+        cfg_get(cfg, "progress.expected_ifc_sha256"),
+        cfg_get(cfg, "progress.expected_scan_sha256"),
+        cfg_get(cfg, "progress.expected_registration_sha256"),
+    )
+    expected_geometry_project = cfg_get(cfg, "progress.expected_geometry_project_id")
+    manifest_inputs_valid = (
+        all(valid_sha256(value) for value in expected_hashes)
+        and bool(expected_geometry_project)
+    )
+    geometry_bundle = None
+    if evidence_manifest_raw and manifest_inputs_valid:
+        manifest_path = Path(str(evidence_manifest_raw))
+        if not manifest_path.is_absolute():
+            manifest_path = Path(str(cfg_get(cfg, "project.root", "."))) / manifest_path
+        geometry_bundle = load_geometry_evidence_manifest(
+            manifest_path,
+            project_root=Path(str(cfg_get(cfg, "project.root", "."))),
+            expected_global_ids={str(item.get("global_id", "")) for item in elements},
+            expected_ifc_sha256=expected_hashes[0],
+            expected_scan_sha256=expected_hashes[1],
+            expected_registration_sha256=expected_hashes[2],
+            expected_project_id=str(expected_geometry_project),
+        )
+
+    # Generic reconstruction plane/edge/corner package is an optional
+    # geometry diagnostic, not an input for physical-progress estimation.
+    comparison_ready_raw = cfg_get(cfg, "progress.comparison_ready_manifest_json")
+    comparison_ready_bundle = None
+    comparison_linkage = None
+    comparison_linkage_status = "not_supplied"
+    project_root = Path(str(cfg_get(cfg, "project.root", "."))).resolve()
+    if comparison_ready_raw:
+        comparison_ready_bundle = load_comparison_ready_geometry(
+            str(comparison_ready_raw),
+            project_root=project_root,
+            expected_project_id=cfg_get(cfg, "progress.comparison_ready_project_id"),
+        )
+    feature_mapping_raw = cfg_get(cfg, "progress.comparison_feature_ifc_mapping_json")
+    if feature_mapping_raw:
+        try:
+            p = Path(str(feature_mapping_raw))
+            if not p.is_absolute():
+                p = project_root / p
+            p = p.resolve()
+            expected_link_sha = cfg_get(cfg, "progress.expected_feature_mapping_sha256")
+            if not p.is_relative_to(project_root) or not valid_sha256(expected_link_sha):
+                raise ValueError("untrusted_mapping_path_or_missing_independent_sha256")
+            if hashlib.sha256(p.read_bytes()).hexdigest() != str(expected_link_sha).lower():
+                raise ValueError("feature_mapping_sha256_mismatch")
+            comparison_linkage = json.loads(p.read_text(encoding="utf-8"))
+            comparison_linkage_status = "independent_hash_verified"
+        except (OSError, ValueError, TypeError) as exc:
+            comparison_linkage_status = f"blocked:{type(exc).__name__}:{exc}"
 
     # O2: bidirectional accuracy/completeness/F-score plus bootstrap CIs.
     # Both flags default ON for new runs; either can be disabled to reproduce
@@ -366,14 +455,19 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
     all_deviation_values: list[float] = []
     undercovered: list[dict[str, Any]] = []
 
-    for element in elements:
+    for element_index, element in enumerate(elements):
         gid = str(element.get("global_id", ""))
         activity_row = gid_to_activity.get(gid, {})
         activity_id = activity_row.get("activity_id", "UNMAPPED")
         act = activity_info.get(activity_id, {})
         mn = element.get("bounds_min", [0, 0, 0])
         mx = element.get("bounds_max", [0, 0, 0])
-        target_pts = _select_points_in_bbox(bim_points, mn, mx, bbox_margin)
+        target_pts = bim_points[bim_owners == element_index]
+        scan_pts_for_element = scan_points[scan_owners == element_index]
+        scan_candidate_pts = _select_points_in_bbox(scan_points, mn, mx, bbox_margin)
+        bim_candidate_pts = _select_points_in_bbox(bim_points, mn, mx, bbox_margin)
+        ambiguous_scan_count = len(scan_candidate_pts) - len(scan_pts_for_element)
+        ambiguous_bim_count = len(bim_candidate_pts) - len(target_pts)
 
         # B2: when bbox-crop yields too few BIM points (small/sliver elements:
         # railings, mullions, mullion stops), the previous code silently fell back
@@ -390,7 +484,7 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
             in_tol = 0.0
             mean_dev = median_dev = p95_dev = float("nan")
         else:
-            distances = _nearest_distances(target_pts, scan, limit=50000)
+            distances = nearest_element_distances(target_pts, scan_pts_for_element)
             if len(distances) == 0:
                 coverage = 0.0
                 in_tol = 0.0
@@ -429,7 +523,57 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
             "confidence": f"{confidence:.6f}",
             "registration_confidence": reg_quality["confidence_label"],
             "notes": ";".join(element_notes),
+            "assigned_scan_point_count": len(scan_pts_for_element),
+            "ambiguous_scan_point_count": ambiguous_scan_count,
+            "ambiguous_bim_point_count": ambiguous_bim_count,
+            "scan_candidate_point_count": len(scan_candidate_pts),
         }
+        # Preserve raw audit provenance so Stage 11 can revalidate the
+        # quantity/visibility claim rather than trusting a rounded fraction.
+        evidence_metadata = {**element, **activity_row}
+        for audit_key in (
+            "planned_quantity", "executed_quantity", "quantity_verified",
+            "quantity_source", "quantity_unit", "observability_ratio",
+            "observability_source", "evidence_confidence", "evidence_confidence_source",
+            "planned_quantity_unit", "executed_quantity_unit",
+            "quantity_record_id", "quantity_approval_id", "quantity_approved_by",
+            "quantity_approved_at_utc", "quantity_as_of_utc", "quantity_document_sha256",
+            "evidence_calibration_ref",
+        ):
+            if audit_key in evidence_metadata:
+                row[audit_key] = evidence_metadata[audit_key]
+        independent_metadata = {
+            **evidence_metadata,
+            "synthetic_bim_fallback_used": reg_quality["synthetic_bim_fallback_used"],
+        }
+        first_pass = element_scientific_fields(
+            row, independent_metadata,
+            data_date=scientific_data_date, require_audit=True,
+        )
+        if geometry_bundle is not None:
+            row.update(geometry_bundle.for_element(gid, first_pass["physical_progress_estimate"]))
+        else:
+            row.update({
+                "geometry_adapter_valid": False,
+                "geometry_evidence_state": "unknown_manifest",
+                "observability_ratio": None,
+                "geometry_evidence_reason_codes": (
+                    "independent_geometry_hashes_or_project_id_missing"
+                    if evidence_manifest_raw else "manifest_not_supplied"
+                ),
+            })
+        row.update({
+            k: v for k, v in element_scientific_fields(
+                row, independent_metadata,
+                data_date=scientific_data_date, require_audit=True,
+            ).items() if k != "quantity_audit"
+        })
+        if comparison_ready_bundle is not None:
+            row.update(comparison_for_element(
+                comparison_ready_bundle, gid, linkage=comparison_linkage,
+                expected_ifc_sha256=expected_hashes[0],
+                expected_registration_sha256=expected_hashes[2],
+            ))
 
         # O2a: percentile-bootstrap CIs for distance summaries (mean, median).
         # Skipped when distances has < 2 finite samples; the CI columns are
@@ -462,7 +606,6 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
         # Wilson CIs. Computed against the bbox-cropped scan and BIM points so
         # the metric is element-local. Pure-Python; no Open3D dependency.
         if bidirectional_enabled:
-            scan_pts_for_element = _select_points_in_bbox(scan_points, mn, mx, bbox_margin)
             if len(target_pts) < 10 or len(scan_pts_for_element) == 0:
                 bid = compute_bidirectional(
                     scan_points=np.zeros((0, 3), dtype=np.float64),
@@ -580,6 +723,28 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
         },
         "element_count": len(element_rows),
         "activity_count": len(activity_rows),
+        "research_evidence_schema": "mycon.element_progress.v2",
+        "comparison_ready_diagnostics": (
+            {**comparison_ready_bundle.summary(),
+             "feature_mapping_load_status": comparison_linkage_status}
+            if comparison_ready_bundle is not None else None
+        ),
+        "geometry_contract": {
+            "manifest_provided": bool(evidence_manifest_raw),
+            "independent_input_hashes_present": manifest_inputs_valid,
+            "geometry_adapter_valid": bool(geometry_bundle and geometry_bundle.valid),
+            "reason_codes": list(geometry_bundle.reason_codes) if geometry_bundle is not None else [
+                "independent_geometry_hashes_or_project_id_missing"
+                if evidence_manifest_raw else "manifest_not_supplied"
+            ],
+        },
+        "overlap_assignment": {
+            "policy": "exclusive_bbox_or_unknown",
+            "unowned_scan_points": int(np.sum(scan_owners == -1)),
+            "ambiguous_scan_points": int(np.sum(scan_owners == -2)),
+            "ambiguous_bim_points": int(np.sum(bim_owners == -2)),
+            "limitation": "AABB ownership is insufficient for coincident/overlapping elements; Stage 8 per-element surface identity required",
+        },
         "mode_note": mode_note,
         "elapsed_sec": time.perf_counter() - t0,
     }

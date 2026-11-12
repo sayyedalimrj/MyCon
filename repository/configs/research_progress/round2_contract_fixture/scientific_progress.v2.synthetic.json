@@ -1,0 +1,191 @@
+{
+  "schema_version": "mycon.scientific_progress.v2",
+  "run_id": "progress-round2-20261112",
+  "data_date_utc": "2026-01-16T00:00:00+00:00",
+  "status": "unknown",
+  "fixture_type": "synthetic_only_not_real_site_evidence",
+  "units": {
+    "element_progress": "fraction_0_1",
+    "activity_and_project_percent": "percent_0_100",
+    "observability": "fraction_0_1",
+    "evidence_confidence": "unit_interval_quality_score"
+  },
+  "uncertainty_method": "deterministic_partial_identification_not_statistical_CI",
+  "legacy_warning": "v1 acceptance-score and Wilson interval are not physical progress estimates",
+  "n_activities": 1,
+  "overall": {
+    "physical_progress_estimate": null,
+    "physical_progress_lower_bound_pct": 60.00000000000001,
+    "physical_progress_upper_bound_pct": 85.00000000000001,
+    "planned_percent_complete": 50,
+    "schedule_variance_percent": null,
+    "observability_ratio": 0.375,
+    "evidence_confidence": null,
+    "schedule_variance_status": "unknown_evidence",
+    "activity_weights_approved": true,
+    "schedule_decision_quality_gate": "blocked"
+  },
+  "wbs": {
+    "1.1": {
+      "physical_progress_estimate": null,
+      "physical_progress_lower_bound_pct": 60.00000000000001,
+      "physical_progress_upper_bound_pct": 85.00000000000001,
+      "planned_percent_complete": 50,
+      "schedule_variance_percent": null,
+      "observability_ratio": 0.375,
+      "evidence_confidence": null,
+      "schedule_variance_status": "unknown_evidence",
+      "activity_ids": [
+        "ACT-WALL-01"
+      ],
+      "quality_gate": "blocked"
+    }
+  },
+  "activity_status_counts": {
+    "unknown_evidence": 1
+  },
+  "activities": [
+    {
+      "activity_id": "ACT-WALL-01",
+      "activity_name": "Synthetic wall installation",
+      "wbs_code": "1.1",
+      "physical_progress_estimate": null,
+      "physical_progress_status": "unknown",
+      "physical_progress_lower_bound_pct": 60.00000000000001,
+      "physical_progress_upper_bound_pct": 85.00000000000001,
+      "progress_interval_type": "partial_identification_not_confidence_interval",
+      "observability_ratio": 0.375,
+      "evidence_confidence": null,
+      "verified_quantity_weight_ratio": 0.75,
+      "planned_percent_complete": 50,
+      "baseline_audit": {
+        "baseline_id": "SYNTH-BL1",
+        "planned_as_of_utc": "2026-01-16T00:00:00+00:00",
+        "approved_at_utc": "2026-01-10T00:00:00+00:00",
+        "approved_by": "SYNTH-PLANNER",
+        "document_sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+        "source": "approved_baseline",
+        "planned_percent": 50
+      },
+      "provisional_linear_planned_percent": 48.38709677419355,
+      "planner_reported_percent": null,
+      "schedule_variance_percent": null,
+      "schedule_variance_bounds_pct": [
+        10.000000000000007,
+        35.000000000000014
+      ],
+      "schedule_variance_status": "unknown_evidence",
+      "schedule_decision_quality_gate": "blocked",
+      "element_weights_approved": true,
+      "mapping_weight_basis": "approved_boq",
+      "n_mapped_elements": 2,
+      "n_verified_quantity_elements": 1,
+      "warnings": [
+        "schedule_decision_blocked",
+        "unknown_physical_progress"
+      ],
+      "elements": [
+        {
+          "ifc_global_id": "0AbCdeFgHiJkLmNoPqRsTu",
+          "activity_id": "ACT-WALL-01",
+          "wbs_code": "1.1",
+          "physical_progress_estimate": 0.8,
+          "physical_progress_status": "verified_quantity",
+          "physical_progress_reason_codes": "",
+          "geometry_evidence_state": "partial_built_verified",
+          "geometry_conformance_state": "conforming",
+          "geometry_quality_gate": "limited_view_support_or_unassessed_geometry",
+          "geometry_n_views": 1,
+          "observability_ratio": 0.5,
+          "evidence_confidence": null,
+          "quantity_audit_gate": "pass",
+          "quantity_audit": {
+            "quantity_record_id": "SYNTH-Q1",
+            "quantity_approval_id": "SYNTH-APP1",
+            "quantity_approved_by": "SYNTH-REVIEWER",
+            "quantity_approved_at_utc": "2026-01-15T00:00:00+00:00",
+            "quantity_as_of_utc": "2026-01-16T00:00:00+00:00",
+            "quantity_document_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+            "quantity_source": "approved_measurement",
+            "quantity_unit": "m2",
+            "planned_quantity": 10,
+            "executed_quantity": 8
+          },
+          "mapping_weight": 3,
+          "weight_audit": {
+            "value": 3,
+            "basis": "approved_boq",
+            "approval_id": "SYNTH-BOQ1",
+            "approved_by": "SYNTH-REVIEWER",
+            "approved_at_utc": "2026-01-10T00:00:00+00:00",
+            "document_sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+          },
+          "geometry_manifest_sha256": "80768472c67c45291318bcfe30faca00ca01951ef93f9d3e2851b168f2e7681a"
+        },
+        {
+          "ifc_global_id": "1BcDefGhIjKlMnOpQrStUv",
+          "activity_id": "ACT-WALL-01",
+          "wbs_code": "1.1",
+          "physical_progress_estimate": null,
+          "physical_progress_status": "unknown",
+          "physical_progress_reason_codes": "quantity_missing_invalid_or_not_approved;quantity_provenance_incomplete",
+          "geometry_evidence_state": "occluded",
+          "geometry_conformance_state": "unknown",
+          "geometry_quality_gate": "limited_view_support_or_unassessed_geometry",
+          "geometry_n_views": 1,
+          "observability_ratio": 0,
+          "evidence_confidence": null,
+          "quantity_audit_gate": "blocked",
+          "quantity_audit": {
+            "quantity_record_id": null,
+            "quantity_approval_id": null,
+            "quantity_approved_by": null,
+            "quantity_approved_at_utc": null,
+            "quantity_as_of_utc": null,
+            "quantity_document_sha256": null,
+            "quantity_source": null,
+            "quantity_unit": null,
+            "planned_quantity": null,
+            "executed_quantity": null
+          },
+          "mapping_weight": 1,
+          "weight_audit": {
+            "value": 1,
+            "basis": "approved_boq",
+            "approval_id": "SYNTH-BOQ1",
+            "approved_by": "SYNTH-REVIEWER",
+            "approved_at_utc": "2026-01-10T00:00:00+00:00",
+            "document_sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+          },
+          "geometry_manifest_sha256": "80768472c67c45291318bcfe30faca00ca01951ef93f9d3e2851b168f2e7681a"
+        }
+      ],
+      "activity_weight_audit": {
+        "value": 100,
+        "basis": "approved_cost",
+        "approval_id": "SYNTH-WT1",
+        "approved_by": "SYNTH-PLANNER",
+        "approved_at_utc": "2026-01-10T00:00:00+00:00",
+        "document_sha256": "9999999999999999999999999999999999999999999999999999999999999999"
+      },
+      "activity_weight_quality_gate": "pass",
+      "activity_weight_reason_codes": []
+    }
+  ],
+  "quality_gates": {
+    "physical_progress": "blocked",
+    "approved_schedule": "pass",
+    "project_weights": "pass",
+    "schedule_decision": "blocked"
+  },
+  "provenance": {
+    "stage": "stage_11_schedule_variance",
+    "input_sha256": {
+      "schedule_csv": "f69680206e91ba94beb23455e032dfbfcbd443d5a60a435dd8ed82479989edb3",
+      "mapping_csv": "e71c73da8ee02e3843b2a8306b47b9e7dfbfbb1131ef246a641d0dde3d9539b7",
+      "element_metrics_csv": "fd52d7736a69519d6b80d6a4bc7ad84e62785ee597be32d50231ec1c65e2933a",
+      "baseline_csv": "f69680206e91ba94beb23455e032dfbfcbd443d5a60a435dd8ed82479989edb3"
+    },
+    "generated_at_utc": "2026-11-12T12:50:45+00:00"
+  }
+}

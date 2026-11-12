@@ -1,0 +1,27 @@
+{
+  "edges": [
+    {
+      "edge_id": "edge-1",
+      "endpoints": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          1
+        ]
+      ],
+      "plane_ids": [
+        "P-X",
+        "P-Y"
+      ],
+      "quality_gate": "pass",
+      "state": "observed_supported",
+      "support_count": 3
+    }
+  ],
+  "schema_version": "mycon.comparison_ready_geometry.v1"
+}

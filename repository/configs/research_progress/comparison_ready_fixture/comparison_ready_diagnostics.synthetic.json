@@ -1,0 +1,40 @@
+{
+  "audited_feature_counts": {
+    "corners": 0,
+    "edges": 1,
+    "planes": 4
+  },
+  "camera_qa_view_count": 1,
+  "clean_cloud_point_count": 4,
+  "comparison_gate": "blocked_without_independent_ifc_mapping",
+  "coordinate_frame": "reconstruction_local",
+  "diagnostic_quality_gate": "pass",
+  "feature_counts": {
+    "corners": 2,
+    "edges": 1,
+    "planes": 4
+  },
+  "manifest_sha256": "78484cde3c382aff1abb5efb0f4356944a907bde2b6a22bef0638ceed272fbd2",
+  "metric_scale_verified": false,
+  "physical_progress_estimate": null,
+  "provenance": {
+    "code_commit": "synthetic-fixture-only",
+    "config_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "seed": 0,
+    "software_versions": {
+      "python": "3.13"
+    },
+    "source_images_sha256": null,
+    "source_model_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "quality_metrics": {
+    "density_points_per_unit3": null,
+    "removed_point_ratio": 0,
+    "semantic_bim_overlap": null
+  },
+  "reason_codes": [],
+  "registration_verified": false,
+  "schema_version": "mycon.comparison_ready_geometry.v1",
+  "scientific_interpretation": "This is reconstruction geometry QA only. Features have no IFC ownership. No metric/BIM/physical-progress claim is authorized without independent gates.",
+  "units": "arbitrary"
+}

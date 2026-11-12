@@ -1,0 +1,42 @@
+{
+  "cameras": [
+    {
+      "capture_session_id": "S1",
+      "image_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "intrinsics": {
+        "cx": 32,
+        "cy": 32,
+        "fx": 100,
+        "fy": 100
+      },
+      "qa_verified": true,
+      "view_id": "view-1",
+      "world_to_camera_4x4": [
+        [
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          1
+        ]
+      ]
+    }
+  ]
+}

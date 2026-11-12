@@ -1,0 +1,41 @@
+{
+  "corners": [
+    {
+      "corner_id": "corner-candidate",
+      "plane_ids": [
+        "P-X",
+        "P-Y",
+        "P-Z"
+      ],
+      "quality_gate": "candidate",
+      "source_image_ids": [],
+      "state": "candidate_extrapolated",
+      "support_count": 1,
+      "xyz": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "corner_id": "corner-false",
+      "plane_ids": [
+        "P-X",
+        "P-X2",
+        "P-Z"
+      ],
+      "quality_gate": "pass",
+      "source_image_ids": [
+        "view-1"
+      ],
+      "state": "observed_supported",
+      "support_count": 5,
+      "xyz": [
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "schema_version": "mycon.comparison_ready_geometry.v1"
+}
