@@ -111,7 +111,7 @@ def _load_ifc_jsonl(path: Path):
     return rows
 
 
-def evaluate_one(task, root, gt, pred, *, tau_m, max_points, seed):
+def evaluate_one(task, root, gt, pred, *, tau_m, max_points, seed, heldout_anchor_ids=None):
     a, b = TASK_INPUTS[task]
     if (a is not None and a not in gt) or b not in pred:
         return "not_executed", "missing_ground_truth_or_prediction_path", None, []
@@ -146,7 +146,15 @@ def evaluate_one(task, root, gt, pred, *, tau_m, max_points, seed):
         metrics = reconstruction_metrics(p, t, tau_m=tau_m)
         metrics.update(n_pred_total=pn, n_truth_total=tn)
     elif task == "registration":
-        metrics = compare_anchors(read_csv(prediction), read_csv(truth))
+        predicted_anchors, truth_anchors = read_csv(prediction), read_csv(truth)
+        if heldout_anchor_ids is not None:
+            ids = set(heldout_anchor_ids)
+            for rows in (predicted_anchors, truth_anchors):
+                if not ids.issubset({r.get("anchor_id") for r in rows}):
+                    raise ValueError("Missing held-out survey anchor correspondence")
+            predicted_anchors = [r for r in predicted_anchors if r.get("anchor_id") in ids]
+            truth_anchors = [r for r in truth_anchors if r.get("anchor_id") in ids]
+        metrics = compare_anchors(predicted_anchors, truth_anchors)
     elif task == "ifc":
         rows = _load_ifc_jsonl(prediction) if prediction.suffix.lower() == ".jsonl" else read_csv(prediction)
         metrics = ifc_element_metrics(rows, read_csv(truth))
@@ -201,6 +209,21 @@ def _export_tables(out: Path, cases: list[dict], summary: list[dict], paired: li
     lines.extend(["", "## Interpretation", "",
                   "Do not claim a method outperforms another unless both methods are evaluated on exactly the same independent test cases and ground truth. Report denominators, failure rate and hardware. No results from fixture data enter thesis tables."])
     (out / "thesis_table.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _valid_anchor_partition(sample):
+    part = sample.get("anchor_partition")
+    if not isinstance(part, dict):
+        return False
+    fit = part.get("fit_anchor_ids")
+    heldout = part.get("heldout_tre_anchor_ids")
+    if not isinstance(fit, list) or not isinstance(heldout, list):
+        return False
+    if not fit or len(heldout) < 2:
+        return False
+    if any(not isinstance(x, str) or not x.strip() for x in fit + heldout):
+        return False
+    return len(fit) == len(set(fit)) and len(heldout) == len(set(heldout)) and not set(fit) & set(heldout)
 
 
 def _pkg_version(name):
@@ -262,13 +285,18 @@ def run(manifest_path: Path, output_root: Path, *, run_id: str, include_fixtures
                     and sha256(resolve_input(root, sample["source_path"])) == sample["source_sha256"]
                 ):
                     result["reason"] = "capture_missing_or_sha256_mismatch"
+                elif task == "registration" and sample.get("data_kind") == "real" and not _valid_anchor_partition(sample):
+                    result["reason"] = "missing_disjoint_heldout_anchor_partition"
                 elif not isinstance(pred, dict):
                     result["reason"] = "invalid_prediction_manifest"
                 else:
                     try:
                         status, reason, metrics, inputs = evaluate_one(
                             task, root, sample.get("ground_truth", {}), pred,
-                            tau_m=tau_m, max_points=max_points, seed=seed)
+                            tau_m=tau_m, max_points=max_points, seed=seed,
+                            heldout_anchor_ids=(sample["anchor_partition"]["heldout_tre_anchor_ids"]
+                                                if task == "registration" and sample.get("data_kind") == "real"
+                                                else None))
                         result.update(status=status, reason=reason, metrics=metrics)
                         provenance.extend(inputs)
                         # Explicitly forbid fixture outputs from joining scientific results.
