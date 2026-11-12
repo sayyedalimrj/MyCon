@@ -178,3 +178,62 @@ def test_reuse_existing_stage7_guided_planes_without_duplicate_ownership(tmp_pat
 
 
 pytestmark=pytest.mark.lightweight
+
+
+def test_edge_segments_do_not_bridge_large_unobserved_gap_with_integer_normals():
+    """Two disjoint locally observed regions cannot create a single fake long edge."""
+    xs = np.array([0., .1, .2, .3, 1.5, 1.6, 1.7, 1.8])
+    a = np.array([[x, 0., .04] for x in xs])
+    b = np.array([[x, .04, 0.] for x in xs])
+    points = np.vstack([a, b])
+    planes = [
+        {"plane_id": "pl-a", "normal": [0, 1, 0], "coefficients": [0, 1, 0, 0],
+         "support_indices": list(range(len(xs)))},
+        {"plane_id": "pl-b", "normal": [0, 0, 1], "coefficients": [0, 0, 1, 0],
+         "support_indices": list(range(len(xs), 2 * len(xs)))},
+    ]
+    edges = extract_edges(points, planes, radius=.08, min_support=2, min_length=.15)
+    spans = sorted(tuple(sorted([e["endpoints_xyz"][0][0], e["endpoints_xyz"][1][0]])) for e in edges)
+    assert len(spans) == 2
+    assert spans[0][1] <= .31
+    assert spans[1][0] >= 1.49
+    assert all(e["confirmed_physical_edge"] is False for e in edges)
+
+
+def test_multiple_segments_per_plane_pair_selects_locally_supported_corner():
+    """The last distant segment must not hide a supported corner near the origin."""
+    points = np.array([
+        [0., .02, .02], [0., .03, .01], [0., .01, .03],
+        [.02, 0., .02], [.03, 0., .01], [.01, 0., .03],
+        [.02, .02, 0.], [.03, .01, 0.], [.01, .03, 0.],
+    ])
+    basis = [([1, 0, 0], [0, 1, 0], [0, 0, 1]),
+             ([0, 1, 0], [1, 0, 0], [0, 0, 1]),
+             ([0, 0, 1], [1, 0, 0], [0, 1, 0])]
+    planes = []
+    for i, (normal, u, v) in enumerate(basis):
+        planes.append({"plane_id": f"p{i}", "normal": normal,
+                       "coefficients": [*normal, 0], "centroid": [0, 0, 0],
+                       "basis_u": u, "basis_v": v,
+                       "halfspaces_uv": [[1, 0, -1], [-1, 0, -1], [0, 1, -1], [0, -1, -1]],
+                       "support_indices": list(range(i * 3, i * 3 + 3))})
+    near = lambda id, parents, end: {"edge_id": id, "plane_ids": parents,
+                                    "endpoints_xyz": [[0., 0., 0.], end],
+                                    "length_reconstruction_units": .3}
+    edges = [near("e01", ["p0", "p1"], [0., 0., .3]),
+             near("e02", ["p0", "p2"], [0., .3, 0.]),
+             near("e12", ["p1", "p2"], [.3, 0., 0.]),
+             {"edge_id": "e01-far", "plane_ids": ["p0", "p1"],
+              "endpoints_xyz": [[0., 0., 1.5], [0., 0., 1.8]],
+              "length_reconstruction_units": .3}]
+    corners = extract_corners(points, planes, edges, radius=.1, min_support=2)
+    assert len(corners) == 1
+    assert corners[0]["state"] == "observed_supported"
+    assert corners[0]["edge_ids"] == ["e01", "e02", "e12"]
+
+
+def test_edge_detection_rejects_invalid_support_radius():
+    points = np.array([[0., 0., 0.], [1., 0., 0.], [0., 1., 0.]])
+    for bad in (float("nan"), float("inf"), 0., -1.):
+        with pytest.raises(ValueError):
+            extract_edges(points, [], radius=bad)
