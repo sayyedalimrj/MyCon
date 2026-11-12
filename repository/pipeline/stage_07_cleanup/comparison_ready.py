@@ -323,7 +323,8 @@ def _supported_edge_intervals(coords: np.ndarray, radius: float) -> list[tuple[f
     steps = np.diff(sorted_coords)
     positive = steps[steps > 1e-9]
     median_step = float(np.median(positive)) if len(positive) else 0.
-    gap_threshold = max(2.5 * radius, 3.0 * median_step)
+    # Cap the inferred spacing; two isolated endpoints are not a continuous observed edge.
+    gap_threshold = max(2.5 * radius, min(3.0 * median_step, 4.0 * radius))
     breaks = np.flatnonzero(steps > gap_threshold) + 1
     chunks = np.split(order, breaks)
     return [(float(coords[c].min()), float(coords[c].max()), c) for c in chunks if len(c)]
