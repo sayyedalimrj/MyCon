@@ -49,7 +49,12 @@ def test_notebook_targets_validated_integration_branch_and_checks_clone_state():
 
 
 def test_no_automatic_force_public_share_or_long_gpu_run():
-    assert "PUBLIC_SHARE = False" in _cell_text(10)
+    assert "GRADIO_PASSWORD = secrets.token_urlsafe(22)" in _cell_text(10)
+    assert "auth=(GRADIO_USERNAME, GRADIO_PASSWORD)" in _cell_text(10)
+    assert "share=True" in _cell_text(10)
+    assert "EXECUTION_MODE = 'ui'" in _cell_text(8)
+    assert "RUN_HEADLESS_PIPELINE = False" in _cell_text(15)
+    assert "ENABLE_REAL_VLM = False" in _cell_text(13)
     assert "RUN_FULL_PIPELINE = False" in _cell_text(15)
     assert "force=False" in _cell_text(15)
     assert "RUN_ID = 'mycon_site_01'" in _cell_text(8)
