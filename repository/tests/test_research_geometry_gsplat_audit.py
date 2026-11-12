@@ -76,4 +76,25 @@ def test_stage45_force_cannot_erase_original_artifacts(tmp_path: Path) -> None:
     assert important.read_bytes() == b"retain original"
 
 
+def test_stage45_opt_in_does_not_overwrite_historical_manifest(tmp_path: Path) -> None:
+    output = tmp_path / "data/cams_gs/site01"
+    output.mkdir(parents=True)
+    original = output / "train_manifest.json"
+    original.write_text('{"original": true}', encoding="utf-8")
+    cfg = {
+        "project": {"root": str(tmp_path), "run_id": "geom-safe", "name": "site01"},
+        "cams_gs": {
+            "output_dir": "data/cams_gs/site01",
+            "manifest_json": "data/cams_gs/site01/train_manifest.json",
+            "execute_training": True,
+            "research_resume_dir": "/read-only/example",
+            "research_run_id": "geom-safe",
+            "research_resume_approved": True,
+        },
+    }
+    with pytest.raises(Stage45CamsGsError, match="Refusing to overwrite legacy"):
+        run_cams_gs_prepare(cfg, force=False, log_level="ERROR")
+    assert original.read_text(encoding="utf-8") == '{"original": true}'
+
+
 pytestmark = pytest.mark.lightweight
