@@ -34,7 +34,7 @@ def _deterministic_mock_observations(metrics: dict[str, Any], quality_gate: dict
 
 def run_vlm_qa(cfg: Any, *, force: bool = False, log_level: str = "INFO") -> dict[str, Any]:
     started = time.perf_counter()
-    provider = str(cfg_get(cfg, "vlm_qa.provider", cfg_get(cfg, "copilot.vlm.provider", "mock")))
+    provider = str(cfg_get(cfg, "vlm_qa.provider", "mock"))
     if provider not in {"mock", "deterministic"}:
         raise RuntimeError("Stage 7.5 performs deterministic QA only; requested real VLM provider "
                            f"{provider!r} is unsupported here. Use Stage 10 for grounded VLM inference.")
