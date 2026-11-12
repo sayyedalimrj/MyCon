@@ -80,14 +80,16 @@ class GeometryEvidenceBundle:
                 'observability_ratio': None, 'observability_source': '',
                 'evidence_confidence': None, 'evidence_confidence_source': '',
                 'geometry_evidence_reason_codes': ';'.join(self.reason_codes),
-                'geometry_conformance_state': 'unknown'}
+                'geometry_conformance_state': 'unknown',
+                'geometry_n_views': 0, 'geometry_quality_gate': 'blocked'}
         if not self.valid:
             return base
         record = self.rows.get(global_id)
         if not record:
             return base
         base.update({k:record[k] for k in ('geometry_evidence_state','observability_ratio',
-                    'observability_source','geometry_evidence_reason_codes','geometry_conformance_state')})
+                    'observability_source','geometry_evidence_reason_codes','geometry_conformance_state',
+                    'geometry_n_views','geometry_quality_gate')})
         if record['geometry_evidence_state'] == 'observed_geometry_consistent' and physical_fraction is not None:
             if 0 < physical_fraction < 1:
                 base['geometry_evidence_state'] = 'partial_built_verified'
@@ -220,7 +222,12 @@ def load_geometry_evidence_manifest(
                              else 'observed_geometry_consistent')
                 else:
                     reasons.append('unverified_geometric_deviation')
+            n_views = len({r['view_id'] for r in records})
+            quality_gate = ('pass' if n_views >= 2 and conformance in {'conforming','nonconforming'}
+                            else 'limited_view_support_or_unassessed_geometry')
             result[gid] = {
+                'geometry_n_views':n_views,
+                'geometry_quality_gate':quality_gate,
                 'geometry_evidence_state':state,
                 'observability_ratio':ratio,
                 'observability_source':'raycast_zbuffer' if ratio is not None else '',
