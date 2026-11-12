@@ -1,0 +1,52 @@
+{
+  "schema": "mycon.geometry.historical_video_readonly_qa.v1",
+  "observed_at_utc": "2026-11-12",
+  "source_kind": "existing_drive_canonical_trajectory_mp4",
+  "file_name": "traj_6999.mp4",
+  "bytes": 4908569,
+  "sha256_computed": "bfb3793b5908c005f6a5d3cfc3f00666b5f57be954856bda640162d6b920dcf5",
+  "sha256_expected_from_canonical_evaluation": "bfb3793b5908c005f6a5d3cfc3f00666b5f57be954856bda640162d6b920dcf5",
+  "sha256_matches": true,
+  "video_decode": {
+    "tool": "opencv-python 4.13.0.92",
+    "frame_count_decoded": 181,
+    "frame_count_expected_historical": 181,
+    "width_px": 1280,
+    "height_px": 1152,
+    "fps": 30,
+    "complete_decode": true
+  },
+  "quality": {
+    "playback_video_file_decodable": true,
+    "independent_heldout_split_verified": false,
+    "novel_view_accuracy_verified": false,
+    "quantitative_psnr_ssim_lpips_recomputed": false,
+    "metric_scale_verified": false,
+    "bim_registration_verified": false,
+    "qualitative_note": "sample frames contain visible blur and distortions; no objective GT quality verdict"
+  },
+  "gpu": {
+    "available_for_this_execution": false,
+    "torch_version": "2.10.0+cpu",
+    "cuda_version": null,
+    "gsplat_installed": false,
+    "checkpoint_pt_read": false,
+    "ply_content_read": false
+  },
+  "checkpoint_and_ply": {
+    "checkpoint_bytes_drive_metadata": 348745862,
+    "ply_bytes_drive_metadata": 348744578,
+    "checkpoint_sha256_from_canonical_metadata_only": "1eae847caa3a1e3bf390fb5f710b734bbfc865b68174c96688c628d7ead46b22",
+    "ply_sha256_from_canonical_metadata_only": "afd378d8849b31c1455c1f73e4faaac9cb5188b5d4502355bd2b2fdbcbaa64ec",
+    "download_blocker": "Drive connector HTTP 413: each > 268435456 bytes; neither underlying artifact content independently verified"
+  },
+  "environment": {
+    "python": "3.13.5",
+    "os": "Linux x86_64",
+    "numpy": "2.3.5",
+    "scipy": "1.17.0",
+    "pytest": "9.0.2",
+    "open3d": "not_installed",
+    "ifcopenshell": "not_installed"
+  }
+}
