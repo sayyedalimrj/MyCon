@@ -195,6 +195,51 @@ def normal_diagnostics(points: Any, *, neighborhood_k: int = 18, max_samples: in
             "normals_sample_indices": ids, "normals_sample_xyz": normals}
 
 
+def reuse_stage7_planes(points: Any, stage7_planes_json: Path, *,
+                       threshold: float, min_points: int) -> list[dict]:
+    """Reuse Stage-7's existing guided RANSAC segmentation and each plane PLY.
+
+    Plane clouds may be voxel centroids, not identical source rows; attach to
+    nearest existing clean source point only within a documented tolerance.
+    No point may be assigned to multiple plane records.
+    """
+    pts = _xyz(points)
+    payload = json.loads(stage7_planes_json.read_text(encoding="utf-8"))
+    records = payload.get("planes")
+    if not isinstance(records, list) or not records:
+        raise ValueError("Provided Stage7 plane JSON has no reusable records")
+    tree = cKDTree(pts)
+    tolerance = max(threshold * 2, _spacing(pts) * 2)
+    already = set()
+    patches = []
+    for rec in records:
+        loc = Path(str(rec.get("cloud_path", "")))
+        if not loc.is_absolute():
+            loc = (stage7_planes_json.parent / loc).resolve()
+        if not loc.is_file() or loc.stat().st_size == 0:
+            continue
+        cloud, _ = _ply_read(loc)
+        dist, matched = tree.query(cloud, k=1, workers=1)
+        indices = np.unique(matched[dist <= tolerance])
+        indices = np.asarray([i for i in indices if int(i) not in already], dtype=int)
+        if len(indices) < min_points:
+            continue
+        patch = _make_patch(pts, indices, f"{len(patches)+1:03d}", threshold)
+        if patch is None:
+            continue
+        patch["source_stage7_plane_id"] = rec.get("plane_id")
+        patch["source_stage7_plane_label"] = rec.get("label")
+        patch["extraction_source"] = "reused_stage7_plane_cloud"
+        patches.append(patch)
+        already.update(int(i) for i in indices)
+    if not patches:
+        raise ValueError("No sufficiently supported observed Stage-7 plane clouds")
+    patches.sort(key=lambda a: tuple(np.round(a["centroid"], 5)))
+    for i, p in enumerate(patches, 1):
+        p["plane_id"] = f"pl-{i:03d}"
+    return patches
+
+
 def extract_planes(points: Any, *, threshold: float, min_points: int = 40,
                    max_planes: int = 12, trials: int = 250, seed: int = 42) -> list[dict]:
     """Deterministic RANSAC + SVD patch refinement and observed convex hull."""
@@ -458,7 +503,8 @@ def run_ready(source: Path, root: Path, run_id: str, *, threshold: float = 0.03,
               trials: int = 250, seed: int = 42, camera_json: Path | None = None,
               source_frame: str = "unknown_reconstruction_frame",
               source_units: str = "unknown_reconstruction_units", preview: bool = True,
-              max_feature_points: int = 125000, gravity_up: tuple[float, float, float] | None = None) -> dict:
+              max_feature_points: int = 125000, gravity_up: tuple[float, float, float] | None = None,
+              stage7_planes_json: Path | None = None) -> dict:
     if not RUN_ID.fullmatch(run_id):
         raise ValueError("Run ID must match geom-ready-*")
     source, root = source.resolve(), root.resolve()
@@ -473,10 +519,14 @@ def run_ready(source: Path, root: Path, run_id: str, *, threshold: float = 0.03,
         raise ValueError("max_feature_points must be >= min_plane_points")
     selection = np.linspace(0, len(pts) - 1, min(len(pts), max_feature_points), dtype=int)
     reduced = pts[selection]
-    patches = extract_planes(reduced, threshold=threshold, min_points=min_plane_points,
-                             max_planes=max_planes, trials=trials, seed=seed)
-    for patch in patches:
-        patch["support_indices"] = selection[np.asarray(patch["support_indices"], dtype=int)].tolist()
+    if stage7_planes_json is not None:
+        patches = reuse_stage7_planes(pts, stage7_planes_json, threshold=threshold,
+                                     min_points=min_plane_points)
+    else:
+        patches = extract_planes(reduced, threshold=threshold, min_points=min_plane_points,
+                                 max_planes=max_planes, trials=trials, seed=seed)
+        for patch in patches:
+            patch["support_indices"] = selection[np.asarray(patch["support_indices"], dtype=int)].tolist()
     if gravity_up is None:
         for patch in patches:
             patch["orientation_class"] = "unknown_unverified_gravity"
@@ -542,10 +592,12 @@ def run_ready(source: Path, root: Path, run_id: str, *, threshold: float = 0.03,
     manifest = {"schema_version": SCHEMA, "run_id": run_id, "created_at_utc": datetime.now(timezone.utc).isoformat(),
                 "source_sha256": digest(source), "source_path": str(source),
                 "source_camera_sha256": digest(camera_json) if camera_json else None,
+                "source_stage7_planes_sha256": digest(stage7_planes_json) if stage7_planes_json else None,
                 "source_frame": source_frame, "coordinate_frame": source_frame, "units": source_units,
                 "metric_scale_verified": False, "registration_verified": False,
                 "method": "finite_local_ransac_plane_patches_intersections_observation_gated",
                 "sampling_policy": "observed_cloud_only_no_unobserved_fill",
+                "plane_source": "reused_stage7_plane_clouds" if stage7_planes_json else "research_ransac",
                 "original_points": cleaning["original"], "clean_points": len(pts),
                 "cleaning": cleaning, "normal_quality": diagnostics,
                 "feature_sample_count": int(len(reduced)), "plane_count": len(patches), "edge_count": len(edges),
@@ -585,6 +637,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-preview", action="store_true")
     p.add_argument("--max-feature-points", type=int, default=125000)
     p.add_argument("--gravity-up", type=float, nargs=3)
+    p.add_argument("--stage7-planes-json", type=Path, help="Reuse existing Stage-7 guided RANSAC plane clouds")
     a = p.parse_args(argv)
     try:
         result = run_ready(a.input_ply, a.project_root, a.run_id, threshold=a.threshold,
@@ -593,7 +646,8 @@ def main(argv: list[str] | None = None) -> int:
                            camera_json=a.camera_json, source_frame=a.source_frame,
                            source_units=a.source_units, preview=not a.no_preview,
                            max_feature_points=a.max_feature_points,
-                           gravity_up=tuple(a.gravity_up) if a.gravity_up else None)
+                           gravity_up=tuple(a.gravity_up) if a.gravity_up else None,
+                           stage7_planes_json=a.stage7_planes_json)
     except (ValueError, OSError, RuntimeError, KeyError) as exc:
         print(json.dumps({"status": "failed_or_blocked", "error": str(exc)}))
         return 2
