@@ -240,6 +240,8 @@ def _fieldnames(*, include_bidirectional: bool = False, include_distance_ci: boo
         "ambiguous_bim_point_count", "scan_candidate_point_count",
         "physical_progress_estimate", "observability_ratio", "evidence_confidence",
         "physical_progress_status", "geometry_evidence_state", "scientific_metrics_schema",
+        "planned_quantity", "executed_quantity", "quantity_verified", "quantity_source", "quantity_unit",
+        "observability_source", "evidence_confidence_source",
     ])
     return base
 
@@ -451,9 +453,19 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
             "ambiguous_bim_point_count": ambiguous_bim_count,
             "scan_candidate_point_count": len(scan_candidate_pts),
         }
+        # Preserve raw audit provenance so Stage 11 can revalidate the
+        # quantity/visibility claim rather than trusting a rounded fraction.
+        evidence_metadata = {**element, **activity_row}
+        for audit_key in (
+            "planned_quantity", "executed_quantity", "quantity_verified",
+            "quantity_source", "quantity_unit", "observability_ratio",
+            "observability_source", "evidence_confidence", "evidence_confidence_source",
+        ):
+            if audit_key in evidence_metadata:
+                row[audit_key] = evidence_metadata[audit_key]
         row.update(element_scientific_fields(
             row,
-            {**element, **activity_row, "synthetic_bim_fallback_used": reg_quality["synthetic_bim_fallback_used"]},
+            {**evidence_metadata, "synthetic_bim_fallback_used": reg_quality["synthetic_bim_fallback_used"]},
         ))
 
         # O2a: percentile-bootstrap CIs for distance summaries (mean, median).
