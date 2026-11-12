@@ -20,7 +20,7 @@ SAFE_RUN = re.compile(r"^geom-[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 def validate_camera_path(data: dict) -> list[dict]:
     if data.get("frame_convention") != "colmap_opencv_world_to_camera":
-        raise ValueError("Camera paths must explicitly declare colmap_opencv_world_to_camera")
+        raise ValueError("Invalid or missing frame_convention: expected colmap_opencv_world_to_camera")
     cameras = data.get("cameras")
     if not isinstance(cameras, list) or not (1 <= len(cameras) <= 60):
         raise ValueError("Provide 1 to 60 novel camera poses")
