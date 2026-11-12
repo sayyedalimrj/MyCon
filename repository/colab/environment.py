@@ -44,7 +44,7 @@ APT_PACKAGES = [
 # Gradio + Jupyter widgets are not in any requirements*.txt because they
 # are Colab-only concerns.
 UI_PACKAGES = [
-    "gradio>=4.44,<5.0",
+    "gradio>=5.0,<7.0",
     "ipywidgets>=8.1",
 ]
 
