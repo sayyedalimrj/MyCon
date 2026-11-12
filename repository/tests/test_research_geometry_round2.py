@@ -148,3 +148,24 @@ def test_colmap_axis_reflection_is_rejected():
     w2c=np.eye(4);w2c[0,0]=-1.0
     with pytest.raises(ValueError):
         colmap_camera_to_bim_w2c(w2c,np.eye(4))
+
+
+def test_cli_cpu_mesh_json_real_subprocess(tmp_path):
+    import subprocess, sys, os
+    v,f,e=geometry();ifc,scan,report,controls,camera=inputs(tmp_path)
+    mesh=tmp_path/'mesh_fixture.json';mesh.write_text(json.dumps({'vertices':v.tolist(),'triangles':f.tolist()}))
+    elements=tmp_path/'elements.jsonl';elements.write_text(''.join(json.dumps(x)+'\n' for x in e))
+    transform=tmp_path/'transform.json';transform.write_text(json.dumps({'matrix_4x4_scan_to_bim':np.eye(4).tolist()}))
+    cmd=[sys.executable,'-m','pipeline.stage_08_bim_eval.bim_geometry_evidence',
+         '--project-root',str(tmp_path),'--run-id','geom-cli-smoke-001',
+         '--project-id','synthetic-site','--ifc',str(ifc),'--scan',str(scan),
+         '--registration-report',str(report),'--transform-json',str(transform),
+         '--mesh-json',str(mesh),'--elements-jsonl',str(elements),'--ifc-units','METRE',
+         '--camera-json',str(camera),'--controls-json',str(controls)]
+    proc=subprocess.run(cmd,capture_output=True,text=True,check=False)
+    assert proc.returncode==0,proc.stderr+proc.stdout
+    m=tmp_path/'runs/geom-cli-smoke-001/reports/bim_geometry_evidence.v1.json'
+    assert m.is_file()
+    assert validate_manifest(m,tmp_path)['valid']
+    second=subprocess.run(cmd,capture_output=True,text=True,check=False)
+    assert second.returncode==2 and 'Refusing to overwrite' in second.stdout
