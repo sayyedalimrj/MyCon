@@ -6,6 +6,9 @@ import csv
 import datetime as dt
 import json
 import math
+import os
+import time
+import importlib.metadata
 import platform
 import random
 import subprocess
@@ -20,6 +23,7 @@ from .metrics import (compare_anchors, ifc_element_metrics, progress_metrics,
 from .adapters import (load_stage9_v2, load_scientific_progress_v2,
                        activity_progress_metrics, project_progress_metrics)
 from .protocol import resolve_input, sha256, validate_manifest
+from .nvs import score_nvs_pairs
 
 TASK_INPUTS = {
     "reconstruction": ("reconstruction_gt_ply", "reconstruction_ply"),
@@ -29,6 +33,7 @@ TASK_INPUTS = {
     "progress": ("progress_csv", "element_metrics_csv"),
     "activity_progress": ("activity_progress_gt_csv", "scientific_progress_json"),
     "project_progress": ("project_progress_gt_csv", "scientific_progress_json"),
+    "nvs": ("nvs_reference_manifest_json", "nvs_prediction_manifest_json"),
     "performance": (None, "telemetry_json"),
 }
 
@@ -43,7 +48,7 @@ def _summary(measured: list[dict], seed: int, *, repetitions: int = 2000):
     for (method, task, metric), rows in sorted(by_key.items()):
         groups = defaultdict(list)
         for row in rows:
-            groups[row["building_key"]].append(row["value"])
+            groups[row["site_id"]].append(row["value"])
         values = [mean(v) for v in groups.values()]
         ci = [None, None]
         if len(values) >= 2:
@@ -52,7 +57,7 @@ def _summary(measured: list[dict], seed: int, *, repetitions: int = 2000):
             ci = [draws[int(0.025 * repetitions)], draws[min(repetitions - 1, int(0.975 * repetitions))]]
         result.append({"method": method, "task": task, "metric": metric,
                        "mean": mean(values), "ci95_low": ci[0], "ci95_high": ci[1],
-                       "n_buildings": len(values), "n_cases": len(rows),
+                       "n_sites": len(values), "n_buildings": len({r["building_key"] for r in rows}), "n_cases": len(rows),
                        "unit": "m" if metric.endswith("_m") else ("fraction" if "fraction" in metric or "fscore" in metric else "see_metric")})
     return result
 
@@ -77,7 +82,7 @@ def _paired_differences(measured: list[dict], seed: int, *, repetitions: int = 2
                 for case in shared:
                     if first[case]["building_key"] != second[case]["building_key"]:
                         raise ValueError("Paired benchmark building mismatch")
-                    by_building[first[case]["building_key"]].append(second[case]["value"] - first[case]["value"])
+                    by_building[first[case]["site_id"]].append(second[case]["value"] - first[case]["value"])
                 values = [mean(x) for x in by_building.values()]
                 if not values:
                     continue
@@ -89,7 +94,8 @@ def _paired_differences(measured: list[dict], seed: int, *, repetitions: int = 2
                 pairs.append({"task": task, "metric": metric, "reference_method": left,
                               "candidate_method": right, "candidate_minus_reference": mean(values),
                               "ci95_low": ci[0], "ci95_high": ci[1],
-                              "n_paired_cases": len(shared), "n_buildings": len(values),
+                              "n_paired_cases": len(shared), "n_sites": len(values),
+                              "n_buildings": len({first[c]["building_key"] for c in shared}),
                               "cohort_ids": shared, "claim_approved": False})
     return pairs
 
@@ -144,6 +150,9 @@ def evaluate_one(task, root, gt, pred, *, tau_m, max_points, seed):
     elif task == "ifc":
         rows = _load_ifc_jsonl(prediction) if prediction.suffix.lower() == ".jsonl" else read_csv(prediction)
         metrics = ifc_element_metrics(rows, read_csv(truth))
+    elif task == "nvs":
+        metrics = score_nvs_pairs(truth, prediction)
+        inputs.extend(metrics.pop("image_hashes"))
     elif task == "activity_progress":
         metrics = activity_progress_metrics(load_scientific_progress_v2(prediction), read_csv(truth))
     elif task == "project_progress":
@@ -157,22 +166,22 @@ def evaluate_one(task, root, gt, pred, *, tau_m, max_points, seed):
 
 def _export_tables(out: Path, cases: list[dict], summary: list[dict], paired: list[dict]):
     with (out / "comparison.csv").open("w", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["method", "task", "metric", "mean", "ci95_low", "ci95_high", "n_buildings", "n_cases", "unit"])
+        w = csv.DictWriter(f, fieldnames=["method", "task", "metric", "mean", "ci95_low", "ci95_high", "n_sites", "n_buildings", "n_cases", "unit"])
         w.writeheader()
         w.writerows(summary)
     lines = ["# MyCON benchmark — research tables", "",
              "Descriptive method results below may have UNMATCHED cohorts: do NOT compare rows directly.",
              "Empty CI = fewer than two independent buildings. Synthetic tests are excluded.", "",
-             "| Task | Method | Metric | Mean | 95% cluster CI | Buildings |", "|---|---|---|---:|---|---:|"]
+             "| Task | Method | Metric | Mean | 95% site-cluster CI | Sites |", "|---|---|---|---:|---|---:|"]
     for r in summary:
         ci = "—" if r["ci95_low"] is None else f"[{r['ci95_low']:.4g}, {r['ci95_high']:.4g}]"
-        lines.append(f"| {r['task']} | {r['method']} | {r['metric']} | {r['mean']:.4g} | {ci} | {r['n_buildings']} |")
+        lines.append(f"| {r['task']} | {r['method']} | {r['metric']} | {r['mean']:.4g} | {ci} | {r['n_sites']} |")
     lines.extend(["", "## Matched-cohort pairwise differences (candidate minus reference; no superiority inferred)", "",
-                  "| Task | Metric | Reference | Candidate | Delta | Cluster CI 95% | Paired cases | Buildings |",
+                  "| Task | Metric | Reference | Candidate | Delta | Site cluster CI 95% | Paired cases | Sites |",
                   "|---|---|---|---|---:|---|---:|---:|"])
     for p in paired:
         ci = "—" if p["ci95_low"] is None else f"[{p['ci95_low']:.4g}, {p['ci95_high']:.4g}]"
-        lines.append(f"| {p['task']} | {p['metric']} | {p['reference_method']} | {p['candidate_method']} | {p['candidate_minus_reference']:.4g} | {ci} | {p['n_paired_cases']} | {p['n_buildings']} |")
+        lines.append(f"| {p['task']} | {p['metric']} | {p['reference_method']} | {p['candidate_method']} | {p['candidate_minus_reference']:.4g} | {ci} | {p['n_paired_cases']} | {p['n_sites']} |")
     # Export LaTeX rows for manuscript inclusion. Absent CIs are explicit NA.
     def tex(s):
         return str(s).replace("\\", r"\textbackslash{}").replace("_", r"\_").replace("%", r"\%").replace("&", r"\&").replace("#", r"\#")
@@ -181,7 +190,7 @@ def _export_tables(out: Path, cases: list[dict], summary: list[dict], paired: li
     for r in summary:
         ci = "NA" if r["ci95_low"] is None else f"[{r['ci95_low']:.3g}, {r['ci95_high']:.3g}]"
         latex.append(" & ".join([tex(r["task"]), tex(r["method"]), tex(r["metric"]),
-                                 f"{r['mean']:.4g}", tex(ci), str(r["n_buildings"])]) + r" \\")
+                                 f"{r['mean']:.4g}", tex(ci), str(r["n_sites"])]) + r" \\")
     latex += [r"\bottomrule", r"\end{tabular}"]
     (out / "thesis_table.tex").write_text("\n".join(latex) + "\n", encoding="utf-8")
     lines.extend(["", "## Missing experiments / failures", "",
@@ -192,6 +201,23 @@ def _export_tables(out: Path, cases: list[dict], summary: list[dict], paired: li
     lines.extend(["", "## Interpretation", "",
                   "Do not claim a method outperforms another unless both methods are evaluated on exactly the same independent test cases and ground truth. Report denominators, failure rate and hardware. No results from fixture data enter thesis tables."])
     (out / "thesis_table.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _pkg_version(name):
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return "not_installed"
+
+
+def _git_head():
+    try:
+        result = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
+                                text=True, check=False, timeout=5,
+                                cwd=Path(__file__).resolve().parents[2])
+        return result.stdout.strip() if result.returncode == 0 else "unavailable"
+    except (OSError, subprocess.TimeoutExpired):
+        return "unavailable"
 
 
 def run(manifest_path: Path, output_root: Path, *, run_id: str, include_fixtures=False, seed=42,
@@ -209,11 +235,13 @@ def run(manifest_path: Path, output_root: Path, *, run_id: str, include_fixtures
     output_root.mkdir(parents=True, exist_ok=True)
     out = output_root / run_id
     out.mkdir(exist_ok=False)  # never overwrite old experiment results
+    started = time.perf_counter()
     cases, measured = [], []
     provenance = [{"role": "manifest", "path": str(manifest_path), "sha256": sha256(manifest_path)}]
     for sample in doc["samples"]:
         for method, pred in sorted(sample["methods"].items()):
             for task in TASK_INPUTS:
+                task_started = time.perf_counter()
                 result = {"data_kind": sample.get("data_kind", "unverified"), "sample_id": sample["id"], "site_id": sample["site_id"],
                           "building_id": sample["building_id"], "split": sample["split"],
                           "method": method, "task": task, "status": "not_executed"}
@@ -249,9 +277,13 @@ def run(manifest_path: Path, output_root: Path, *, run_id: str, include_fixtures
                                 if isinstance(value, (float, int)) and not isinstance(value, bool):
                                     measured.append({"method": method, "task": task, "metric": metric,
                                                      "value": value, "sample_id": sample["id"],
-                                                     "building_key": (sample["site_id"], sample["building_id"])})
+                                                     "building_key": (sample["site_id"], sample["building_id"]),
+                                                     "site_id": sample["site_id"]})
                     except (OSError, ValueError, RuntimeError, KeyError, TypeError, csv.Error) as e:
                         result.update(status="failed", reason=f"{type(e).__name__}: {e}")
+                result["evaluation_wall_time_sec"] = time.perf_counter() - task_started
+                result["exit_code"] = (0 if result["status"] == "evaluated" else
+                                       1 if result["status"] == "failed" else None)
                 cases.append(result)
     summary = _summary(measured, seed)
     paired = _paired_differences(measured, seed)
@@ -281,7 +313,11 @@ def run(manifest_path: Path, output_root: Path, *, run_id: str, include_fixtures
         "hardware_declaration": doc.get("hardware", {}),
         "software_declaration": doc.get("software_versions", {}),
         "n_test_samples": sum(s["split"] == "test" for s in doc["samples"]),
-        "statistical_unit": "site/building", "ci_method": "percentile_cluster_bootstrap_2000",
+        "statistical_unit": "site", "ci_method": "percentile_site_cluster_bootstrap_2000",
+        "benchmark_evaluation_wall_time_sec": time.perf_counter() - started,
+        "host_cpu_count": os.cpu_count(), "git_commit_sha": _git_head(),
+        "numpy_version": _pkg_version("numpy"), "scipy_version": _pkg_version("scipy"),
+        "pillow_version": _pkg_version("pillow"), "scikit_image_version": _pkg_version("scikit-image"),
         "scientific_status": "evaluated" if summary else "not_executed",
         "note": "fixture results are tool-only and never included in scientific comparison",
     }
