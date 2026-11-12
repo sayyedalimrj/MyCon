@@ -111,6 +111,114 @@ class ComparisonReadyBundle:
         }
 
 
+
+def _load_a_native_geometry(root: Path, manifest_file: Path, raw: bytes,
+                            manifest: dict[str, Any], expected_project_id: str | None) -> ComparisonReadyBundle:
+    """Read the exact A producer output without inventing missing BIM/survey fields.
+
+    This is a geometry-only compatibility path. It is intentionally impossible
+    to certify physical scale or IFC registration through this route.
+    """
+    if manifest.get("schema_version") != SCHEMA:
+        raise ValueError("invalid_a_native_schema")
+    if not str(manifest.get("run_id", "")).startswith("geom-ready-"):
+        raise ValueError("invalid_a_native_run_id")
+    if manifest.get("project_id") and expected_project_id and manifest["project_id"] != expected_project_id:
+        raise ValueError("mismatched_a_native_project_id")
+    if manifest.get("metric_scale_verified") is not False or manifest.get("registration_verified") is not False:
+        raise ValueError("a_native_unverified_scale_must_remain_false")
+    frame, units = manifest.get("coordinate_frame"), manifest.get("units")
+    if not isinstance(frame, str) or not frame.strip() or not isinstance(units, str) or not units.strip():
+        raise ValueError("a_native_frame_units_missing")
+    source_hash = manifest.get("source_sha256")
+    if not _hash(source_hash):
+        raise ValueError("a_native_source_hash_invalid")
+    outputs = manifest.get("outputs")
+    if not isinstance(outputs, dict):
+        raise ValueError("a_native_outputs_missing")
+    names = {"cloud": ("clean_cloud.ply", ".ply"), "array": ("clean_cloud.npy", ".npy"),
+             "planes": ("planes.json", ".json"), "edges": ("edges.json", ".json"),
+             "corners": ("corners.json", ".json")}
+    paths = {key: _sidecar(root, outputs.get(filename), ext, size_cap=4_000_000_000)[0]
+             for key, (filename, ext) in names.items()}
+    import numpy as np
+    cloud = np.load(paths["array"], allow_pickle=False, mmap_mode="r")
+    if cloud.ndim != 2 or cloud.shape[1] != 3 or len(cloud) < 3 or not np.issubdtype(cloud.dtype, np.number):
+        raise ValueError("invalid_native_cloud")
+    for start in range(0, len(cloud), 250_000):
+        if not np.isfinite(cloud[start:start + 250_000]).all():
+            raise ValueError("nonfinite_native_cloud")
+    with paths["cloud"].open("rb") as fh:
+        if fh.read(4) != b"ply\n":
+            raise ValueError("invalid_native_ply")
+    features: dict[str, dict[str, dict[str, Any]]] = {k: {} for k in FEATURES}
+    for name in FEATURES:
+        for row in _records(paths[name], name):
+            key = {"planes": "plane_id", "edges": "edge_id", "corners": "corner_id"}[name]
+            ident = row.get(key)
+            if not isinstance(ident, str) or not ident or ident in features[name]:
+                raise ValueError("duplicate_or_missing_native_feature_id")
+            r = dict(row)
+            if name == "planes":
+                n = r.get("normal")
+                boundary = r.get("finite_boundary_xyz")
+                indices = r.get("support_indices")
+                if (not _vec(n) or abs(sum(x*x for x in n) - 1) > 1e-3
+                        or not isinstance(boundary, list) or len(boundary) < 3
+                        or not all(_vec(v) for v in boundary)
+                        or not isinstance(indices, list) or len(indices) < 3
+                        or len(indices) != r.get("point_count")
+                        or any(not isinstance(i, int) or i < 0 or i >= len(cloud) for i in indices)
+                        or not _num(r.get("residual_p95_units"))):
+                    raise ValueError("invalid_native_finite_plane")
+                r["audit_state"] = "observed_supported"
+            elif name == "edges":
+                endpoints = r.get("endpoints_xyz")
+                parent = r.get("plane_ids")
+                support = r.get("support_count_per_plane")
+                if (not isinstance(endpoints, list) or len(endpoints) != 2
+                        or not all(_vec(v) for v in endpoints) or endpoints[0] == endpoints[1]
+                        or not isinstance(parent, list) or len(parent) != 2
+                        or len(set(parent)) != 2 or any(p not in features["planes"] for p in parent)
+                        or not isinstance(support, list) or len(support) != 2
+                        or any(not isinstance(k, int) or k < 0 for k in support)):
+                    raise ValueError("invalid_native_edge")
+                # A reports locally-supported *candidates*, not verified visible edges.
+                r["audit_state"] = "candidate_extrapolated"
+            else:
+                parent = r.get("plane_ids")
+                supports = r.get("support_near_corner_per_plane")
+                if (not _vec(r.get("xyz")) or not isinstance(parent, list) or len(parent) != 3
+                        or len(set(parent)) != 3 or any(p not in features["planes"] for p in parent)
+                        or not isinstance(supports, list) or len(supports) != 3
+                        or any(not isinstance(k, int) or k < 0 for k in supports)
+                        or r.get("state") not in STATES):
+                    raise ValueError("invalid_native_corner")
+                normals = [features["planes"][p]["normal"] for p in parent]
+                if abs(_det3(*normals)) < 1e-3:
+                    r["audit_state"] = "unknown"
+                    r["audit_reason"] = "degenerate_native_trihedral"
+                elif r["state"] == "observed_supported" and r.get("multiscale_confirmed") is True and min(supports) >= 2:
+                    r["audit_state"] = "observed_supported"
+                else:
+                    r["audit_state"] = "unknown"
+                    r["audit_reason"] = "corner_unverified_or_extrapolated"
+            features[name][ident] = r
+    original = manifest.get("original_points")
+    cleaned = int(len(cloud))
+    removed_ratio = ((original - cleaned) / original if isinstance(original, int) and original >= cleaned and original > 0 else 0.0)
+    provenance = {"source_model_sha256": source_hash, "producer": "A.native.comparison_ready",
+                  "source_stage7_planes_sha256": manifest.get("source_stage7_planes_sha256"),
+                  "source_camera_sha256": manifest.get("source_camera_sha256"),
+                  "source_run_id": manifest["run_id"], "source_frame": frame,
+                  "project_id": manifest.get("project_id"), "ifc_mapping_verified": False}
+    return ComparisonReadyBundle(True, (), hashlib.sha256(raw).hexdigest(), frame, units,
+                                 False, False, features, provenance, 0, cleaned,
+                                 {"removed_point_ratio": float(removed_ratio),
+                                  "source": "unregistered_A_geometry",
+                                  "corner_state_requires_independent_image_validation": True})
+
+
 def load_comparison_ready_geometry(manifest_path: str | Path, *, project_root: str | Path,
                                    expected_project_id: str | None = None) -> ComparisonReadyBundle:
     """Validate hashed reconstruction/feature artifacts, without requiring BIM.
@@ -132,6 +240,8 @@ def load_comparison_ready_geometry(manifest_path: str | Path, *, project_root: s
         manifest = json.loads(raw)
         if not isinstance(manifest, dict) or manifest.get("schema_version") != SCHEMA:
             raise ValueError("invalid_comparison_schema")
+        if isinstance(manifest.get("outputs"), dict) and "files" not in manifest:
+            return _load_a_native_geometry(root, manifest_file, raw, manifest, expected_project_id)
         if not str(manifest.get("run_id") or "").startswith("geom-ready-"):
             raise ValueError("invalid_geom_ready_run_id")
         if not manifest.get("project_id") or (expected_project_id and manifest["project_id"] != expected_project_id):
