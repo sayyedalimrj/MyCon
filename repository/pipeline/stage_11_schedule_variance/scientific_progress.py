@@ -152,6 +152,27 @@ def build_scientific_progress_report(
                 parsed=element_scientific_fields(recs[0],data_date=date,require_audit=True)
             if parsed['physical_progress_estimate'] is not None:
                 n_verified+=1
+            # Scientific geometry comparison is independent of the signed
+            # measured quantity. Never infer IFC construction from a generic
+            # plane/edge/corner count or an AABB overlap.
+            original = recs[0] if len(recs)==1 else {}
+            generic_valid = str(original.get('comparison_ready_valid') or '').lower() in ('true','1','yes')
+            metric_valid = str(original.get('comparison_metric_scale_verified') or '').lower() in ('true','1','yes')
+            register_valid = str(original.get('comparison_registration_verified') or '').lower() in ('true','1','yes')
+            map_gate = str(original.get('comparison_ifc_quality_gate') or '').lower()
+            geometry_trusted = generic_valid and metric_valid and register_valid and map_gate == 'pass'
+            agreement = (
+                str(original.get('geometric_agreement_state') or 'unknown').lower()
+                if geometry_trusted else 'unknown'
+            )
+            if agreement not in ('conforming','nonconforming'):
+                agreement = 'unknown'
+            visibility_state = (
+                str(original.get('comparison_visibility_state') or 'unknown').lower()
+                if geometry_trusted else 'unknown'
+            )
+            if visibility_state not in ('visible','occluded','out_of_fov'):
+                visibility_state='unknown'
             element_records.append({
                 'ifc_global_id':gid,'activity_id':aid,'wbs_code':activity.wbs_code,
                 'physical_progress_estimate':parsed['physical_progress_estimate'],
@@ -167,6 +188,27 @@ def build_scientific_progress_report(
                 'quantity_audit':parsed['quantity_audit'],
                 'mapping_weight':weight,'weight_audit':weight_audit,
                 'geometry_manifest_sha256': recs[0].get('geometry_manifest_sha256') if len(recs)==1 else None,
+                'comparison_ready_manifest_sha256': original.get('comparison_ready_manifest_sha256') if generic_valid else None,
+                'comparison_coordinate_units':original.get('comparison_coordinate_units') if generic_valid else None,
+                'comparison_coordinate_frame':original.get('comparison_coordinate_frame') if generic_valid else None,
+                'comparison_metric_scale_verified':metric_valid,
+                'comparison_registration_verified':register_valid,
+                'registration_confidence':original.get('registration_confidence') or None,
+                'comparison_ifc_quality_gate':'pass' if geometry_trusted else 'blocked',
+                'comparison_feature_ids':original.get('comparison_feature_ids') if geometry_trusted else '[]',
+                'geometric_agreement_state':agreement,
+                'comparison_visibility_state':visibility_state,
+                'comparison_evidence_reason_codes':original.get('comparison_evidence_reason_codes') or
+                    ('unverified_metric_registration_or_feature_ifc_mapping' if not geometry_trusted else ''),
+                'evidence_presence':{
+                    'signed_as_of_quantity': parsed['physical_progress_estimate'] is not None,
+                    'approved_mapping_weight':weight is not None,
+                    'generic_geometry_package':generic_valid,
+                    'verified_feature_ifc_linkage':geometry_trusted,
+                    'audited_element_observability':parsed['observability_ratio'] is not None,
+                    'calibrated_quality_score':parsed['evidence_confidence'] is not None,
+                },
+                'physical_progress_formula':'executed_quantity / planned_quantity' if parsed['physical_progress_estimate'] is not None else None,
             })
         valid_weights = (bool(entries) and len(seen_gid)==len(entries)
                          and len(element_weights)==len(entries) and len(element_bases)==1)
@@ -209,6 +251,9 @@ def build_scientific_progress_report(
             'schedule_variance_status':st,'schedule_decision_quality_gate':'pass' if not st.startswith('unknown') else 'blocked',
             'element_weights_approved':valid_weights,'mapping_weight_basis':next(iter(element_bases)) if valid_weights else None,
             'n_mapped_elements':len(entries),'n_verified_quantity_elements':n_verified,
+            'n_comparison_ready_geometry_elements':sum(e['evidence_presence']['generic_geometry_package'] for e in element_records),
+            'n_verified_ifc_feature_link_elements':sum(e['evidence_presence']['verified_feature_ifc_linkage'] for e in element_records),
+            'physical_progress_aggregation_formula':'100 * sum(approved_weight * verified_fraction) / sum(approved_weight)' if valid_weights and actual is not None else None,
             'warnings':sorted(set(warnings)),'elements':element_records,
         }
         activity_records.append(row)
@@ -243,6 +288,7 @@ def build_scientific_progress_report(
                  'observability':'fraction_0_1','evidence_confidence':'unit_interval_quality_score'},
         'uncertainty_method':'deterministic_partial_identification_not_statistical_CI',
         'legacy_warning':'v1 acceptance-score and Wilson interval are not physical progress estimates',
+        'comparison_geometry_warning':'Reference-agnostic structural features are geometry diagnostics only; no progress can be inferred from feature counts, density, edges or corners.',
         'n_activities':len(activity_records), 'overall':overall,'wbs':wbs,
         'activity_status_counts':dict(Counter(a['schedule_variance_status'] for a in activity_records)),
         'activities':activity_records,
