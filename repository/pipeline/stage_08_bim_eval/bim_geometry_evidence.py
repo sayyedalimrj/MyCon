@@ -152,7 +152,11 @@ def sample_ifc_triangles(vertices: Any, faces: Any, elements: list[dict], ifc_ha
     # ownership. Mark it ambiguous, do NOT duplicate positive ownership.
     by_position = {}
     for s in samples:
-        key = tuple(round(x, 6) for x in s["xyz_m"])
+        # Two distinct triangles can share a centroid (e.g. crossing wall/beam).
+        # Only mark *geometrically coincident triangles* ambiguous, never a
+        # coincident centroid from two different surfaces.
+        triangle = v[f[s["triangle_id"]]]
+        key = tuple(sorted(tuple(round(float(x), 6) for x in vertex) for vertex in triangle))
         by_position.setdefault(key, []).append(s)
     for overlapping in by_position.values():
         owners = sorted({s["global_id"] for s in overlapping if s["global_id"]})
@@ -247,7 +251,7 @@ def classify_visibility(samples: list[dict], cameras: list[dict], vertices: Any,
     """Triangle raycast, never scan-to-BIM AABB transfer. No camera => no records."""
     v = np.asarray(vertices, dtype=np.float64)
     f = np.asarray(faces, dtype=np.int64)
-    if len(f) > 2000:
+    if metric_ready and len(f) > 2000:
         try:
             import open3d as o3d
             scene = o3d.t.geometry.RaycastingScene()
@@ -257,7 +261,7 @@ def classify_visibility(samples: list[dict], cameras: list[dict], vertices: Any,
         except (ImportError, RuntimeError, AttributeError):
             scene = None
     else:
-        scene = "cpu_reference"
+        scene = "cpu_reference" if metric_ready else None
     owners = sorted({s["global_id"] for s in samples if s["global_id"]})
     records = []
     for cam in cameras:
