@@ -166,8 +166,9 @@ def evaluate_one(task, root, gt, pred, *, tau_m, max_points, seed, heldout_ancho
     elif task == "project_progress":
         metrics = project_progress_metrics(load_scientific_progress_v2(prediction), read_csv(truth))
     else:
-        raw = read_csv(prediction)
-        rows = load_stage9_v2(prediction) if any(r.get("scientific_metrics_schema") == "mycon.element_progress.v2" for r in raw) else raw
+        # Legacy Stage9 rows remain readable, but a non-null numeric progress
+        # field must pass verified-quantity provenance even without a v2 marker.
+        rows = load_stage9_v2(prediction)
         metrics = progress_metrics(rows, read_csv(truth))
     return "evaluated", None, metrics, inputs
 
