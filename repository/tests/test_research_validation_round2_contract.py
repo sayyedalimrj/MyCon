@@ -232,3 +232,40 @@ def test_stage11_identification_interval_not_ci(tmp_path):
     p=tmp_path/'v2.json';p.write_text(json.dumps(d))
     with pytest.raises(ValueError,match='confidence intervals'):
         load_scientific_progress_v2(p)
+
+
+def test_heldout_tre_partition_disjointness():
+    from benchmarks.mycon_2026.runner import _valid_anchor_partition
+    good={"anchor_partition":{"fit_anchor_ids":["F1","F2"],"heldout_tre_anchor_ids":["H1","H2"]}}
+    assert _valid_anchor_partition(good)
+    bad={"anchor_partition":{"fit_anchor_ids":["H1"],"heldout_tre_anchor_ids":["H1","H2"]}}
+    assert not _valid_anchor_partition(bad)
+    assert not _valid_anchor_partition({})
+
+
+def test_real_task_requires_precommitted_gt_hash(tmp_path):
+    import hashlib
+    from benchmarks.mycon_2026.runner import _verified_gt_digest
+    f=tmp_path/"gt.ply"
+    f.write_text("independently signed GT placeholder")
+    sample={"ground_truth":{"reconstruction_gt_ply":f.name},
+            "ground_truth_sha256":{}}
+    assert not _verified_gt_digest(tmp_path,sample,"reconstruction_gt_ply")
+    sample["ground_truth_sha256"]["reconstruction_gt_ply"]=sha256(f)
+    assert _verified_gt_digest(tmp_path,sample,"reconstruction_gt_ply")
+    sample["ground_truth_sha256"]["reconstruction_gt_ply"]="0"*64
+    assert not _verified_gt_digest(tmp_path,sample,"reconstruction_gt_ply")
+
+
+def test_stage11_unapproved_boq_weights_fail_closed(tmp_path):
+    p=tmp_path/"v2.json"
+    data=_b()
+    data["activities"][0]["mapping_weight_basis"]="geometric_coverage"
+    p.write_text(json.dumps(data))
+    with pytest.raises(ValueError,match="Unapproved activity"):
+        load_scientific_progress_v2(p)
+    data=_b()
+    data["overall"]["activity_weights_approved"]=False
+    p.write_text(json.dumps(data))
+    with pytest.raises(ValueError,match="Unapproved project"):
+        load_scientific_progress_v2(p)
