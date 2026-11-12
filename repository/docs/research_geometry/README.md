@@ -64,6 +64,30 @@ By default this does **not write anything**. `--write` creates a new immutable `
 - These values are **reported by historical logs only**, not newly measured results; they are not independent confirmation of NVS or BIM-grade geometry.
 - Another prior NVIDIA LongSplat run used verified 769 source frames on a Tesla T4 according to its log; invocation alone does not establish completion. MASt3R checkpoint SHA-256 was recorded in weights preflight, with model inference explicitly *not executed*.
 
+### Existing canonical gsplat model: actual RGB + depth rendering (opt-in)
+
+The additive `research_gsplat_render.py` uses the canonical `{'step': int, 'splats': {'means', 'scales', 'quats', 'opacities', 'sh0', 'shN'}}` tensor layout. On GPU execution it uses `torch.load(..., weights_only=True)` to read the original checkpoint without training or modifying it; `gsplat.rendering.rasterization` produces fresh RGB PNG and unscaled depth NPY outputs in a new `runs/geom-*/geometry/gsplat_render/` directory. Inspect-only mode requires no Torch, GPU, or pickle loading.
+
+**Camera JSON contract:**
+```json
+{
+  "frame_convention": "colmap_opencv_world_to_camera",
+  "cameras": [{"view_id":"non_training_session_candidate","is_training_image":false,
+    "width":1280,"height":720,"fx":900.0,"fy":900.0,"cx":640.0,"cy":360.0,
+    "world_to_camera_4x4":[[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]]}]
+}
+```
+
+Identity camera above is an **interface fixture, not a real camera estimate**. Supply COLMAP-calibrated or independently specified pose/intrinsics in the *same coordinate frame* as the checkpoint. From `repository/`:
+```bash
+python -m pipeline.stage_04_5_cams_gs.research_gsplat_render \
+  --project-root /workspace --run-id geom-gsplat-render-001 \
+  --checkpoint /read-only/canonical/ckpts/ckpt_6999_rank0.pt \
+  --cameras-json /read-only/validated_new_camera_path.json
+# Add --execute only after confirming a compatible CUDA+gsplat environment.
+```
+
+Outputs are candidate rendered views, **NOT** an authenticated held-out NVS benchmark: `is_training_image` is an operator-provided label. Depth is in unverified reconstruction units and must never be passed into Stage 8 as metric truth before measured scale and independent registration. This path was not GPU executed in this handoff.
 ## 3. Optional alternative SfM backends
 
 `research_backends.py` keeps VGGt and DUSt3R isolated from production Stage 3 and C's benchmark workspace. It neither downloads model weights nor starts GPU compute in default inspect mode.
