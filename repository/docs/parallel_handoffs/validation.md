@@ -79,3 +79,33 @@
 
 **Lead integration checklist:** confirm changed paths all belong to C; assess A/B interface contract and documented optional fields, sign off locked GT/splits, run actual full repository + three-way integration and paired verified-site benchmark; only the lead may merge C PR #36 into Integration (never straight to main).
 
+
+
+---
+
+# Model-agnostic geometry readiness — C handoff, 2026-11-12
+
+**Coordinator contract read:** `repository/docs/integration/model_agnostic_geometry_readiness_contract_20261112.md` from Integration. **Latest coordinator comment read:** PR #36 priority correction at `https://github.com/sayyedalimrj/MyCon/pull/36#issuecomment-6828447013`. The prior 14021208/room MAX contract is explicitly deferred. **No reference MAX/CAD/BIM model was fitted, imported or used as GT.** No owner A/B files changed, no checkpoints/captures deleted, no training started. PR #36 targets Integration and remains unmerged.
+
+## Changed C-owned paths
+
+- `repository/benchmarks/mycon_2026/model_agnostic.py` — SHA-checked read-only adapter for optional `mycon.comparison_ready_geometry.v1`; finite bounded plane and edge scoring, normal orientation when stable IDs exist, real-structure cleanup retention and isolated-outlier removal, 3D corner TP/FP/FN, explicit extrapolation/unknown, geometry accuracy/Chamfer/F-score in correctly declared units.
+- `repository/benchmarks/mycon_2026/grounding.py` — frame ROI/feature grounding and separate hallucination/abstention; reviewer-approved measurement IDs required for all asserted dimensions/progress. VLM never serves as GT.
+- `repository/benchmarks/mycon_2026/runner.py` — two additive tasks `geometry_ready` and `vlm_grounding` with existing `bench-` run ID, test-split/hash and `not_executed` gates. Existing Stage8/9/11/NVS workflows preserved.
+- `repository/tests/test_research_validation_model_agnostic.py` — local synthetic scoring and v1-schema regression definitions, including sloped planes, non-observed corners, tampered source hash, VLM and no-scientific-results gate.
+- `repository/configs/research_validation/model_agnostic_stress.v1.json` — 23 registered perturbations, five seeds, classical/A/optional GS baselines and ablations, all `not_executed`.
+- `repository/docs/research_validation/model_agnostic_geometry_readiness.md` — methods, independent GT, annotation protocol, RQs/Hs, corner unknown and statistical-denominator constraints, CLI and paper requirements.
+- `repository/benchmarks/mycon_2026/evidence/model_agnostic_tool_test_20261112.json` — machine-readable local prototype test logs, versions, exact exit codes and SHA-256 input/outputs, with explicit limitations.
+- This handoff file. No A/B files modified and no Integration/main writes.
+
+## Real execution vs code only (mandatory separation)
+
+**Actually executed:** local C source snapshot plus an expanded local model-agnostic prototype, **42 lightweight synthetic tests passed, 0 failed, pytest exit code 0**. Python 3.13.5, Linux x86_64, CPU count 5, pytest 9.0.2, NumPy 2.3.5, SciPy 1.17.0, matplotlib 3.10.8. Local `python -m benchmarks.mycon_2026.readiness --help`, synthetic `--include-fixtures` CLI, report figure-gating CLI and existing Runner `--help`: each exit 0. Synthetic `bench-bimfree-fixture-20261112`: 1 fictional site, 1 synthetic tool-scored case, 0 independent real sites; `scientific_results.json=[]` and no scientific images. Fixture source manifest SHA256 `7a881304f4f1dbf6c0a4803f03caf91cd0bc7dce897a5d6924ebddccdcda88a0`; independent synthetic GT SHA256 `a2655a87b816a9abc4c746678a5df628f18b7bfd75162927776d5440de5527b1`. Full SHA ledger is in evidence JSON.
+
+**Important: these 42 local tests are NOT presented as a checkout regression of the new GitHub commits.** The locally tested expanded prototype has additional modules/implementation and is **not byte-identical** to the newly committed compact `model_agnostic.py`, `grounding.py` and GitHub Runner integration. Attempted `git clone --single-branch --branch research/mycon-validation-20261112 https://github.com/sayyedalimrj/MyCon.git` failed with DNS `Could not resolve host: github.com` (exit 128). Therefore new GitHub-source pytest/CLI and full relevant repository regression remain `not_executed`. Connector permits GitHub file writes but cannot invoke pytest. The coordinator must execute the checked-in `tests/test_research_validation_model_agnostic.py` and the relevant existing lightweight suite in a real full checkout before merging.
+
+## Scientific and implementation blockers
+
+A's actual versioned comparison-ready producer is not yet present/validated on the C integration checkout. Without paired independently reviewed real survey/camera/feature GT and same-site COLMAP/GS outputs, all numeric real geometry-quality, feature precision/recall, cross-view stability, calibration, GPU evaluation, CI and generalizable performance remain `not_executed`. Synthetic controlled stress scenarios demonstrate scorer behavior only; they **cannot** establish reconstruction accuracy, production readiness or publication readiness. Arbitrary reconstruction units are not meters; NVS image fidelity is not metric geometry validity; corner extrapolation is not confirmed observation.
+
+**Required lead actions:** review A versioned schema against C adapter; run checked-in GitHub tests and lightweight/full A+B+C integration smoke; provide independent real sample with signed GT, source/model SHA, calibrated cameras, splits, registered heldout controls and fail/attempted log; pair baselines and repeat sites/seeds. The integration coordinator alone may merge PR #36 into Integration, never directly into main.
