@@ -255,9 +255,6 @@ def provision_vlm(
         "copilot.vlm.local_only": True,
         "copilot.vlm.fallback_to_mock_when_unavailable": True,
         "copilot.vlm.require_real_vlm": False,
-        "vlm_qa.provider": "ollama_local",
-        "vlm_qa.endpoint": OLLAMA_CHAT_ENDPOINT,
-        "vlm_qa.model": model,
     }
     return ProvisionResult(
         "provision_vlm",
