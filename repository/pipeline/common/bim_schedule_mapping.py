@@ -39,6 +39,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import math
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -152,6 +153,15 @@ def _parse_weight(raw: Any) -> float:
     return v
 
 
+def _parse_verified_weight(raw: Any) -> float:
+    """Do not convert absent/invalid approved weights into default 1.0."""
+    try:
+        value = float(str(raw).strip())
+        return value if math.isfinite(value) and value > 0 else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def load_mapping_csv(path: Path | str) -> BimScheduleMapping:
     """Load a mapping CSV. See module docstring for column spec.
 
@@ -187,11 +197,16 @@ def load_mapping_csv(path: Path | str) -> BimScheduleMapping:
         e = (row.get("ifc_global_id") or "").strip()
         if not a or not e:
             continue
+        weight_basis = (row.get("weight_basis") or "").strip().lower()
+        parsed_weight = (
+            _parse_verified_weight(row.get("weight")) if weight_basis
+            else _parse_weight(row.get("weight"))
+        )
         entries.append(MappingEntry(
             activity_id=a,
             ifc_global_id=e,
-            weight=_parse_weight(row.get("weight")),
-            weight_basis=(row.get("weight_basis") or "").strip().lower(),
+            weight=parsed_weight,
+            weight_basis=weight_basis,
         ))
 
     by_activity: dict[str, list[MappingEntry]] = defaultdict(list)
