@@ -155,6 +155,10 @@ def evaluate_ready(ready,truth,*,root=None,tau=.05,max_points=20000,seed=42,min_
         if m["units"]!="m":
             result["chamfer_l1_source_units"]=result.pop("chamfer_l1_m")
             result["chamfer_l2_source_units_squared"]=result.pop("chamfer_l2_m2")
+            result["tau_source_units"]=result.pop("tau_m")
+            for k in list(result):
+                if k.endswith("m") and "_at_0." in k:
+                    result[k.replace("m","_source_units")]=result.pop(k)
     else:
         result["structure_retention_fraction"]=None
     isolated=[o for o in outliers if not true or min(math.dist(o,p) for p in true)>2*tau]
@@ -174,4 +178,23 @@ def evaluate_ready(ready,truth,*,root=None,tau=.05,max_points=20000,seed=42,min_
     result["corner_n_unknown_or_extrapolated"]=len(pred["corners"])-len(observed)
     result["corner_unknown_rate"]=(len(pred["corners"])-len(observed))/len(pred["corners"]) if pred["corners"] else None
     result["n_gt_corners_unobservable"]=len(gt.get("corners",[]))-len(visible)
+    normal_item=(m.get("outputs") or {}).get("normals")
+    if normal_item and normal_item.get("path") and normal_item.get("sha256"):
+        nf=resolve_input(Path(root or Path(ready).parent).resolve(),normal_item["path"])
+        if not nf.is_file() or sha256(nf)!=normal_item["sha256"]:
+            raise ValueError("normal sample SHA mismatch")
+        gt_normal={r["sample_id"]:norm(r["normal"]) for r in gt.get("normals",[])}
+        pred_normal={r["sample_id"]:norm(r["normal"]) for r in load_features(nf,"normals")}
+        shared=sorted(gt_normal.keys() & pred_normal.keys())
+        if len(gt_normal)!=len(gt.get("normals",[])) or len(pred_normal)!=len(load_features(nf,"normals")):
+            raise ValueError("duplicate normal sample IDs")
+        ang=[]
+        for k in shared:
+            dot=sum(a*b for a,b in zip(gt_normal[k],pred_normal[k]))
+            ang.append(math.degrees(math.acos(min(1.,max(-1.,abs(dot))))))
+        result["normal_n_pairs"]=len(shared)
+        result["normal_angular_mae_deg"]=mean(ang) if ang else None
+        result["normal_flip_rate"]=sum(sum(a*b for a,b in zip(gt_normal[k],pred_normal[k]))<0 for k in shared)/len(shared) if shared else None
+    else:
+        result.update(normal_n_pairs=0,normal_angular_mae_deg=None,normal_flip_rate=None)
     return result
