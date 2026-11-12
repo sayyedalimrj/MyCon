@@ -342,7 +342,7 @@ def build_ui(*, repo_root: Path, log: Optional[LogBuffer] = None):
                     return ("Upload a real video in Tab 1 before running ingest/keyframes",
                             log.text(tail=400), _stage_status_table(state))
             except (OSError, ValueError, TypeError) as exc:
-                return (f"Cannot inspect video input: {exc}", log.text(tail=400), _stage_status_table(state)
+                return (f"Cannot inspect video input: {exc}", log.text(tail=400), _stage_status_table(state))
         if not spec_keys:
             return "ERROR: select at least one stage", log.text(tail=400), _stage_status_table(state)
         if state.last_run_thread is not None and state.last_run_thread.is_alive():
