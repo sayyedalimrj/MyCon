@@ -352,6 +352,25 @@ def build_ui(*, repo_root: Path, log: Optional[LogBuffer] = None):
                             log.text(tail=400), _stage_status_table(state))
             except (OSError, ValueError, TypeError) as exc:
                 return (f"Cannot inspect video input: {exc}", log.text(tail=400), _stage_status_table(state))
+        # Stage 8 is an independent *surveyed* metric gate. The full-pipeline
+        # button must not begin expensive SfM only to fail at an absent anchor.
+        if "stage_08_metric_alignment" in spec_keys:
+            import yaml
+            try:
+                cfg = yaml.safe_load(state.config_path.read_text(encoding="utf-8")) or {}
+                value = (cfg.get("metric_alignment") or {}).get(
+                    "metric_anchors_csv", "data/bim/design/metric_anchors.csv"
+                )
+                anchors = Path(str(value))
+                if not anchors.is_absolute():
+                    anchors = state.project_paths.project_root / anchors
+                if not anchors.is_file():
+                    return ("Metric Stage 8 requires independently surveyed anchors. "
+                            "Run Stage 1-7 first, then provide a valid anchor CSV.",
+                            log.text(tail=400), _stage_status_table(state))
+            except (OSError, ValueError, TypeError) as exc:
+                return (f"Cannot verify metric anchors: {exc}",
+                        log.text(tail=400), _stage_status_table(state)
         if not spec_keys:
             return "ERROR: select at least one stage", log.text(tail=400), _stage_status_table(state)
         if state.last_run_thread is not None and state.last_run_thread.is_alive():
