@@ -43,6 +43,16 @@ jobs:
             tests/test_research_progress_geometry.py \
             tests/test_round2_progress_contract.py \
             tests/test_mycon_integration_geometry.py
+      - name: Package reviewed research source (candidate; not field-validated)
+        run: |
+          git archive --format=zip --output=../MyCON_Integration_RC_CPU.zip HEAD
+          sha256sum ../MyCON_Integration_RC_CPU.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MyCON_Integration_RC_CPU
+          path: MyCON_Integration_RC_CPU.zip
+          if-no-files-found: error
+          retention-days: 14
       - name: Save exact commit and installed package versions
         if: always()
         run: |
