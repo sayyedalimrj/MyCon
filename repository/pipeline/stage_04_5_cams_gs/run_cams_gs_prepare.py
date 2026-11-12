@@ -74,6 +74,15 @@ def run_cams_gs_prepare(cfg: Any, *, force: bool = False, log_level: str = "INFO
     paths = stage45_paths(cfg)
     if bool_value(cfg_get(cfg, "cams_gs.execute_training", False)) and force:
         raise Stage45CamsGsError("Refusing --force during 3DGS resume: existing artifacts must be preserved")
+    if bool_value(cfg_get(cfg, "cams_gs.execute_training", False)):
+        legacy_outputs = ("manifest_json", "training_status_json", "report_json")
+        existing = [str(paths[key]) for key in legacy_outputs if paths[key].exists()]
+        if existing:
+            raise Stage45CamsGsError(
+                "Refusing to overwrite legacy Stage 4.5 metadata during training: "
+                + ", ".join(existing) + ". Use an isolated config destination "
+                "or run research_training directly."
+            )
     if force and paths["output_dir"].exists() and any(paths["output_dir"].iterdir()):
         raise Stage45CamsGsError(
             "Refusing destructive --force on a nonempty CAMS-GS directory; "
