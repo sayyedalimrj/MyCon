@@ -121,23 +121,38 @@ def build_ui(*, repo_root: Path, log: Optional[LogBuffer] = None):
                 auto_mount=mount_drive_now,
                 log=log,
             )
+            if not paths.on_drive:
+                raise RuntimeError("Google Drive is not mounted/writable. Refusing a non-persistent Colab run.")
             state.project_paths = paths
             _start_sync_manager(paths)
 
-            # Build a starter config (no inputs yet — those land in cb_save_inputs).
-            data = _config_manager.build_effective_config(
-                repo_root=repo_root,
-                project_root=paths.project_root,
-                run_id=paths.run_id,
-                project_name=run_id,
-                profile=state.profile,
-                override_dict=state.vlm_overrides or None,
-                user_overrides_yaml=None,
-                log=log,
-            )
-            cfg_path = _config_manager.write_effective_config(
-                data=data, out_path=paths.active_config_path, log=log
-            )
+            # Resuming MUST NOT overwrite active.yaml: it contains previously
+            # uploaded video/IFC/schedule paths, manual gates, and VLM settings.
+            cfg_path = paths.active_config_path
+            if cfg_path.is_file():
+                import yaml
+                previous = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+                if not isinstance(previous, dict):
+                    raise ValueError("Existing active config is not a mapping; refusing overwrite")
+                project = previous.get("project") or {}
+                if (str(project.get("run_id")) != paths.run_id
+                        or Path(str(project.get("root", ""))).resolve() != paths.project_root.resolve()):
+                    raise ValueError("Existing config belongs to a different run or project root; refusing overwrite")
+                log.append("[ui] Resuming existing project: original active.yaml preserved")
+            else:
+                data = _config_manager.build_effective_config(
+                    repo_root=repo_root,
+                    project_root=paths.project_root,
+                    run_id=paths.run_id,
+                    project_name=run_id,
+                    profile=state.profile,
+                    override_dict=state.vlm_overrides or None,
+                    user_overrides_yaml=None,
+                    log=log,
+                )
+                cfg_path = _config_manager.write_effective_config(
+                    data=data, out_path=cfg_path, log=log
+                )
             state.config_path = cfg_path
 
             # Initialise the checkpoint manager (loads prior progress if any).
@@ -207,6 +222,30 @@ def build_ui(*, repo_root: Path, log: Optional[LogBuffer] = None):
                     dest_dir=paths.uploads_dir,
                     log=log,
                 )
+
+            # Retain prior input paths when the user uploads only one type.
+            import yaml
+            previous = (yaml.safe_load(paths.active_config_path.read_text(encoding="utf-8")) or {}
+                        if paths.active_config_path.is_file() else {})
+            if not isinstance(previous, dict):
+                raise ValueError("Invalid saved active config; cannot safely update inputs")
+            saved_inputs = previous.get("inputs") or {}
+            def retained(value, key):
+                if value is not None:
+                    return value
+                old = saved_inputs.get(key)
+                return Path(str(old)) if old and Path(str(old)).is_file() else None
+            video_path = retained(video_path, "video")
+            ifc_path = retained(ifc_path, "ifc")
+            schedule_path = retained(schedule_path, "schedule")
+            if not any((video_file, ifc_file, schedule_file)) and not (user_overrides_yaml or "").strip():
+                log.append("[ui] No new inputs/overrides: preserved current config without rewriting")
+                ok, detail = _config_manager.validate_effective_config(
+                    config_path=paths.active_config_path, repo_root=repo_root
+                )
+                if not ok:
+                    raise ValueError("Saved config is invalid: " + detail)
+                return "Existing inputs/config preserved for resume", log.text(tail=400)
 
             data = _config_manager.build_effective_config(
                 repo_root=repo_root,
@@ -287,6 +326,23 @@ def build_ui(*, repo_root: Path, log: Optional[LogBuffer] = None):
                     pass
 
     def _launch(spec_keys, force, log_level, question, resume, max_attempts):
+        if state.project_paths is None or state.config_path is None:
+            return "Configure project and upload inputs in Tab 1 first", log.text(tail=400), _stage_status_table(state)
+        # A video-less Stage 1 is never a useful run. Reject before scheduling.
+        if "stage_01_ingest" in spec_keys or "stage_02_keyframes" in spec_keys:
+            import yaml
+            try:
+                cfg = yaml.safe_load(state.config_path.read_text(encoding="utf-8")) or {}
+                raw_video = (cfg.get("inputs") or {}).get("video")
+                root = state.project_paths.project_root
+                video = Path(str(raw_video)) if raw_video else None
+                if video is not None and not video.is_absolute():
+                    video = root / video
+                if video is None or not video.is_file():
+                    return ("Upload a real video in Tab 1 before running ingest/keyframes",
+                            log.text(tail=400), _stage_status_table(state))
+            except (OSError, ValueError, TypeError) as exc:
+                return (f"Cannot inspect video input: {exc}", log.text(tail=400), _stage_status_table(state)
         if not spec_keys:
             return "ERROR: select at least one stage", log.text(tail=400), _stage_status_table(state)
         if state.last_run_thread is not None and state.last_run_thread.is_alive():
