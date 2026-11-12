@@ -183,6 +183,7 @@ def run_registration(cfg: Any, *, force: bool = False, log_level: str = "INFO") 
             independent_controls_path=_optional_path(controls_value),
             seed=int(cfg_get(cfg, "project.random_seed", 42)),
             control_rmse_limit_m=float(cfg_get(cfg, "bim.geometry_evidence_control_rmse_limit_m", 0.05)),
+            code_commit=cfg_get(cfg, "bim.geometry_evidence_code_commit", None),
         )
         report["optional_bim_geometry_evidence"] = {
             "manifest_path": manifest["manifest_path"],
