@@ -470,6 +470,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--controls-json", type=Path)
     parser.add_argument("--inspect", action="store_true", help="Validate without writing any output")
     parser.add_argument("--code-commit", help="Exact Git commit SHA of checked-out producer source")
+    parser.add_argument("--diagnostic-clouds-json", type=Path, help="Optional aligned scan / BIM reference Nx3 arrays for survey-gated metrics")
     args = parser.parse_args(argv)
     try:
         if bool(args.mesh_ply) == bool(args.mesh_json):
@@ -483,6 +484,7 @@ def main(argv: list[str] | None = None) -> int:
             vertices, triangles = np.asarray(mesh.vertices), np.asarray(mesh.triangles)
         meta = [json.loads(line) for line in args.elements_jsonl.read_text().splitlines() if line.strip()]
         mat = json.loads(args.transform_json.read_text())["matrix_4x4_scan_to_bim"]
+        clouds = json.loads(args.diagnostic_clouds_json.read_text(encoding="utf-8")) if args.diagnostic_clouds_json else {}
         result = create_bim_geometry_evidence(
             project_root=args.project_root, run_id=args.run_id, project_id=args.project_id,
             ifc_path=args.ifc, scan_path=args.scan, registration_report_path=args.registration_report,
@@ -490,6 +492,8 @@ def main(argv: list[str] | None = None) -> int:
             elements=meta, ifc_units=args.ifc_units, extraction_source="ifcopenshell",
             camera_path=args.camera_json, independent_controls_path=args.controls_json,
             code_commit=args.code_commit,
+            scan_aligned_xyz=clouds.get("scan_aligned_xyz"),
+            bim_reference_xyz=clouds.get("bim_reference_xyz"),
             write=not args.inspect)
         print(json.dumps({"status": result.get("status") if not args.inspect else result["manifest"]["status"],
                           "manifest_path": result.get("manifest_path"),
