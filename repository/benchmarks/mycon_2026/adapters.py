@@ -90,11 +90,18 @@ def load_scientific_progress_v2(path: Path):
             raise ValueError("Missing/duplicate activity_id")
         seen.add(aid)
         _check_progress_bounds(activity)
+        if (activity.get("physical_progress_estimate") is not None and
+                str(activity.get("mapping_weight_basis") or "").lower() not in
+                {"approved_boq", "approved_cost", "approved_quantity"}):
+            raise ValueError("Unapproved activity mapping weight basis")
         bounded(activity.get("planned_percent_complete"), 100, field="approved plan")
         v = activity.get("schedule_variance_percent")
         if v is not None and (not isinstance(v, (int, float)) or not math.isfinite(v) or abs(v) > 100):
             raise ValueError("Invalid schedule variance percentage points")
     _check_progress_bounds(obj["overall"])
+    if (obj["overall"].get("physical_progress_estimate") is not None and
+            obj["overall"].get("activity_weights_approved") is not True):
+        raise ValueError("Unapproved project activity weights")
     return obj
 
 
