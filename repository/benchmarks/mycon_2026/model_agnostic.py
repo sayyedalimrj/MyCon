@@ -59,8 +59,13 @@ def load_ready(path,root=None):
     root=Path(root or path.parent).resolve()
     m=json.loads(path.read_text(encoding="utf-8"))
     if m.get("schema_version")!=SCHEMA: raise ValueError("unknown A readiness schema")
-    if m.get("units") not in {"m","arbitrary","reconstruction_units","unitless"}:
+    native_a = isinstance((m.get("outputs") or {}).get("clean_cloud.ply"), dict)
+    if m.get("units") not in {"m","arbitrary","reconstruction_units","unitless","unknown_reconstruction_units"}:
         raise ValueError("source units must be declared")
+    if native_a and (m.get("metric_scale_verified") is not False or m.get("registration_verified") is not False):
+        raise ValueError("A native model-independent output cannot assert metric or registration QA")
+    if native_a:
+        m["input_point_count"] = m.get("original_points")
     if not m.get("coordinate_frame"): raise ValueError("missing source frame")
     if m.get("metric_scale_verified") is True:
         control=m.get("independent_metric_evidence")
@@ -74,7 +79,11 @@ def load_ready(path,root=None):
         raise ValueError("BIM registration requires independent evidence")
     files={}
     for name in ("clean_cloud","planes","edges","corners"):
-        item=(m.get("outputs") or {}).get(name,m.get(name))
+        # A producer's canonical output filenames differ from the C fixture aliases.
+        filename = {"clean_cloud":"clean_cloud.ply", "planes":"planes.json",
+                    "edges":"edges.json", "corners":"corners.json"}[name]
+        item = ((m.get("outputs") or {}).get(filename) if native_a
+                else (m.get("outputs") or {}).get(name,m.get(name)))
         if not isinstance(item,dict) or not item.get("path") or not item.get("sha256"):
             raise ValueError("missing A output hash: "+name)
         f=resolve_input(root,item["path"])
@@ -82,6 +91,42 @@ def load_ready(path,root=None):
             raise ValueError("A output SHA mismatch: "+name)
         files[name]=f
     assets={key:load_features(files[key],key) for key in ("planes","edges","corners")}
+    if native_a:
+        # Read-only normalization: A's finite hulls, segment coordinates and
+        # support counts must remain attributable to their native sidecars.
+        for p in assets["planes"]:
+            boundary=p.get("finite_boundary_xyz")
+            if not isinstance(boundary,list) or len(boundary)<3 or not all(len(v)==3 for v in boundary):
+                raise ValueError("A native plane needs a finite local extent")
+            if p.get("point_count",0)<3 or not isinstance(p.get("support_indices"),list):
+                raise ValueError("A native plane missing local geometric support")
+            p["id"]=p.get("plane_id")
+            p["support_count"]=p["point_count"]
+            p["support_extent"]=[[min(v[i] for v in boundary) for i in range(3)],
+                                 [max(v[i] for v in boundary) for i in range(3)]]
+        parents={p["id"] for p in assets["planes"]}
+        for e in assets["edges"]:
+            if not isinstance(e.get("plane_ids"),list) or len(e["plane_ids"])!=2 or any(x not in parents for x in e["plane_ids"]):
+                raise ValueError("A native edge refers to invalid planes")
+            support=e.get("support_count_per_plane")
+            if not isinstance(support,list) or len(support)!=2 or any(not isinstance(x,int) or x<0 for x in support):
+                raise ValueError("A native edge support malformed")
+            e["id"]=e.get("edge_id")
+            e["endpoints"]=e.get("endpoints_xyz")
+            e["support_count"]=min(support)
+        for c in assets["corners"]:
+            parents_c=c.get("plane_ids")
+            supports=c.get("support_near_corner_per_plane")
+            if (not isinstance(parents_c,list) or len(parents_c)!=3 or
+                len(set(parents_c))!=3 or any(x not in parents for x in parents_c) or
+                not isinstance(supports,list) or len(supports)!=3 or
+                any(not isinstance(x,int) or x<0 for x in supports)):
+                raise ValueError("A native corner has invalid plane lineage")
+            c["id"]=c.get("corner_id")
+            c["feature_ids"]=parents_c
+            c["support_count"]=min(supports)
+            if c.get("state")=="observed_supported" and c.get("multiscale_confirmed") is not True:
+                c["state"]="unknown"
     for key,records in assets.items():
         ids=set()
         for r in records:
