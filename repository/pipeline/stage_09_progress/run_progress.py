@@ -19,7 +19,8 @@ from .decision_enrichment import enrich_progress_decisions_from_config
 from .bidirectional_metrics import BidirectionalResult, compute_bidirectional
 from .uncertainty import bootstrap_ci
 from .point_assignment import assign_exclusive_points, nearest_element_distances
-from .evidence_metrics import element_scientific_fields
+from .evidence_metrics import element_scientific_fields, as_utc, valid_sha256
+from .geometry_evidence_adapter import load_geometry_evidence_manifest
 
 from pipeline.common.determinism import derived_seed, project_seed
 
@@ -242,6 +243,12 @@ def _fieldnames(*, include_bidirectional: bool = False, include_distance_ci: boo
         "physical_progress_status", "geometry_evidence_state", "scientific_metrics_schema",
         "planned_quantity", "executed_quantity", "quantity_verified", "quantity_source", "quantity_unit",
         "observability_source", "evidence_confidence_source",
+        "planned_quantity_unit", "executed_quantity_unit",
+        "quantity_record_id", "quantity_approval_id", "quantity_approved_by",
+        "quantity_approved_at_utc", "quantity_as_of_utc", "quantity_document_sha256",
+        "evidence_calibration_ref", "quantity_audit_gate", "physical_progress_reason_codes",
+        "geometry_adapter_schema", "geometry_adapter_valid", "geometry_manifest_sha256",
+        "geometry_evidence_reason_codes", "geometry_conformance_state",
     ])
     return base
 
@@ -365,6 +372,34 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
     scan_owners, scan_candidates = assign_exclusive_points(scan_points, elements, bbox_margin)
     bim_owners, bim_candidates = assign_exclusive_points(bim_points, elements, bbox_margin)
 
+    # Optional A->B contract, always fail closed on missing trust anchors.
+    scientific_data_date = as_utc(cfg_get(cfg, "progress.data_date_utc"))
+    evidence_manifest_raw = cfg_get(cfg, "progress.geometry_evidence_manifest_json")
+    expected_hashes = (
+        cfg_get(cfg, "progress.expected_ifc_sha256"),
+        cfg_get(cfg, "progress.expected_scan_sha256"),
+        cfg_get(cfg, "progress.expected_registration_sha256"),
+    )
+    expected_geometry_project = cfg_get(cfg, "progress.expected_geometry_project_id")
+    manifest_inputs_valid = (
+        all(valid_sha256(value) for value in expected_hashes)
+        and bool(expected_geometry_project)
+    )
+    geometry_bundle = None
+    if evidence_manifest_raw and manifest_inputs_valid:
+        manifest_path = Path(str(evidence_manifest_raw))
+        if not manifest_path.is_absolute():
+            manifest_path = Path(str(cfg_get(cfg, "project.root", "."))) / manifest_path
+        geometry_bundle = load_geometry_evidence_manifest(
+            manifest_path,
+            project_root=Path(str(cfg_get(cfg, "project.root", "."))),
+            expected_global_ids={str(item.get("global_id", "")) for item in elements},
+            expected_ifc_sha256=expected_hashes[0],
+            expected_scan_sha256=expected_hashes[1],
+            expected_registration_sha256=expected_hashes[2],
+            expected_project_id=str(expected_geometry_project),
+        )
+
     # O2: bidirectional accuracy/completeness/F-score plus bootstrap CIs.
     # Both flags default ON for new runs; either can be disabled to reproduce
     # historical byte-identical CSV output for downstream tools that lock
@@ -460,13 +495,39 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
             "planned_quantity", "executed_quantity", "quantity_verified",
             "quantity_source", "quantity_unit", "observability_ratio",
             "observability_source", "evidence_confidence", "evidence_confidence_source",
+            "planned_quantity_unit", "executed_quantity_unit",
+            "quantity_record_id", "quantity_approval_id", "quantity_approved_by",
+            "quantity_approved_at_utc", "quantity_as_of_utc", "quantity_document_sha256",
+            "evidence_calibration_ref",
         ):
             if audit_key in evidence_metadata:
                 row[audit_key] = evidence_metadata[audit_key]
-        row.update(element_scientific_fields(
-            row,
-            {**evidence_metadata, "synthetic_bim_fallback_used": reg_quality["synthetic_bim_fallback_used"]},
-        ))
+        independent_metadata = {
+            **evidence_metadata,
+            "synthetic_bim_fallback_used": reg_quality["synthetic_bim_fallback_used"],
+        }
+        first_pass = element_scientific_fields(
+            row, independent_metadata,
+            data_date=scientific_data_date, require_audit=True,
+        )
+        if geometry_bundle is not None:
+            row.update(geometry_bundle.for_element(gid, first_pass["physical_progress_estimate"]))
+        else:
+            row.update({
+                "geometry_adapter_valid": False,
+                "geometry_evidence_state": "unknown_manifest",
+                "observability_ratio": None,
+                "geometry_evidence_reason_codes": (
+                    "independent_geometry_hashes_or_project_id_missing"
+                    if evidence_manifest_raw else "manifest_not_supplied"
+                ),
+            })
+        row.update({
+            k: v for k, v in element_scientific_fields(
+                row, independent_metadata,
+                data_date=scientific_data_date, require_audit=True,
+            ).items() if k != "quantity_audit"
+        })
 
         # O2a: percentile-bootstrap CIs for distance summaries (mean, median).
         # Skipped when distances has < 2 finite samples; the CI columns are
@@ -617,6 +678,15 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
         "element_count": len(element_rows),
         "activity_count": len(activity_rows),
         "research_evidence_schema": "mycon.element_progress.v2",
+        "geometry_contract": {
+            "manifest_provided": bool(evidence_manifest_raw),
+            "independent_input_hashes_present": manifest_inputs_valid,
+            "geometry_adapter_valid": bool(geometry_bundle and geometry_bundle.valid),
+            "reason_codes": list(geometry_bundle.reason_codes) if geometry_bundle is not None else [
+                "independent_geometry_hashes_or_project_id_missing"
+                if evidence_manifest_raw else "manifest_not_supplied"
+            ],
+        },
         "overlap_assignment": {
             "policy": "exclusive_bbox_or_unknown",
             "unowned_scan_points": int(np.sum(scan_owners == -1)),
