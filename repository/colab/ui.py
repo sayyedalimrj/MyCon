@@ -494,7 +494,7 @@ def build_ui(*, repo_root: Path, log: Optional[LogBuffer] = None):
                 resume_in = gr.Checkbox(
                     label="Resume (skip stages already complete on Drive)", value=True
                 )
-                force_in = gr.Checkbox(label="Force overwrite outputs", value=True)
+                force_in = gr.Checkbox(label="Force overwrite outputs (dangerous; explicit opt-in)", value=False)
                 attempts_in = gr.Slider(
                     minimum=1, maximum=5, step=1, value=2,
                     label="Max attempts per stage (retry on failure)",
@@ -590,7 +590,7 @@ def build_ui(*, repo_root: Path, log: Optional[LogBuffer] = None):
         with gr.Tab("4. Environment, Models & Cleanup"):
             gr.Markdown(
                 "Install dependencies, provision a **real local VLM** (Ollama + "
-                "Qwen-VL) so Stage 7.5 / 10 answer from real vision instead of the "
+                "Qwen-VL) for Stage 10 grounded answers; Stage 7.5 remains "
                 "deterministic mock, free GPU memory, and force a Drive sync."
             )
             with gr.Row():
