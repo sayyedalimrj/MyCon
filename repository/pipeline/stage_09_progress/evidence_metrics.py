@@ -133,5 +133,7 @@ def element_scientific_fields(
         'evidence_confidence':confidence,
         'geometry_evidence_state':state,
         'geometry_conformance_state': get('geometry_conformance_state') or 'unknown',
+        'geometry_quality_gate': get('geometry_quality_gate') or 'blocked',
+        'geometry_n_views': finite_number(get('geometry_n_views')),
         'scientific_metrics_schema':'mycon.element_progress.v2',
     }
