@@ -347,6 +347,7 @@ def create_bim_geometry_evidence(*, project_root: Path, run_id: str, project_id:
     extraction_source: str, camera_path: Path | None = None,
     independent_controls_path: Path | None = None, seed: int = 42,
     control_rmse_limit_m: float = 0.05, code_commit: str | None = None,
+    scan_aligned_xyz: Any | None = None, bim_reference_xyz: Any | None = None,
     write: bool = True) -> dict:
     """Optional producer. Reject any overwrite and emit untrusted/unknown states.
 
@@ -389,6 +390,19 @@ def create_bim_geometry_evidence(*, project_root: Path, run_id: str, project_id:
     if not cameras:
         # No fake cameras, hence no false "not visible" records.
         visibility = []
+    metric_diagnostics = {"status": "not_executed", "reason": "missing_independent_metric_gate_or_point_clouds",
+                          "data_is_ground_truth": False}
+    if metric_ready and scan_aligned_xyz is not None and bim_reference_xyz is not None:
+        from .research_metrics import compare_clouds
+        trials = {}
+        for threshold in (0.02, 0.05, 0.10):
+            trials[f"{threshold:.2f}m"] = compare_clouds(
+                scan_aligned_xyz, bim_reference_xyz,
+                threshold_m=threshold, max_points=50000, random_seed=seed)
+        metric_diagnostics = {"status": "computed_diagnostic_only", "thresholds": trials,
+                              "data_is_ground_truth": False,
+                              "not_construction_completion": True,
+                              "sampling_note": "point-to-point diagnostic on aligned scan vs BIM reference; partial visibility and sampling density can bias results"}
     manifest = {
         "schema_version": SCHEMA, "run_id": run_id, "project_id": project_id,
         "created_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -416,6 +430,7 @@ def create_bim_geometry_evidence(*, project_root: Path, run_id: str, project_id:
                        "note": "B must reject as visibility evidence unless all gates and hashes validate"},
         "element_inventory": sample_qa.get("element_info", []),
         "sampling": {k: val for k, val in sample_qa.items() if k != "element_info"},
+        "metric_scan_to_bim_point_diagnostics": metric_diagnostics,
         "status": "geometry_and_visibility_evaluable" if metric_ready and cameras and visibility else "unknown_unverified_geometry_or_cameras",
         "counts": {"surface_samples": len(samples), "camera_poses": len(cameras),
                    "element_visibility_records": len(visibility)},
