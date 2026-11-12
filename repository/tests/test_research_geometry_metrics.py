@@ -59,4 +59,4 @@ def test_external_anchor_error_and_up_vector_angle() -> None:
         gravity_error_deg([0, 0, 0], [0, 0, 1])
 
 
-pytestmark = pytest.mark.geometry
+pytestmark = pytest.mark.lightweight
