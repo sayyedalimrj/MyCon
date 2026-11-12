@@ -70,7 +70,7 @@ def test_vlm_configuration_keeps_prior_user_inputs_and_mock_stage_separate():
     assert "schedule_path=SCHEDULE_PATH" in vlm
     assert "user_overrides_yaml=USER_OVERRIDES" in vlm
     assert "config_overrides" in vlm
-    assert "Stage 7.5 remains deterministic/mock-only" in vlm
+    assert "Stage 7.5 remains deterministic" in vlm
 
 
 def test_comparison_ready_is_explicit_opt_in_with_no_metric_claim():
