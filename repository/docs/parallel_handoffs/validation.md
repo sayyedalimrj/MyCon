@@ -39,3 +39,43 @@
 4. Correctly qualified traditional/new baseline outputs, no claims using paper's different-dataset geometry numbers.
 
 **Integrator action:** review PR, ensure only owned paths changed, run lightweight regression and verified per-site end-to-end benchmark; merge into Integration only after review. Do not merge to main directly.
+
+
+---
+
+# Round 2 Owner C Handoff — 2026-11-12
+
+**Coordinator authority:** Read `repository/docs/parallel_research_round2_contract_20261112.md` at Integration commit `14f0fcdfa78a95bc3b990a2253a9b27ee8aeacbb` and coordinator comments in PR #36. **Last code/evidence commit before this handoff:** `1d1e482281fddbdac72b649f3f23cce191e898a7`. The exact final PR head follows this handoff commit; inspect PR #36 for current SHA. Work branch `research/mycon-validation-20261112` → base `research/mycon-integration-20261112` only. Owner C has not merged or rebased A/B branches.
+
+## Files modified / added (strictly Owner C-owned)
+
+- Modified `repository/benchmarks/mycon_2026/metrics.py`, `runner.py`, `plots.py`: numerically verified progress scored independently of categorical unknowns; counts for missing/abstention/classification/numeric GT; multiple geometry F-scores and orientation; site-cluster instead of building pseudo-replicated intervals, independent real held-out anchors, preregistered GT SHA gating, versioned activity/project/NVS tasks; runtime and package evidence; plot site counts.
+- New `repository/benchmarks/mycon_2026/adapters.py`: read-only A `mycon.bim_geometry_evidence.v1` manifest validation with independent survey SHA and registration gates; B additive Stage9 verified-quantity fraction and B standalone Stage11 `mycon.scientific_progress.v2` with explicit percent units, approved BOQ weights and deterministic bounds distinct from CI.
+- New `repository/benchmarks/mycon_2026/nvs.py`: independent held-out PSNR/SSIM and opt-in LPIPS; photometric metric is never converted into geometric validity.
+- New `repository/benchmarks/mycon_2026/figures.py`: fail-closed manuscript figure suite for geometry, registration, physical/activity progress, NVS, reliability, selective risk and failure rate.
+- New `repository/benchmarks/mycon_2026/evidence/round2_tool_smoke_20261112.json`: machine-readable actual synthetic-only execution evidence and source/data hashes.
+- New `repository/tests/test_research_validation_round2_contract.py`: 16 new test functions covering split/quantity/units/unknowns/site CIs/A survey/NVS/GT SHA etc; existing Owner C tests remain unchanged.
+- New `repository/scripts/research_validation_preflight.py`: read-only A/B v1/v2 CLI with exit status and SHA.
+- Updated `repository/configs/research_validation/manifest_template.json` with held-out anchor IDs, B-v2/NVS paths and GT SHA keys.
+- New `repository/configs/research_validation/benchmark_matrix.v2.json`: COLMAP, optional DUSt3R/VGGT, NVS/GS metric surface and Depth/Gravity/Sim3/ICP combinations; preregistered 5 seeds and ablations; all `not_executed`.
+- New `repository/docs/research_validation/round2_methods.md`, `manuscript_outline_round2.md`, `execution_evidence_round2.md`: full independent GT, methods, risks, stratification, stats and English paper structure with unfilled results.
+- Updated `repository/requirements-research-validation.txt` with optional NVS libraries; no root dependency changes.
+
+**Frozen A/B interface and compatibility:** Stage8 aligned PLY and registration report unchanged. A optional `mycon.bim_geometry_evidence.v1` is only a candidate and not survey GT. B's Stage9 CSV still tolerates missing physical fraction; a non-null numeric fraction requires verified executed/planned quantity and authorized source, never geometric coverage. B's v2 activity/project quantity is **percentage 0–100**, not Stage9 **fraction 0–1**, and its deterministic bounds are not Wilson confidence intervals. No A/B production code was edited. The C runner does not invoke upstream training, change originals, overwrite existing runs or mutate producer files.
+
+## Executed QA — evidence (not inferred)
+
+- C source bytes matched **exact GitHub Git blob SHA-1**; local snapshot has no complete historical repository or A/B branches. Actual command `python -m pytest -q tests/test_research_validation_metrics.py tests/test_research_validation_round2_contract.py`: **exit 0; 31 passed, 0 failed**. `python -m compileall -q ...` also completed.
+- `scripts/research_validation_run.py --help`, `scripts/research_validation_preflight.py --help`, synthetic B adapter preflight, synthetic Benchmark CLI run and scientific-figure status CLI: **all exit 0**. Exact commands, package versions, hashes and log audit in `repository/docs/research_validation/execution_evidence_round2.md` and `repository/benchmarks/mycon_2026/evidence/round2_tool_smoke_20261112.json`.
+- Synthetic dataset: **1 fictional site / 1 building / 1 capture session / 0 real sites**, run `bench-round2-fixture-final2`; **9 task records, 5 synthetic tool-test evaluations, 4 missing input `not_executed`, 0 synthetic runtime errors**. Output status `scientific_status=not_executed`; `scientific_results.json=[]` (SHA-256 `37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570`). No synthetic numeric values are included in manuscript/paired tables.
+- Test-environment Python `3.13.5`, Linux x86_64, CPU cores `5`, GPU `not_measured`, pytest `9.0.2`, numpy `2.3.5`, scipy `1.17.0`. Benchmark code snapshot's last implementation SHA before documentation `155c9b14d03ea2f203b7b53dcba6c3166f2fb52a`.
+
+## NOT EXECUTED / still blocked (scientific publication gates)
+
+- Actual baseline, ablation, independent real as-built survey/Ground Truth, real held-out registration TRE, valid site-cluster CIs, real Stage9/11 evaluation and GPU NVS/GS checkpoint **not_executed**.
+- Full pre-existing 580+ lightweight repository regression and A+B+C integrated runtime **not_executed** because there was no full checkout available to execute; A/B PRs are not merged. GitHub connector does not run pytest/CLI.
+- Required to proceed: signed independent survey with held-out control anchors, per-element accepted GlobalId and LoD, approved BOQ executed quantities and cross-activity weights, approved baseline and dated reviews; immutable site-disjoint test captures and SHA-256/GT hashes; real paired output files from A/B/COLMAP/optional new methods, checkpoints+hardware telemetry, valid confidence calibration, sufficiently many independent sites and complete regression.
+- A real registration task now refuses scoring absent a disjoint fit/held-out anchor split; a real task also refuses evaluation absent matching independent GT SHA in the manifest. **Any claiming `gpu_validated`, `real_case_validated` or `publication_ready` would be unsupported.**
+
+**Lead integration checklist:** confirm changed paths all belong to C; assess A/B interface contract and documented optional fields, sign off locked GT/splits, run actual full repository + three-way integration and paired verified-site benchmark; only the lead may merge C PR #36 into Integration (never straight to main).
+
