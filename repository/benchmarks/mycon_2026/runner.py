@@ -17,6 +17,8 @@ from statistics import mean
 
 from .metrics import (compare_anchors, ifc_element_metrics, progress_metrics,
                       read_csv, read_ply_xyz, reconstruction_metrics)
+from .adapters import (load_stage9_v2, load_scientific_progress_v2,
+                       activity_progress_metrics, project_progress_metrics)
 from .protocol import resolve_input, sha256, validate_manifest
 
 TASK_INPUTS = {
@@ -25,6 +27,8 @@ TASK_INPUTS = {
     "registration": ("survey_anchors_csv", "registered_anchors_csv"),
     "ifc": ("ifc_elements_csv", "ifc_elements_csv"),
     "progress": ("progress_csv", "element_metrics_csv"),
+    "activity_progress": ("activity_progress_gt_csv", "scientific_progress_json"),
+    "project_progress": ("project_progress_gt_csv", "scientific_progress_json"),
     "performance": (None, "telemetry_json"),
 }
 
@@ -140,8 +144,14 @@ def evaluate_one(task, root, gt, pred, *, tau_m, max_points, seed):
     elif task == "ifc":
         rows = _load_ifc_jsonl(prediction) if prediction.suffix.lower() == ".jsonl" else read_csv(prediction)
         metrics = ifc_element_metrics(rows, read_csv(truth))
+    elif task == "activity_progress":
+        metrics = activity_progress_metrics(load_scientific_progress_v2(prediction), read_csv(truth))
+    elif task == "project_progress":
+        metrics = project_progress_metrics(load_scientific_progress_v2(prediction), read_csv(truth))
     else:
-        metrics = progress_metrics(read_csv(prediction), read_csv(truth))
+        raw = read_csv(prediction)
+        rows = load_stage9_v2(prediction) if any(r.get("scientific_metrics_schema") == "mycon.element_progress.v2" for r in raw) else raw
+        metrics = progress_metrics(rows, read_csv(truth))
     return "evaluated", None, metrics, inputs
 
 
