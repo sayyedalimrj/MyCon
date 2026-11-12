@@ -12,7 +12,8 @@ from .metrics import read_csv
 from .protocol import resolve_input, sha256
 
 APPROVED_QUANTITY = {"approved_measurement", "signed_site_log", "survey_qa"}
-APPROVED_VISIBILITY = {"raycast_zbuffer", "audited_manual"}
+APPROVED_VISIBILITY = {"calibrated_camera_frustum", "raycast_zbuffer", "manual_occlusion_audit"}
+APPROVED_CALIBRATION = {"heldout_calibration", "audited_quality_model"}
 APPROVED_BASELINE = "approved_baseline"
 
 
@@ -54,10 +55,10 @@ def load_stage9_v2(path: Path):
                     or not math.isclose(physical, executed / planned, abs_tol=1e-7)):
                 raise ValueError("Unverified/mismatched physical progress for " + gid)
         # Unknown provenance is not interpreted as confirmed visibility/confidence.
-        if observed is not None and not str(row.get("observability_source") or "").strip():
-            raise ValueError("Missing observability provenance")
-        if conf is not None and not str(row.get("evidence_confidence_source") or "").strip():
-            raise ValueError("Missing calibration provenance")
+        if observed is not None and str(row.get("observability_source") or "").strip().lower() not in APPROVED_VISIBILITY:
+            raise ValueError("Invalid observability provenance")
+        if conf is not None and str(row.get("evidence_confidence_source") or "").strip().lower() not in APPROVED_CALIBRATION:
+            raise ValueError("Invalid calibration provenance")
         out.append(dict(row, physical_progress_estimate=physical,
                         observability_ratio=observed, evidence_confidence=conf))
     return out
@@ -189,7 +190,17 @@ def validate_geometry_evidence(path: Path, *, root: Path):
     gate = obj.get("registration_quality_gate")
     gate_status = gate.get("status") if isinstance(gate, dict) else gate
     accepted = obj["metric_scale_verified"] and str(gate_status).lower() in ("pass", "passed", "accepted")
-    # A's declared scale is not independent GT; a held-out survey is still required.
+    # A's declared metric scale is NOT independent evidence. Require a separate,
+    # hashed control survey before even marking this manifest a candidate.
+    control = obj.get("independent_control_evidence")
+    verified_control = False
+    if isinstance(control, dict) and control.get("path") and control.get("sha256"):
+        survey = resolve_input(root, control["path"])
+        verified_control = (survey.is_file() and sha256(survey) == control["sha256"]
+                            and str(control.get("source") or "").lower() in
+                            {"total_station_survey", "independent_lidar", "approved_survey"})
     return {"schema_version": obj["schema_version"], "asset_hashes_verified": True,
-            "n_assets": len(assets), "valid_for_visibility_candidate": bool(accepted),
-            "independent_survey_gt_still_required": True, "assets": assets}
+            "n_assets": len(assets), "independent_control_verified": verified_control,
+            "valid_for_visibility_candidate": bool(accepted and verified_control),
+            "independent_survey_gt_still_required": True, "assets": assets,
+            "reason": None if accepted and verified_control else "missing_independent_survey_or_registration_approval"}
