@@ -148,3 +148,38 @@ def test_runner_bv2_fixture_excluded_from_science(tmp_path):
     assert next(c for c in cases if c["task"]=="activity_progress")["metrics"]["physical_progress_mae_pp"]==5
     assert r["scientific_status"]=="not_executed"
     assert json.loads((tmp_path/"runs"/"bench-round2"/"scientific_results.json").read_text())==[]
+
+
+def test_nvs_heldout_pair_scoring_and_hash(tmp_path):
+    import numpy as np
+    from PIL import Image
+    from benchmarks.mycon_2026.nvs import score_nvs_pairs
+    a=tmp_path/"truth.png"
+    b=tmp_path/"render.png"
+    Image.fromarray(np.full((12,12,3),180,dtype=np.uint8)).save(a)
+    Image.fromarray(np.full((12,12,3),178,dtype=np.uint8)).save(b)
+    ref={"schema_version":"mycon.nvs_views.v1","views":[{
+        "view_id":"test-1","image":a.name,"sha256":sha256(a),
+        "capture_session_id":"session1","split":"test","held_out":True}]}
+    pred={"schema_version":"mycon.nvs_views.v1","views":[{
+        "view_id":"test-1","image":b.name,"sha256":sha256(b)}]}
+    ra=tmp_path/"ref.json";rb=tmp_path/"prediction.json"
+    ra.write_text(json.dumps(ref));rb.write_text(json.dumps(pred))
+    metrics=score_nvs_pairs(ra,rb)
+    assert metrics["n_paired_views"]==1 and metrics["n_missing_prediction"]==0
+    assert metrics["psnr_db_mean_finite"]>30 and 0<metrics["ssim_mean"]<=1
+    assert metrics["lpips_status"]=="not_executed" and metrics["lpips_mean"] is None
+    assert len(metrics["image_hashes"])==2
+    ref["views"][0]["held_out"]=False
+    ra.write_text(json.dumps(ref))
+    with pytest.raises(ValueError,match="held out"):
+        score_nvs_pairs(ra,rb)
+
+
+def test_numeric_gt_without_categorical_gt():
+    gt=[{"global_id":"A","status":"unknown","completion_fraction":"0.55"}]
+    pred=[{"global_id":"A","status":"unknown","physical_progress_estimate":"0.65"}]
+    x=progress_metrics(pred,gt)
+    assert x["n_gt_classification_available"]==0
+    assert x["classification_coverage"] is None and x["n_progress_pairs"]==1
+    assert x["progress_mae_fraction_known"]==pytest.approx(0.1)
