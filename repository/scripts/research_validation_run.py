@@ -1,5 +1,10 @@
-"""Run from repository/: python scripts/research_validation_run.py --help"""
-from benchmarks.mycon_2026.runner import main
+"""Standalone entry point, callable from the repository directory without PYTHONPATH."""
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from benchmarks.mycon_2026.runner import main  # noqa: E402
 
 if __name__ == "__main__":
     raise SystemExit(main())

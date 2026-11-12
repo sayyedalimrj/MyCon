@@ -26,7 +26,7 @@
 
 ## Tests and evidence status
 
-- Tests: local `pytest -q tests/test_research_validation_metrics.py`, synthetic unit smoke, no GPU or model calls. 14 tests passed locally; no GPU or training. Full legacy 580+ test suite not runnable here because repository baseline was not present in local sandbox.
+- Tests: local `pytest -q tests/test_research_validation_metrics.py` and CLI `python scripts/research_validation_run.py --help`, synthetic unit smoke, no GPU or model calls. 15 tests passed locally; no GPU or training. Full legacy 580+ test suite not runnable here because repository baseline was not present in local sandbox.
 - Real reconstruction, registration, IFC, physical progress, calibration, time/memory and ablations: **not_executed** (no independently approved site GT / paired live outputs supplied).
 - Synthetic fixture results: **tool-test only**; never in `scientific_results.json`, `paired_comparisons.json`, or paper comparison figures.
 - All committed code/config/docs contain no original training data or checkpoints. Input hash evidence is generated *at runtime* from supplied manifest and artifacts, not invented here.

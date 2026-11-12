@@ -170,3 +170,14 @@ def test_real_requires_independent_gt_review(tmp_path):
     assert result["scientific_status"] == "not_executed"
     case = json.loads((out / "bench-reject-unreviewed" / "cases.json").read_text())[0]
     assert case["reason"] == "real_sample_missing_independent_gt_provenance"
+
+
+def test_standalone_script_cli():
+    import subprocess
+    import sys
+    from pathlib import Path
+    repo = Path(__file__).resolve().parents[1]
+    result = subprocess.run([sys.executable, str(repo / "scripts" / "research_validation_run.py"), "--help"],
+                            cwd=repo, text=True, capture_output=True, check=False, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert "--manifest" in result.stdout
