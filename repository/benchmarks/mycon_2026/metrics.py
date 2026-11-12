@@ -112,8 +112,19 @@ def reconstruction_metrics(pred, truth, *, tau_m: float = 0.05):
     precision = sum(x <= tau_m for x in d_pred) / len(d_pred)
     recall = sum(x <= tau_m for x in d_true) / len(d_true)
     f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    curve = {}
+    for threshold in (0.01, 0.02, 0.05, 0.10):
+        acc = sum(x <= threshold for x in d_pred) / len(d_pred)
+        comp = sum(x <= threshold for x in d_true) / len(d_true)
+        score = 2 * acc * comp / (acc + comp) if acc + comp else 0.0
+        label = f"{threshold:.2f}m"
+        curve[f"accuracy_at_{label}"] = acc
+        curve[f"completeness_at_{label}"] = comp
+        curve[f"fscore_at_{label}"] = score
     return {
+        **curve,
         "precision_at_tau": precision, "recall_at_tau": recall,
+        "accuracy_at_tau": precision, "completeness_at_tau": recall,
         "fscore_at_tau": f1, "tau_m": tau_m,
         "chamfer_l1_m": (mean(d_pred) + mean(d_true)) / 2,
         "chamfer_l2_m2": (mean(x * x for x in d_pred) + mean(x * x for x in d_true)) / 2,
@@ -144,6 +155,15 @@ def compare_anchors(pred_rows, truth_rows):
             if truth_d > 1e-8:
                 ratios.append(math.dist(a[key], a[other]) / truth_d)
     scale = median(ratios) if ratios else None
+    orientation_angles = []
+    for i, key in enumerate(keys):
+        for other in keys[i + 1:]:
+            u = tuple(a[other][j] - a[key][j] for j in range(3))
+            v = tuple(b[other][j] - b[key][j] for j in range(3))
+            lu, lv = math.dist((0, 0, 0), u), math.dist((0, 0, 0), v)
+            if min(lu, lv) > 1e-8:
+                cosine = max(-1., min(1., sum(u[j] * v[j] for j in range(3)) / lu / lv))
+                orientation_angles.append(math.degrees(math.acos(cosine)))
     return {
         "n_matched_anchors": len(keys), "tre_mean_m": mean(errors),
         "tre_rmse_m": math.sqrt(mean(e * e for e in errors)),
@@ -151,6 +171,8 @@ def compare_anchors(pred_rows, truth_rows):
         "scale_ratio_pred_over_truth": scale,
         "scale_error_pct": 100 * abs(scale - 1) if scale is not None else None,
         "n_scale_pairs": len(ratios),
+        "orientation_pairwise_median_deg": median(orientation_angles) if orientation_angles else None,
+        "n_orientation_pairs": len(orientation_angles),
     }
 
 
