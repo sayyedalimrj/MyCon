@@ -162,6 +162,7 @@ def run_cleanup(cfg: Any, *, force: bool = False, log_level: str = "INFO") -> di
                 trials=int(cfg_get(cfg, "cleanup.comparison_ready_trials", 250)),
                 seed=int(cfg_get(cfg, "project.random_seed", 42)),
                 camera_json=camera_path,
+                stage7_planes_json=paths["planes_json"],
                 source_frame=str(cfg_get(cfg, "cleanup.comparison_ready_source_frame", "unknown_reconstruction_frame")),
                 source_units=str(cfg_get(cfg, "cleanup.comparison_ready_source_units", "unknown_reconstruction_units")),
             )
