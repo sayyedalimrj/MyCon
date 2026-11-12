@@ -1,0 +1,2 @@
+activity_id,activity_name,planned_start_iso,planned_finish_iso,approved_planned_percent,baseline_source,baseline_id,activity_weight,activity_weight_basis
+A1,Example walls,2026-01-01,2026-02-01,50,approved_baseline,SYNTH-B1,1,approved_cost
