@@ -180,3 +180,15 @@ def test_cli_cpu_mesh_json_real_subprocess(tmp_path):
     assert validate_manifest(m,tmp_path)['valid']
     second=subprocess.run(cmd,capture_output=True,text=True,check=False)
     assert second.returncode==2 and 'Refusing to overwrite' in second.stdout
+
+
+def test_checked_in_synthetic_unknown_fixture_is_valid_but_not_B_consumable():
+    repo_root = Path(__file__).resolve().parents[1]
+    root = repo_root / 'docs' / 'research_geometry' / 'fixture_project'
+    manifest = root / 'geom-round2-unknown' / 'bim_geometry_evidence.v1.json'
+    schema_only = validate_manifest(manifest, root, require_verified=False)
+    assert schema_only['valid'], schema_only['reasons']
+    strict = validate_manifest(manifest, root, require_verified=True)
+    assert not strict['valid']
+    assert 'metric_registration_not_independently_verified' in strict['reasons']
+    assert schema_only['counts']=={'samples':1,'cameras':0,'visibility':0}
