@@ -1,14 +1,14 @@
 # MyCon — Colab Pipeline Helpers
 
-This directory ports the MyCon pipeline (Stages 1–11) to a **production-grade
-Google Colab workflow** with a Gradio UI and a headless API. The pipeline
+This directory connects the MyCon pipeline (Stages 1–11) to a **research integration
+Colab workflow** (not validated for real-site metrological accuracy) with a Gradio UI and a headless API. The pipeline
 stage code is unchanged — everything here orchestrates the existing
 `scripts/run_stage.py` launcher and the `pipeline.stage_*` runners — but the
 orchestration is built for long, unattended runs on unstable Colab runtimes:
 
-- **Drive-first persistence** — every artifact, report, log, checkpoint, cache
-  and model lands on Google Drive. Fast local caches are mirrored to Drive by a
-  resilient background daemon.
+- **Drive-first project tree** — stage files and checkpoint state use Drive; the notebook
+  refuses headless execution when Drive is not writable. Fast local caches are mirrored
+  periodically, but an unexpected shutdown can still lose unsynchronized files.
 - **Checkpoint / resume** — progress is recorded after every stage; a disconnect
   is recovered by re-running with the same `RUN_ID`. Resume also works on a
   different device/Drive account because the whole project tree (config + state
@@ -17,6 +17,15 @@ orchestration is built for long, unattended runs on unstable Colab runtimes:
   optional real local VLM (Ollama + Qwen-VL) are installed for you.
 - **Reliability** — retries on apt/pip/Drive I/O, per-stage retries, atomic
   writes, health checks, structured logging.
+
+## Final notebook safety (2026-11-13)
+
+- Checkout branch: `research/mycon-integration-20261112`, not `main`.
+- Re-running requires the same stable `RUN_ID`; the notebook refuses a dirty or mismatched clone.
+- UI public sharing and `force` overwrite default **off**; use deliberate opt-in.
+- Headless stage selection defaults to a limited subset; full GPU execution requires explicit opt-in.
+- Stage 7 comparison-ready geometry is optional, source-preserving, and **not metrically validated**.
+- CPU QA: `tests/test_final_colab_notebook_integration.py` verifies notebook and generator equivalence, compiles every Python cell and checks fail-closed resume.
 
 ## Files
 
@@ -43,7 +52,7 @@ orchestration is built for long, unattended runs on unstable Colab runtimes:
 
 | Profile | Intent |
 | --- | --- |
-| `colab_safe` | Bounded memory, mock VLM, precomputed DA3, no training. Always works on a free T4. |
+| `colab_safe` | Limited-resource defaults, mock Stage 7.5 QA, precomputed DA3, no training; availability still depends on inputs and runtime. |
 | `colab_gpu` *(default)* | Full single-GPU run (real dense + cleanup, larger image budget). Real VLM if provisioned. |
 | `production` | Server-grade settings (no artificial caps). Use an A100/L4 high-RAM runtime. |
 
@@ -78,8 +87,8 @@ stage_11_schedule_variance      (light)            — schedule + variance + das
 - `COLAB_SAFE_DEFAULT_KEYS` — the quick sanity subset
   (`stage_01`, `stage_02`, `stage_07_5`, `stage_07_6`, `stage_11`).
 - `FULL_PIPELINE_KEYS` — the full end-to-end ordering. Stages without inputs
-  (no BIM/anchors) exit 0 with a `skipped` marker, so running the whole list
-  is safe; heavy SfM/dense stages need a GPU runtime.
+  (no BIM/anchors) may be skipped or **blocked with a nonzero exit**; heavy
+  SfM/dense stages need suitable GPU and actual input data.
 - `order_stages()` reorders any hand-picked subset into canonical order.
 
 ## Where outputs live
@@ -126,15 +135,16 @@ left untouched and any already-complete stages are skipped.
 ## Continuous Drive sync
 
 The background `DriveSyncManager` flushes local caches to Drive **~every 60 s**
-and at every stage boundary, so progress is saved continuously during a run,
-not only at the end. All writes are atomic (temp file + `os.replace`).
+and at stage boundaries, but in-progress binary stages and local caches may lose
+unflushed state on interruption. Persistent output writes should remain on Drive.
 
 ## Real local VLM
 
 `models.provision_vlm()` installs Ollama, starts the server (with
 `OLLAMA_MODELS` pointed at Drive so models persist), pulls a Qwen-VL model, and
-returns the config overrides that switch `copilot.vlm.provider` /
-`vlm_qa.provider` to `ollama_local` at `http://127.0.0.1:11434/api/chat`. If
+returns the config overrides that switch **Stage 10** `copilot.vlm.provider`
+to `ollama_local` at `http://127.0.0.1:11434/api/chat`. Stage 7.5 remains
+**deterministic/mock-only** and cannot claim live VLM inference. If
 provisioning fails on a given runtime, the pipeline keeps the deterministic
 mock provider and never blocks (`fallback_to_mock_when_unavailable: true`).
 
