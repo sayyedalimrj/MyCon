@@ -287,25 +287,65 @@ def extract_planes(points: Any, *, threshold: float, min_points: int = 40,
 
 
 def _line_intersection(p1: dict, p2: dict) -> tuple[np.ndarray, np.ndarray] | None:
-    n1, n2 = np.array(p1["normal"]), np.array(p2["normal"])
+    """Finite, normalized two-plane intersection (also accepts integer normals)."""
+    n1, n2 = (np.asarray(p["normal"], dtype=np.float64) for p in (p1, p2))
+    if n1.shape != (3,) or n2.shape != (3,) or not np.isfinite(n1).all() or not np.isfinite(n2).all():
+        return None
+    lengths = (float(np.linalg.norm(n1)), float(np.linalg.norm(n2)))
+    if min(lengths) <= 1e-12:
+        return None
+    n1, n2 = n1 / lengths[0], n2 / lengths[1]
     direction = np.cross(n1, n2)
-    length = np.linalg.norm(direction)
-    if length < math.sin(math.radians(12)):
+    length = float(np.linalg.norm(direction))
+    if not np.isfinite(length) or length < math.sin(math.radians(12)):
         return None
     direction /= length
-    # Minimum-norm point on simultaneous two-plane intersection.
+    # Plane offsets are normalized with the normals; no inferred physical scale.
+    d1 = float(p1["coefficients"][3]) / lengths[0]
+    d2 = float(p2["coefficients"][3]) / lengths[1]
+    if not np.isfinite([d1, d2]).all():
+        return None
     a = np.vstack((n1, n2, direction))
-    b = np.array([-p1["coefficients"][3], -p2["coefficients"][3], 0])
+    b = np.array([-d1, -d2, 0.], dtype=np.float64)
     return np.linalg.solve(a, b), direction
+
+
+def _supported_edge_intervals(coords: np.ndarray, radius: float) -> list[tuple[float, float, np.ndarray]]:
+    """Split near-line samples at *unobserved* gaps; never bridge isolated patches.
+
+    The gap threshold uses the local median positive sampling step and the
+    geometry-support radius, not the overall min/max extent of all points.
+    """
+    if not len(coords):
+        return []
+    order = np.argsort(coords, kind="stable")
+    sorted_coords = coords[order]
+    steps = np.diff(sorted_coords)
+    positive = steps[steps > 1e-9]
+    median_step = float(np.median(positive)) if len(positive) else 0.
+    gap_threshold = max(2.5 * radius, 3.0 * median_step)
+    breaks = np.flatnonzero(steps > gap_threshold) + 1
+    chunks = np.split(order, breaks)
+    return [(float(coords[c].min()), float(coords[c].max()), c) for c in chunks if len(c)]
 
 
 def extract_edges(points: Any, planes: list[dict], *, radius: float,
                   min_support: int = 3, min_length: float | None = None) -> list[dict]:
-    """Observed finite intervals where BOTH planes have points near their line."""
+    """Finite *candidate* segments supported by samples from BOTH local planes.
+
+    Unlike single-extremum intersections, this can emit two separated edge
+    segments for disjoint patches and will not fill an unsampled middle span.
+    This remains geometric evidence, not a verified construction edge.
+    """
     pts = _xyz(points)
-    if radius <= 0:
-        raise ValueError("radius must be positive")
-    edges = []
+    if not np.isfinite(pts).all():
+        raise ValueError("Edge detection requires finite points")
+    if not np.isfinite(radius) or radius <= 0 or not isinstance(min_support, int) or min_support < 2:
+        raise ValueError("Invalid edge support radius/count")
+    threshold_length = 2 * radius if min_length is None else float(min_length)
+    if not np.isfinite(threshold_length) or threshold_length <= 0:
+        raise ValueError("Invalid minimum segment length")
+    edges: list[dict] = []
     for i in range(len(planes)):
         for j in range(i + 1, len(planes)):
             first, second = planes[i], planes[j]
@@ -313,33 +353,46 @@ def extract_edges(points: Any, planes: list[dict], *, radius: float,
             if intersection is None:
                 continue
             origin, axis = intersection
-            interval = []
-            supports = []
+            per_plane: list[list[tuple[float, float, np.ndarray]]] = []
             for plane in (first, second):
-                indices = np.asarray(plane["support_indices"], dtype=int)
+                indices = np.asarray(plane["support_indices"], dtype=np.int64)
+                if indices.ndim != 1 or (len(indices) and (indices.min() < 0 or indices.max() >= len(pts))):
+                    raise ValueError("Invalid plane support indices")
                 near = np.linalg.norm(np.cross(pts[indices] - origin, axis), axis=1) <= radius
                 selected = indices[near]
                 if len(selected) < min_support:
                     break
                 coord = (pts[selected] - origin) @ axis
-                interval.append([float(coord.min()), float(coord.max())])
-                supports.append(selected)
-            if len(interval) != 2:
+                runs = _supported_edge_intervals(coord, radius)
+                per_plane.append([(lo, hi, selected[local]) for lo, hi, local in runs
+                                  if len(local) >= min_support])
+            if len(per_plane) != 2:
                 continue
-            lo, hi = max(x[0] for x in interval), min(x[1] for x in interval)
-            if hi - lo < (min_length if min_length is not None else 2 * radius):
-                continue
-            # The geometric endpoints must not exceed each patch's observed range.
-            start, end = origin + axis * lo, origin + axis * hi
-            edges.append({"edge_id": f"ed-{len(edges) + 1:03d}",
-                          "plane_ids": [first["plane_id"], second["plane_id"]],
-                          "endpoints_xyz": [start.tolist(), end.tolist()],
-                          "length_reconstruction_units": float(hi - lo),
-                          "support_count_per_plane": [len(s) for s in supports],
-                          "support_indices_per_plane": [s.tolist() for s in supports],
-                          "support_radius_units": radius,
-                          "fit_state": "locally_supported_candidate",
-                          "confirmed_physical_edge": False})
+            for a_lo, a_hi, a_ids in per_plane[0]:
+                for b_lo, b_hi, b_ids in per_plane[1]:
+                    lo, hi = max(a_lo, b_lo), min(a_hi, b_hi)
+                    if hi - lo < threshold_length:
+                        continue
+                    # Retain only actual support points in this finite interval.
+                    support = []
+                    for ids in (a_ids, b_ids):
+                        t = (pts[ids] - origin) @ axis
+                        ids = ids[(t >= lo - radius) & (t <= hi + radius)]
+                        if len(ids) < min_support:
+                            break
+                        support.append(ids)
+                    if len(support) != 2:
+                        continue
+                    start, end = origin + axis * lo, origin + axis * hi
+                    edges.append({"edge_id": f"ed-{len(edges) + 1:03d}",
+                                  "plane_ids": [first["plane_id"], second["plane_id"]],
+                                  "endpoints_xyz": [start.tolist(), end.tolist()],
+                                  "length_reconstruction_units": float(hi - lo),
+                                  "support_count_per_plane": [len(x) for x in support],
+                                  "support_indices_per_plane": [x.tolist() for x in support],
+                                  "support_radius_units": radius,
+                                  "fit_state": "locally_supported_candidate",
+                                  "confirmed_physical_edge": False})
     return edges
 
 
@@ -355,7 +408,9 @@ def extract_corners(points: Any, planes: list[dict], edges: list[dict], *,
                     radius: float, min_support: int = 3,
                     max_condition: float = 100.0) -> list[dict]:
     pts = _xyz(points)
-    edge_by_plane = {frozenset(e["plane_ids"]): e for e in edges}
+    edge_by_plane: dict[frozenset[str], list[dict]] = {}
+    for edge in edges:
+        edge_by_plane.setdefault(frozenset(edge["plane_ids"]), []).append(edge)
     corners = []
     from itertools import combinations
     for trio in combinations(planes, 3):
@@ -371,15 +426,25 @@ def extract_corners(points: Any, planes: list[dict], edges: list[dict], *,
             indices = np.asarray(p["support_indices"], dtype=int)
             count = int(np.sum(np.linalg.norm(pts[indices] - candidate, axis=1) <= radius))
             support.append(count)
-        paired = [edge_by_plane.get(frozenset(pair)) for pair in combinations(ids, 2)]
-        has_edges = all(e is not None for e in paired)
-        edge_contains = has_edges and all(
-            np.linalg.norm(np.cross(np.asarray(e["endpoints_xyz"][1]) - np.asarray(e["endpoints_xyz"][0]),
-                                    candidate - np.asarray(e["endpoints_xyz"][0]))) <=
-            radius * max(e["length_reconstruction_units"], 1e-12)
-            and np.linalg.norm(candidate - np.asarray(e["endpoints_xyz"][0])) <= e["length_reconstruction_units"] + radius
-            and np.linalg.norm(candidate - np.asarray(e["endpoints_xyz"][1])) <= e["length_reconstruction_units"] + radius
-            for e in paired)
+        # A pair of planes can have several disconnected *finite* edge segments.
+        # A corner is observed only if each parent pair has a segment at THIS corner.
+        paired = []
+        for pair in combinations(ids, 2):
+            local = []
+            for edge in edge_by_plane.get(frozenset(pair), []):
+                e0, e1 = (np.asarray(v, dtype=float) for v in edge["endpoints_xyz"])
+                segment = e1 - e0
+                length = float(np.linalg.norm(segment))
+                if length <= 1e-12:
+                    continue
+                offset = candidate - e0
+                t = float(np.dot(offset, segment) / (length * length))
+                projected = e0 + np.clip(t, 0., 1.) * segment
+                distance = float(np.linalg.norm(candidate - projected))
+                if distance <= radius:
+                    local.append((distance, edge))
+            paired.append(min(local, key=lambda x: x[0])[1] if local else None)
+        edge_contains = all(e is not None for e in paired)
         observed = all(within) and all(s >= min_support for s in support) and bool(edge_contains)
         # Finite-support failure is not promoted to a measured corner.
         state = "observed_supported" if observed else "candidate_extrapolated"
