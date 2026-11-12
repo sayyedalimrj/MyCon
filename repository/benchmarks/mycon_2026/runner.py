@@ -186,7 +186,7 @@ def _export_tables(out: Path, cases: list[dict], summary: list[dict], paired: li
     def tex(s):
         return str(s).replace("\\", r"\textbackslash{}").replace("_", r"\_").replace("%", r"\%").replace("&", r"\&").replace("#", r"\#")
     latex = [r"\begin{tabular}{llllrr}", r"\toprule",
-             r"Task & Method & Metric & Mean & CI 95\% & Buildings \\", r"\midrule"]
+             r"Task & Method & Metric & Mean & CI 95\% & Sites \\", r"\midrule"]
     for r in summary:
         ci = "NA" if r["ci95_low"] is None else f"[{r['ci95_low']:.3g}, {r['ci95_high']:.3g}]"
         latex.append(" & ".join([tex(r["task"]), tex(r["method"]), tex(r["metric"]),
