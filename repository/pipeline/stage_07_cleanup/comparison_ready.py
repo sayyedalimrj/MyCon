@@ -522,7 +522,7 @@ def run_ready(source: Path, root: Path, run_id: str, *, threshold: float = 0.03,
     target.mkdir(parents=True, exist_ok=False)
     np.save(target / "clean_cloud.npy", pts.astype("<f8"), allow_pickle=False)
     np.savez_compressed(target / "normal_samples.npz", indices=normal_indices,
-                        xyz=normal_samples, allow_pickle=False)
+                        xyz=normal_samples)
     _ply_write(target / "clean_cloud.ply", pts, rgb)
     data = {"planes.json": {"planes": patches}, "edges.json": {"edges": edges},
             "corners.json": {"corners": corners}}
