@@ -515,7 +515,7 @@ def run_stage(
     repo_root: Path,
     logs_dir: Path,
     log: LogBuffer,
-    force: bool = True,
+    force: bool = False,
     log_level: str = "INFO",
     cleanup_after: bool = True,
     extra_kv: Optional[dict[str, str]] = None,
@@ -596,7 +596,7 @@ def run_stages(
     logs_dir: Path,
     reports_dir: Path,
     log: LogBuffer,
-    force: bool = True,
+    force: bool = False,
     log_level: str = "INFO",
     extra_kv: Optional[dict[str, str]] = None,
     stop_on_failure: bool = True,
@@ -634,8 +634,12 @@ def run_stages(
                 state_path=Path(reports_dir) / "run_state.json",
                 config_path=Path(config_path),
             )
-        except Exception as exc:  # never let checkpointing break a run
-            log.append(f"[run] checkpoint init failed ({exc}); continuing without resume")
+        except Exception as exc:
+            # Resume without a valid checkpoint silently re-executes heavy stages.
+            # Never fall back to an untracked run that could overwrite artifacts.
+            log.append(f"[run] checkpoint init failed: {exc}")
+            if resume:
+                raise RuntimeError("Cannot safely resume: checkpoint initialization failed") from exc
             mgr = None
 
     ordered_keys = order_stages(list(spec_keys)) if reorder else list(spec_keys)
