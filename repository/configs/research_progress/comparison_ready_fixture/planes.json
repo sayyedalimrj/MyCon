@@ -1,0 +1,145 @@
+{
+  "planes": [
+    {
+      "extent_vertices": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0
+        ]
+      ],
+      "normal": [
+        1,
+        0,
+        0
+      ],
+      "offset": 0,
+      "plane_id": "P-X",
+      "quality_gate": "pass",
+      "residual": 0.001,
+      "state": "observed_supported",
+      "support_count": 3,
+      "support_sample_ids": [
+        "s1",
+        "s2",
+        "s3"
+      ]
+    },
+    {
+      "extent_vertices": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0
+        ]
+      ],
+      "normal": [
+        0,
+        1,
+        0
+      ],
+      "offset": 0,
+      "plane_id": "P-Y",
+      "quality_gate": "pass",
+      "residual": 0.001,
+      "state": "observed_supported",
+      "support_count": 3,
+      "support_sample_ids": [
+        "s1",
+        "s2",
+        "s3"
+      ]
+    },
+    {
+      "extent_vertices": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0
+        ]
+      ],
+      "normal": [
+        0,
+        0,
+        1
+      ],
+      "offset": 0,
+      "plane_id": "P-Z",
+      "quality_gate": "pass",
+      "residual": 0.001,
+      "state": "observed_supported",
+      "support_count": 3,
+      "support_sample_ids": [
+        "s1",
+        "s2",
+        "s3"
+      ]
+    },
+    {
+      "extent_vertices": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0
+        ]
+      ],
+      "normal": [
+        1,
+        0,
+        0
+      ],
+      "offset": 0,
+      "plane_id": "P-X2",
+      "quality_gate": "pass",
+      "residual": 0.001,
+      "state": "observed_supported",
+      "support_count": 3,
+      "support_sample_ids": [
+        "s1",
+        "s2",
+        "s3"
+      ]
+    }
+  ],
+  "schema_version": "mycon.comparison_ready_geometry.v1"
+}

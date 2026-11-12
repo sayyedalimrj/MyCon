@@ -1,0 +1,53 @@
+{
+  "coordinates": {
+    "coordinate_frame": "reconstruction_local",
+    "units": "arbitrary"
+  },
+  "created_at_utc": "2026-01-16T00:00:00Z",
+  "files": {
+    "cameras": {
+      "path": "configs/research_progress/comparison_ready_fixture/cameras.json",
+      "sha256": "9c69bc179f765129ae586ff1d6db03b1ac8496916d4ea50490804ac27187631f"
+    },
+    "clean_cloud_npy": {
+      "path": "configs/research_progress/comparison_ready_fixture/clean_cloud.npy",
+      "sha256": "cc31c7416fd554d355aee79ddeb94772f2f861410a5b2d16fd40f0e7b59c6d89"
+    },
+    "clean_cloud_ply": {
+      "path": "configs/research_progress/comparison_ready_fixture/clean_cloud.ply",
+      "sha256": "a0cc618b27ebaf82ce6924f628de0bec7461efc2d447be89b83a9d023d739aef"
+    },
+    "corners": {
+      "path": "configs/research_progress/comparison_ready_fixture/corners.json",
+      "sha256": "36ee760e7ae6073eeb985a0577fa27691fb781a022284e27a746dbe2c7bb6567"
+    },
+    "edges": {
+      "path": "configs/research_progress/comparison_ready_fixture/edges.json",
+      "sha256": "bf10c486c30686f8f896b2781b80724ef5b450b2d8b27eb8d6985c6aef5c373c"
+    },
+    "planes": {
+      "path": "configs/research_progress/comparison_ready_fixture/planes.json",
+      "sha256": "3312f6d06f4f8e1e9649ec7e111c719808b3ceb56a3bedd7d4f7e947ad263b8c"
+    }
+  },
+  "metric_scale_verified": false,
+  "project_id": "mycon-synthetic-only",
+  "provenance": {
+    "code_commit": "synthetic-fixture-only",
+    "config_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "seed": 0,
+    "software_versions": {
+      "python": "3.13"
+    },
+    "source_images_sha256": null,
+    "source_model_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "quality": {
+    "density_points_per_unit3": null,
+    "removed_point_ratio": 0,
+    "semantic_bim_overlap": null
+  },
+  "registration_verified": false,
+  "run_id": "geom-ready-synthetic-01",
+  "schema_version": "mycon.comparison_ready_geometry.v1"
+}
