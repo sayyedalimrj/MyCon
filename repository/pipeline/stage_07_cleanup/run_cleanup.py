@@ -180,9 +180,12 @@ def run_cleanup(cfg: Any, *, force: bool = False, log_level: str = "INFO") -> di
                 "metric_scale_verified": False,
                 "registration_verified": False,
             }
+            report["status"] = "comparison_ready_blocked_or_failed"
             logger.warning("Comparison-ready optional output failed: %s", exc)
     write_json_atomic(paths["report_json"], report)
 
+    if report.get("comparison_ready", {}).get("status") == "blocked_or_failed":
+        raise Stage7CleanupError("Opt-in comparison-ready production failed; see Stage 7 report comparison_ready.reason")
     if not quality_gate["passed"] and bool_value(cfg_get(cfg, "cleanup.fail_on_quality_gate", False)):
         raise Stage7CleanupError("Stage 7 quality gate failed: " + "; ".join(quality_gate["failures"] + quality_gate["warnings"]))
 
