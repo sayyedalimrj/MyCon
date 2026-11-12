@@ -1,0 +1,2 @@
+{"eligible_sample_ids": ["s1", "s2", "s3", "s4"], "geometry_assessment": {"max_deviation_m": 0.01, "quality_gate": "pass", "tolerance_m": 0.05}, "global_id": "0AbCdeFgHiJkLmNoPqRsTu", "method": "raycast_zbuffer", "qa_provenance_ref": "SYNTH-RAY-QA-1", "state": "visible", "view_id": "V1", "visible_sample_ids": ["s1", "s2"]}
+{"eligible_sample_ids": ["s5", "s6", "s7", "s8"], "global_id": "1BcDefGhIjKlMnOpQrStUv", "method": "raycast_zbuffer", "qa_provenance_ref": "SYNTH-RAY-QA-1", "state": "occluded", "view_id": "V1", "visible_sample_ids": []}
