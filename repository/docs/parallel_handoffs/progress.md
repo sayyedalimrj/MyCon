@@ -164,7 +164,7 @@ This section **supersedes earlier test-status statements for the new Round-2 mod
 - \`pipeline/stage_11_schedule_variance/scientific_progress.py\`: strict BOQ/quantity aggregation, partial-identification bounds, exact as-of approved baseline, WBS and project weights, separate schedule-decision Quality Gates, all per-element audit metadata.
 - \`pipeline/stage_11_schedule_variance/run_scientific_progress.py\`: stand-alone primary scientific v2 JSON CLI, input SHA-256, isolated progress-prefixed run ID.
 - \`pipeline/stage_11_schedule_variance/run_schedule_variance.py\`: legacy v1 preserved, explicitly logged as **legacy acceptance proxy**, optional distinct \`--baseline-csv\`, nested v2 unchanged schema family.
-- Tests: \`tests/test_round2_progress_contract.py\` (27 local passes); old B-owned scientific tests adjusted for stronger provenance requirements.
+- Tests: \`tests/test_round2_progress_contract.py\` (28 local passes); old B-owned scientific tests adjusted for stronger provenance requirements.
 - For C: \`configs/research_progress/round2_contract_fixture/\` includes immutable synthetic manifest and JSONL sidecars, IFC IDs, schedule/mapping/Stage9 CSV, \`expected.json\`, complete \`scientific_progress.v2.synthetic.json\`; provenance/units/unknown reason codes included.
 - Docs: \`docs/research_progress/round2_methodology.md\`; \`docs/research_progress/round2_execution_log_20261112.md\` for commands, dependency versions, exit codes, fixture SHA-256, caveats.
 
@@ -173,7 +173,7 @@ All paths above are prefixed with \`repository/\` in GitHub.
 ## Executed verification (do not misrepresent)
 
 - \`python -m compileall -q pipeline/stage_09_progress pipeline/stage_11_schedule_variance\`: **exit 0** (present local B modules).
-- \`python -m pytest -q -ra tests/test_round2_progress_contract.py\`: **exit 0, 27 passed**, one warning about \`pytest.mark.lightweight\` registration in partial mirror, ~0.12s.
+- \`python -m pytest -q -ra tests/test_round2_progress_contract.py\`: **exit 0, 28 passed**, one warning about \`pytest.mark.lightweight\` registration in partial mirror, ~0.10s.
 - Stage9 standalone manifest+quantity adapter CLI: **exit 0**, produced 2-element CSV, \`geometry_gate=pass\` for the **synthetic** manifest. This is schema validation, not independent capture validation.
 - Stage11 scientific v2 CLI: **exit 0**; synthetic progress unknown, [60,85]% bounds, observability 0.375, approved synthetic planned 50%, variance bounds [+10,+35] pp, \`quality_gate=blocked\`. E2 occluded but has unknown physical execution; no synthetic physical point estimate fabricated.
 - The local test tree contains exact Git-blob-verified B source and fixture bytes; **the common mapping/schedule loaders are compatible local mirrors, not original GitHub checkout bytes**. Full original Stage9/11 regression suite, GPU/Open3D geometry, and **real-world end-to-end** were **not executed**. No CI run was available. These remain mandatory coordinator release blockers.
