@@ -24,9 +24,11 @@ def _b():
         "units":{"element_progress":"fraction_0_1","activity_and_project_percent":"percent_0_100"},
         "activities":[{"activity_id":"a1","physical_progress_estimate":70,
                        "physical_progress_lower_bound_pct":70,"physical_progress_upper_bound_pct":70,
-                       "planned_percent_complete":50,"schedule_variance_percent":20}],
+                       "planned_percent_complete":50,"schedule_variance_percent":20,
+                       "mapping_weight_basis":"approved_boq"}],
         "overall":{"physical_progress_estimate":70,"physical_progress_lower_bound_pct":70,
-                   "physical_progress_upper_bound_pct":70,"schedule_variance_percent":20}}
+                   "physical_progress_upper_bound_pct":70,"schedule_variance_percent":20,
+                   "activity_weights_approved":True}}
 
 
 def test_unknown_does_not_drop_numeric_progress():
