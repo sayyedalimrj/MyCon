@@ -42,7 +42,8 @@ jobs:
             tests/test_research_progress_scientific.py \
             tests/test_research_progress_geometry.py \
             tests/test_round2_progress_contract.py \
-            tests/test_mycon_integration_geometry.py
+            tests/test_mycon_integration_geometry.py \
+            tests/test_geometry_before_after_audit.py
       - name: Package reviewed research source (candidate; not field-validated)
         run: |
           git archive --format=zip --output=../MyCON_Integration_RC_CPU.zip HEAD
