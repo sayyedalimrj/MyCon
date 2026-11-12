@@ -183,3 +183,50 @@ def test_numeric_gt_without_categorical_gt():
     assert x["n_gt_classification_available"]==0
     assert x["classification_coverage"] is None and x["n_progress_pairs"]==1
     assert x["progress_mae_fraction_known"]==pytest.approx(0.1)
+
+
+def test_site_cluster_ci_rejects_pseudoreplication():
+    from benchmarks.mycon_2026.runner import _summary
+    rows=[]
+    for site, building, value in [('s1','a',.2),('s1','b',.6),('s2','c',.8)]:
+        rows.append({'method':'m','task':'progress','metric':'accuracy','value':value,
+                     'site_id':site,'building_key':(site,building),'sample_id':site+building})
+    one=_summary(rows[:2],42,repetitions=100)[0]
+    assert one['n_sites']==1 and one['n_buildings']==2
+    assert one['ci95_low'] is None and one['ci95_high'] is None
+    two=_summary(rows,42,repetitions=100)[0]
+    assert two['n_sites']==2 and two['ci95_low'] is not None
+
+
+def test_a_geometry_requires_independent_hashed_survey(tmp_path):
+    assets={}
+    for key in ('surface_samples','camera_poses','element_visibility'):
+        p=tmp_path/(key+'.jsonl');p.write_text('{}\n')
+        assets[key]={'path':p.name,'sha256':sha256(p)}
+    a={'schema_version':'mycon.bim_geometry_evidence.v1','run_id':'geom-demo',
+       'project_id':'site','created_at_utc':'2026-11-12','coordinate_frame':'bim_world',
+       'units':'m','ifc_sha256':'a'*64,'scan_sha256':'b'*64,
+       'registration_report_sha256':'c'*64,'registration_quality_gate':{'status':'pass'},
+       'scan_to_bim_4x4':[[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]],
+       'metric_scale_verified':True,'provenance':{},**assets}
+    f=tmp_path/'geometry.json';f.write_text(json.dumps(a))
+    assert not validate_geometry_evidence(f,root=tmp_path)['valid_for_visibility_candidate']
+    survey=tmp_path/'survey.txt';survey.write_text('external heldout measurement')
+    a['independent_control_evidence']={'path':survey.name,'sha256':sha256(survey),'source':'approved_survey'}
+    f.write_text(json.dumps(a))
+    result=validate_geometry_evidence(f,root=tmp_path)
+    assert result['independent_control_verified'] and result['valid_for_visibility_candidate']
+
+
+def test_invalid_calibration_source_rejected(tmp_path):
+    p=tmp_path/'stage9.csv'
+    _csv(p,[{'global_id':'A','evidence_confidence':'0.8','evidence_confidence_source':'unverified'}])
+    with pytest.raises(ValueError,match='Invalid calibration provenance'):
+        load_stage9_v2(p)
+
+
+def test_stage11_identification_interval_not_ci(tmp_path):
+    d=_b();d['activities'][0]['progress_interval_type']='wilson_95_ci'
+    p=tmp_path/'v2.json';p.write_text(json.dumps(d))
+    with pytest.raises(ValueError,match='confidence intervals'):
+        load_scientific_progress_v2(p)
