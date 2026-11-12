@@ -89,3 +89,29 @@ def transform_points(points: Any, matrix: Any) -> np.ndarray:
     validate_scan_to_bim_transform(matrix)
     transform = np.asarray(matrix, dtype=np.float64)
     return p @ transform[:3, :3].T + transform[:3, 3]
+
+
+def colmap_camera_to_bim_w2c(colmap_world_to_camera: Any, scan_to_bim: Any) -> np.ndarray:
+    """Convert a rigid COLMAP (unscaled SfM) W2C into metric BIM-world W2C.
+
+    If BIM = s*R*SfM+t, the BIM camera center is s*R*C_sfm+t, while
+    R_cam_bim = R_cam_sfm * R_bim_sfm.T. Do not compose raw homogeneous
+    transforms directly: their product would make camera rotation nonrigid.
+    """
+    colmap = np.asarray(colmap_world_to_camera, dtype=np.float64)
+    if colmap.shape != (4, 4) or not np.isfinite(colmap).all():
+        raise ValueError("COLMAP W2C must be finite 4x4")
+    validate_scan_to_bim_transform(colmap, allow_scale=False)
+    transform_qa = validate_scan_to_bim_transform(scan_to_bim)
+    sim = np.asarray(scan_to_bim, dtype=np.float64)
+    scale = transform_qa["scale_scan_to_bim"]
+    R_bim_sfm = sim[:3, :3] / scale
+    R_cam_sfm = colmap[:3, :3]
+    center_sfm = -R_cam_sfm.T @ colmap[:3, 3]
+    center_bim = scale * (R_bim_sfm @ center_sfm) + sim[:3, 3]
+    R_cam_bim = R_cam_sfm @ R_bim_sfm.T
+    output = np.eye(4, dtype=np.float64)
+    output[:3, :3] = R_cam_bim
+    output[:3, 3] = -R_cam_bim @ center_bim
+    validate_scan_to_bim_transform(output, allow_scale=False)
+    return output
