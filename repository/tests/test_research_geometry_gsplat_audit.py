@@ -76,4 +76,4 @@ def test_stage45_force_cannot_erase_original_artifacts(tmp_path: Path) -> None:
     assert important.read_bytes() == b"retain original"
 
 
-pytestmark = pytest.mark.geometry
+pytestmark = pytest.mark.lightweight
