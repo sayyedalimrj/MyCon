@@ -1,0 +1,293 @@
+{
+  "schema_version": "mycon.validation_experiment_matrix.v2",
+  "created_on": "2026-11-12",
+  "evidence_status": "not_executed",
+  "contract": "repository/docs/parallel_research_round2_contract_20261112.md",
+  "primary_outcomes": [
+    {
+      "metric": "fscore_at_0.05m",
+      "unit": "ratio_0_1",
+      "comparison": "paired_heldout_site"
+    },
+    {
+      "metric": "tre_rmse_m",
+      "unit": "m",
+      "comparison": "heldout_survey_anchors"
+    },
+    {
+      "metric": "physical_progress_mae_pp",
+      "unit": "percentage_points",
+      "comparison": "approved_quantity_gt"
+    }
+  ],
+  "thresholds_m": [
+    0.01,
+    0.02,
+    0.05,
+    0.1
+  ],
+  "random_seeds": [
+    11,
+    23,
+    42,
+    67,
+    101
+  ],
+  "methods": [
+    {
+      "key": "colmap_sfm_mvs",
+      "name": "COLMAP_SfM_MVS",
+      "tasks": [
+        "reconstruction",
+        "bim_geometry",
+        "registration",
+        "ifc",
+        "performance"
+      ],
+      "purpose": "classical_reference",
+      "status": "not_executed",
+      "shared_input_capture_set": "FROZEN_TEST_IDS_REQUIRED",
+      "shared_gt": "INDEPENDENT_SURVEY_BOQ_BASELINE_REQUIRED",
+      "model_commit_sha": null,
+      "checkpoint_sha256": null,
+      "hardware": null
+    },
+    {
+      "key": "dust3r",
+      "name": "DUSt3R",
+      "tasks": [
+        "reconstruction",
+        "bim_geometry",
+        "registration",
+        "performance"
+      ],
+      "purpose": "feedforward_optional",
+      "status": "not_executed",
+      "shared_input_capture_set": "FROZEN_TEST_IDS_REQUIRED",
+      "shared_gt": "INDEPENDENT_SURVEY_BOQ_BASELINE_REQUIRED",
+      "model_commit_sha": null,
+      "checkpoint_sha256": null,
+      "hardware": null
+    },
+    {
+      "key": "vggt",
+      "name": "VGGT",
+      "tasks": [
+        "reconstruction",
+        "bim_geometry",
+        "registration",
+        "performance"
+      ],
+      "purpose": "feedforward_optional",
+      "status": "not_executed",
+      "shared_input_capture_set": "FROZEN_TEST_IDS_REQUIRED",
+      "shared_gt": "INDEPENDENT_SURVEY_BOQ_BASELINE_REQUIRED",
+      "model_commit_sha": null,
+      "checkpoint_sha256": null,
+      "hardware": null
+    },
+    {
+      "key": "gsplat_rgb",
+      "name": "GS_heldout_render",
+      "tasks": [
+        "nvs",
+        "performance"
+      ],
+      "purpose": "appearance_only_no_geometry_claim",
+      "status": "not_executed",
+      "shared_input_capture_set": "FROZEN_TEST_IDS_REQUIRED",
+      "shared_gt": "INDEPENDENT_SURVEY_BOQ_BASELINE_REQUIRED",
+      "model_commit_sha": null,
+      "checkpoint_sha256": null,
+      "hardware": null
+    },
+    {
+      "key": "gsplat_metric_surface",
+      "name": "GS_metric_surface_extracted",
+      "tasks": [
+        "reconstruction",
+        "bim_geometry",
+        "registration",
+        "performance"
+      ],
+      "purpose": "geometry_if_metric_and_survey_verified",
+      "status": "not_executed",
+      "shared_input_capture_set": "FROZEN_TEST_IDS_REQUIRED",
+      "shared_gt": "INDEPENDENT_SURVEY_BOQ_BASELINE_REQUIRED",
+      "model_commit_sha": null,
+      "checkpoint_sha256": null,
+      "hardware": null
+    },
+    {
+      "key": "mycon_staged",
+      "name": "MyCON_COLMAP_DA3_GS",
+      "tasks": [
+        "reconstruction",
+        "bim_geometry",
+        "registration",
+        "ifc",
+        "progress",
+        "activity_progress",
+        "project_progress",
+        "nvs",
+        "performance"
+      ],
+      "purpose": "full_pipeline",
+      "status": "not_executed",
+      "shared_input_capture_set": "FROZEN_TEST_IDS_REQUIRED",
+      "shared_gt": "INDEPENDENT_SURVEY_BOQ_BASELINE_REQUIRED",
+      "model_commit_sha": null,
+      "checkpoint_sha256": null,
+      "hardware": null
+    },
+    {
+      "key": "mycon_aligned",
+      "name": "MyCON_Depth_Gravity_Sim3_ICP",
+      "tasks": [
+        "reconstruction",
+        "bim_geometry",
+        "registration",
+        "ifc",
+        "progress",
+        "activity_progress",
+        "project_progress",
+        "performance"
+      ],
+      "purpose": "full_pipeline",
+      "status": "not_executed",
+      "shared_input_capture_set": "FROZEN_TEST_IDS_REQUIRED",
+      "shared_gt": "INDEPENDENT_SURVEY_BOQ_BASELINE_REQUIRED",
+      "model_commit_sha": null,
+      "checkpoint_sha256": null,
+      "hardware": null
+    }
+  ],
+  "ablations": [
+    {
+      "key": "full_pipeline",
+      "producer_owner": "baseline_control",
+      "run_id_prefix": "bench-",
+      "status": "not_executed",
+      "shared_test_capture_set": null,
+      "paired_reference": "full_pipeline",
+      "dataset_hash": null,
+      "seed": null
+    },
+    {
+      "key": "no_depth_prior",
+      "producer_owner": "A",
+      "run_id_prefix": "bench-",
+      "status": "not_executed",
+      "shared_test_capture_set": null,
+      "paired_reference": "full_pipeline",
+      "dataset_hash": null,
+      "seed": null
+    },
+    {
+      "key": "no_gaussian_splatting",
+      "producer_owner": "A",
+      "run_id_prefix": "bench-",
+      "status": "not_executed",
+      "shared_test_capture_set": null,
+      "paired_reference": "full_pipeline",
+      "dataset_hash": null,
+      "seed": null
+    },
+    {
+      "key": "no_gravity_alignment",
+      "producer_owner": "A",
+      "run_id_prefix": "bench-",
+      "status": "not_executed",
+      "shared_test_capture_set": null,
+      "paired_reference": "full_pipeline",
+      "dataset_hash": null,
+      "seed": null
+    },
+    {
+      "key": "no_metric_survey_alignment",
+      "producer_owner": "A",
+      "run_id_prefix": "bench-",
+      "status": "not_executed",
+      "shared_test_capture_set": null,
+      "paired_reference": "full_pipeline",
+      "dataset_hash": null,
+      "seed": null
+    },
+    {
+      "key": "no_robust_icp",
+      "producer_owner": "A",
+      "run_id_prefix": "bench-",
+      "status": "not_executed",
+      "shared_test_capture_set": null,
+      "paired_reference": "full_pipeline",
+      "dataset_hash": null,
+      "seed": null
+    },
+    {
+      "key": "no_multiview_fusion",
+      "producer_owner": "B",
+      "run_id_prefix": "bench-",
+      "status": "not_executed",
+      "shared_test_capture_set": null,
+      "paired_reference": "full_pipeline",
+      "dataset_hash": null,
+      "seed": null
+    },
+    {
+      "key": "no_observability_gate",
+      "producer_owner": "B_diagnostic_unsafe",
+      "run_id_prefix": "bench-",
+      "status": "not_executed",
+      "shared_test_capture_set": null,
+      "paired_reference": "full_pipeline",
+      "dataset_hash": null,
+      "seed": null
+    },
+    {
+      "key": "no_calibration",
+      "producer_owner": "B",
+      "run_id_prefix": "bench-",
+      "status": "not_executed",
+      "shared_test_capture_set": null,
+      "paired_reference": "full_pipeline",
+      "dataset_hash": null,
+      "seed": null
+    }
+  ],
+  "strata": [
+    "site_id",
+    "building_id",
+    "session_id",
+    "capture_date",
+    "illumination",
+    "occlusion_severity",
+    "viewpoint_count",
+    "element_ifc_class",
+    "point_density_per_m2",
+    "survey_accuracy_m",
+    "registration_quality"
+  ],
+  "reporting": [
+    "n_planned",
+    "n_attempted",
+    "n_failed",
+    "n_not_executed",
+    "n_sites",
+    "n_buildings",
+    "n_capture_sessions",
+    "n_element_gt",
+    "n_numeric_pairs",
+    "n_categorical_evaluated",
+    "n_unknown",
+    "n_abstained",
+    "mean",
+    "sd_across_sites",
+    "ci95_site_cluster",
+    "runtime_seconds",
+    "peak_vram_mb",
+    "peak_rss_mb",
+    "input_sha256",
+    "model_commit"
+  ],
+  "stop_rule": "Never run expensive training without explicit approval; no synthetic results in scientific tables."
+}

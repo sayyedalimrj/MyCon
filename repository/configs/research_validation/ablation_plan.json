@@ -1,0 +1,19 @@
+{
+  "schema_version": "mycon.ablation_plan.v1",
+  "pre_registration": "Each variant MUST use the same frozen split, GT, capture set, seeds, spatial units and test hardware class; train or tune only on train/validation.",
+  "seed_list": [11, 23, 42, 67, 101],
+  "primary_metric": "reconstruction:fscore_at_tau@0.05m",
+  "secondary_metrics": ["reconstruction:chamfer_l1_m", "registration:tre_rmse_m", "progress:micro_f1_selective", "progress:unknown_rate", "progress:progress_mae_fraction_known", "performance:wall_time_sec", "performance:peak_vram_mb"],
+  "variants": [
+    {"id": "full", "description": "Complete method, frozen reference"},
+    {"id": "no_depth_prior", "description": "Geometry without monocular depth priors", "owner": "A"},
+    {"id": "no_cams_gs", "description": "Remove CAMS-GS geometric evidence", "owner": "A"},
+    {"id": "no_metric_anchor", "description": "Disable metric anchor initialization", "owner": "A"},
+    {"id": "no_icp_refinement", "description": "Remove ICP refinement", "owner": "A"},
+    {"id": "no_multiview_fusion", "description": "Disable multi-view evidence fusion", "owner": "B"},
+    {"id": "no_observability_gate", "description": "Remove explicit unknown/visibility gating; report as unsafe ablation only", "owner": "B"},
+    {"id": "no_calibration", "description": "Use raw confidence without probability calibration", "owner": "B"}
+  ],
+  "execution_status": "not_executed",
+  "note": "Owner C evaluates immutable produced artifacts; A/B implement variants on their own branches. No fictitious outcomes."
+}

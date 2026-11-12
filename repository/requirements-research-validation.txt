@@ -1,0 +1,12 @@
+# Standalone benchmark metrics use stdlib for tiny fixtures.
+# Required for scalable nearest-neighbor evaluation on real point clouds:
+scipy>=1.11,<2
+# Optional research figure exporter:
+matplotlib>=3.7,<4
+# Isolated test suite:
+pytest>=7,<10
+
+# Optional held-out NVS RGB PSNR / SSIM (LPIPS requires separately audited weights):
+numpy>=1.26,<3
+Pillow>=10,<13
+scikit-image>=0.22,<1

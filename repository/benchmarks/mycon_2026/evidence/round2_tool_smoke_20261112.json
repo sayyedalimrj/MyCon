@@ -1,0 +1,85 @@
+{
+  "schema_version": "mycon.validation_run_evidence.v2",
+  "source_commit_before_evidence": "155c9b14d03ea2f203b7b53dcba6c3166f2fb52a",
+  "tool_code_git_blob_sha1": {
+    "benchmarks/mycon_2026/metrics.py": "908ec96cb45856146e46bc6f53383a389de35fe5",
+    "benchmarks/mycon_2026/runner.py": "ae5a910ad707923c180f696faccfeb42b5523577",
+    "benchmarks/mycon_2026/adapters.py": "873a338ed06b230d532401ab9fe6da897ae9cc01",
+    "benchmarks/mycon_2026/nvs.py": "cf60bfefa6a5e208b7324dcf88a2cd88457068d9",
+    "benchmarks/mycon_2026/figures.py": "9740437bc465c97de473d2552b2c8bb35acb097d",
+    "benchmarks/mycon_2026/plots.py": "eaeaf0d820642dddd7870ef5a88bb7d6e102f369",
+    "tests/test_research_validation_round2_contract.py": "63bddbe03ec41266a7fdf3d7c2296df5aa66158d",
+    "scripts/research_validation_preflight.py": "cfdc6cbceb807cf83d066a5e9bfe87b209ced77d"
+  },
+  "test_context": "Local source snapshot constructed from exact C GitHub blob bytes; not a complete checkout of the remote repository. Full legacy/combined A/B/C regression not run.",
+  "local_environment": {
+    "python": "3.13.5",
+    "os": "Linux x86_64 6.18.57",
+    "cpu_count": 5,
+    "gpu": "not_measured",
+    "pytest": "9.0.2",
+    "numpy": "2.3.5",
+    "scipy": "1.17.0",
+    "pillow": "12.3.0",
+    "scikit_image": "0.26.0",
+    "matplotlib": "3.10.8"
+  },
+  "input_manifest_sha256": "afd1b9f77830d21e09ce7b5aa5c0e813e509e6d3c41d1eceb8eab6026fc726c5",
+  "capture_kind": "synthetic_tool_fixture_only",
+  "n_synthetic_sites": 1,
+  "n_verified_real_sites": 0,
+  "run_id": "bench-round2-fixture-final2",
+  "commands": [
+    {
+      "label": "pytest_C",
+      "command": "python -m pytest -q tests/test_research_validation_metrics.py tests/test_research_validation_round2_contract.py",
+      "exit_code": 0,
+      "pytest_passed": 31,
+      "pytest_failed": 0
+    },
+    {
+      "label": "runner_help",
+      "command": "python scripts/research_validation_run.py --help",
+      "exit_code": 0
+    },
+    {
+      "label": "preflight_help",
+      "command": "python scripts/research_validation_preflight.py --help",
+      "exit_code": 0
+    },
+    {
+      "label": "preflight_B",
+      "command": "python scripts/research_validation_preflight.py --b-stage9-csv <synthetic>/stage9.csv --b-stage11-v2-json <synthetic>/v2.json",
+      "exit_code": 0
+    },
+    {
+      "label": "runner_fixture",
+      "command": "python -m benchmarks.mycon_2026.runner --manifest <synthetic>/manifest.json --output-root <new-external-dir> --run-id bench-round2-fixture-final2 --include-fixtures",
+      "exit_code": 0,
+      "n_case_tasks": 9,
+      "n_fixture_scored": 5,
+      "n_fixture_not_executed": 4,
+      "n_real_scientific_metric_cells": 0
+    },
+    {
+      "label": "figures_fixture",
+      "command": "python -m benchmarks.mycon_2026.figures --result-dir <fixture-output>",
+      "exit_code": 0,
+      "all_scientific_figures": "not_executed"
+    }
+  ],
+  "local_raw_evidence_sha256": "e7812f6f592c1e592f54f139f78788cb3f698ac3bd1b9520721cb64d952fbe46",
+  "local_result_sha256": {
+    "scientific_results.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+    "cases.json": "ea595a3d2d62172150b2eddf3daa4d62dcf12ffab08bd2f65f7be25d24231ad0",
+    "metadata.json": "c91768bba5de3b9316b74651c588958176ab2c0c398e4db638401b688cd2429f",
+    "figures_status.json": "c705634b064cc5c8c4268abb489c68fd5712d4edbc7b398bcf1973a83f851a16",
+    "input_hashes.json": "002b44ab6823e60ed82fe27ed345029c2b075797c3f2cf63c9005f17b0168396",
+    "thesis_table.md": "f641ccb3368dcc1a4fd1b2d7006aa60ecf90ea7e237e9259a67d236826f87bbc"
+  },
+  "scientific_result_status": "not_executed",
+  "gpu_validation": "not_executed",
+  "full_repository_regression": "not_executed",
+  "real_case_validation": "not_executed",
+  "publication_readiness": "blocked_missing_independent_gt_and_paired_real_cases"
+}
