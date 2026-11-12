@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import html
 import math
 import time
@@ -21,6 +23,7 @@ from .uncertainty import bootstrap_ci
 from .point_assignment import assign_exclusive_points, nearest_element_distances
 from .evidence_metrics import element_scientific_fields, as_utc, valid_sha256
 from .geometry_evidence_adapter import load_geometry_evidence_manifest
+from .comparison_ready_adapter import load_comparison_ready_geometry, comparison_for_element
 
 from pipeline.common.determinism import derived_seed, project_seed
 
@@ -250,6 +253,12 @@ def _fieldnames(*, include_bidirectional: bool = False, include_distance_ci: boo
         "geometry_adapter_schema", "geometry_adapter_valid", "geometry_manifest_sha256",
         "geometry_evidence_reason_codes", "geometry_conformance_state",
         "geometry_quality_gate", "geometry_n_views",
+        "comparison_ready_schema", "comparison_ready_manifest_sha256",
+        "comparison_ready_valid", "comparison_coordinate_units",
+        "comparison_coordinate_frame", "comparison_metric_scale_verified",
+        "comparison_registration_verified", "comparison_ifc_quality_gate",
+        "comparison_feature_ids", "geometric_agreement_state",
+        "comparison_visibility_state", "comparison_evidence_reason_codes",
     ])
     return base
 
@@ -401,6 +410,36 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
             expected_project_id=str(expected_geometry_project),
         )
 
+    # Generic reconstruction plane/edge/corner package is an optional
+    # geometry diagnostic, not an input for physical-progress estimation.
+    comparison_ready_raw = cfg_get(cfg, "progress.comparison_ready_manifest_json")
+    comparison_ready_bundle = None
+    comparison_linkage = None
+    comparison_linkage_status = "not_supplied"
+    project_root = Path(str(cfg_get(cfg, "project.root", "."))).resolve()
+    if comparison_ready_raw:
+        comparison_ready_bundle = load_comparison_ready_geometry(
+            str(comparison_ready_raw),
+            project_root=project_root,
+            expected_project_id=cfg_get(cfg, "progress.comparison_ready_project_id"),
+        )
+    feature_mapping_raw = cfg_get(cfg, "progress.comparison_feature_ifc_mapping_json")
+    if feature_mapping_raw:
+        try:
+            p = Path(str(feature_mapping_raw))
+            if not p.is_absolute():
+                p = project_root / p
+            p = p.resolve()
+            expected_link_sha = cfg_get(cfg, "progress.expected_feature_mapping_sha256")
+            if not p.is_relative_to(project_root) or not valid_sha256(expected_link_sha):
+                raise ValueError("untrusted_mapping_path_or_missing_independent_sha256")
+            if hashlib.sha256(p.read_bytes()).hexdigest() != str(expected_link_sha).lower():
+                raise ValueError("feature_mapping_sha256_mismatch")
+            comparison_linkage = json.loads(p.read_text(encoding="utf-8"))
+            comparison_linkage_status = "independent_hash_verified"
+        except (OSError, ValueError, TypeError) as exc:
+            comparison_linkage_status = f"blocked:{type(exc).__name__}:{exc}"
+
     # O2: bidirectional accuracy/completeness/F-score plus bootstrap CIs.
     # Both flags default ON for new runs; either can be disabled to reproduce
     # historical byte-identical CSV output for downstream tools that lock
@@ -529,6 +568,12 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
                 data_date=scientific_data_date, require_audit=True,
             ).items() if k != "quantity_audit"
         })
+        if comparison_ready_bundle is not None:
+            row.update(comparison_for_element(
+                comparison_ready_bundle, gid, linkage=comparison_linkage,
+                expected_ifc_sha256=expected_hashes[0],
+                expected_registration_sha256=expected_hashes[2],
+            ))
 
         # O2a: percentile-bootstrap CIs for distance summaries (mean, median).
         # Skipped when distances has < 2 finite samples; the CI columns are
@@ -679,6 +724,11 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
         "element_count": len(element_rows),
         "activity_count": len(activity_rows),
         "research_evidence_schema": "mycon.element_progress.v2",
+        "comparison_ready_diagnostics": (
+            {**comparison_ready_bundle.summary(),
+             "feature_mapping_load_status": comparison_linkage_status}
+            if comparison_ready_bundle is not None else None
+        ),
         "geometry_contract": {
             "manifest_provided": bool(evidence_manifest_raw),
             "independent_input_hashes_present": manifest_inputs_valid,
