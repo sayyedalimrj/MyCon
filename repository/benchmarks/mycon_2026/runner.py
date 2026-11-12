@@ -24,6 +24,8 @@ from .adapters import (load_stage9_v2, load_scientific_progress_v2,
                        activity_progress_metrics, project_progress_metrics)
 from .protocol import resolve_input, sha256, validate_manifest
 from .nvs import score_nvs_pairs
+from .model_agnostic import evaluate_ready
+from .grounding import evaluate_grounding
 
 TASK_INPUTS = {
     "reconstruction": ("reconstruction_gt_ply", "reconstruction_ply"),
@@ -34,6 +36,8 @@ TASK_INPUTS = {
     "activity_progress": ("activity_progress_gt_csv", "scientific_progress_json"),
     "project_progress": ("project_progress_gt_csv", "scientific_progress_json"),
     "nvs": ("nvs_reference_manifest_json", "nvs_prediction_manifest_json"),
+    "geometry_ready": ("structural_gt_json", "comparison_ready_manifest_json"),
+    "vlm_grounding": ("grounding_gt_json", "vlm_claims_json"),
     "performance": (None, "telemetry_json"),
 }
 
@@ -161,6 +165,16 @@ def evaluate_one(task, root, gt, pred, *, tau_m, max_points, seed, heldout_ancho
     elif task == "nvs":
         metrics = score_nvs_pairs(truth, prediction)
         inputs.extend(metrics.pop("image_hashes"))
+    elif task == "geometry_ready":
+        metrics = evaluate_ready(prediction, truth, root=root,
+                                 tau=tau_m, max_points=max_points, seed=seed)
+    elif task == "vlm_grounding":
+        references = json.loads(truth.read_text(encoding="utf-8"))
+        claims = json.loads(prediction.read_text(encoding="utf-8"))
+        if not isinstance(references.get("annotations"), list) or not isinstance(claims.get("claims"), list):
+            raise ValueError("Independent grounding GT annotations and VLM claim lists required")
+        metrics = evaluate_grounding(claims["claims"], references["annotations"],
+                                     approved_measurements=references.get("approved_measurements", []))
     elif task == "activity_progress":
         metrics = activity_progress_metrics(load_scientific_progress_v2(prediction), read_csv(truth))
     elif task == "project_progress":
