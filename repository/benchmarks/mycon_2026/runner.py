@@ -163,6 +163,17 @@ def _export_tables(out: Path, cases: list[dict], summary: list[dict], paired: li
     for p in paired:
         ci = "—" if p["ci95_low"] is None else f"[{p['ci95_low']:.4g}, {p['ci95_high']:.4g}]"
         lines.append(f"| {p['task']} | {p['metric']} | {p['reference_method']} | {p['candidate_method']} | {p['candidate_minus_reference']:.4g} | {ci} | {p['n_paired_cases']} | {p['n_buildings']} |")
+    # Export LaTeX rows for manuscript inclusion. Absent CIs are explicit NA.
+    def tex(s):
+        return str(s).replace("\\", r"\textbackslash{}").replace("_", r"\_").replace("%", r"\%").replace("&", r"\&").replace("#", r"\#")
+    latex = [r"\begin{tabular}{llllrr}", r"\toprule",
+             r"Task & Method & Metric & Mean & CI 95\% & Buildings \\", r"\midrule"]
+    for r in summary:
+        ci = "NA" if r["ci95_low"] is None else f"[{r['ci95_low']:.3g}, {r['ci95_high']:.3g}]"
+        latex.append(" & ".join([tex(r["task"]), tex(r["method"]), tex(r["metric"]),
+                                 f"{r['mean']:.4g}", tex(ci), str(r["n_buildings"])]) + r" \\")
+    latex += [r"\bottomrule", r"\end{tabular}"]
+    (out / "thesis_table.tex").write_text("\n".join(latex) + "\n", encoding="utf-8")
     lines.extend(["", "## Missing experiments / failures", "",
                   "| Sample | Method | Task | Status | Reason |", "|---|---|---|---|---|"])
     for case in cases:
@@ -237,15 +248,18 @@ def run(manifest_path: Path, output_root: Path, *, run_id: str, include_fixtures
     # Failure/availability denominators are all eligible verified-real test cases.
     eligible = [c for c in cases if c["data_kind"] == "real" and c["split"] == "test" and c.get("reason") not in {
         "real_sample_missing_independent_gt_provenance", "capture_missing_or_sha256_mismatch",
-        "synthetic_or_unverified_fixture_excluded"} and c["status"] != "not_executed"]
+        "synthetic_or_unverified_fixture_excluded"}]
     failure_summary = []
     buckets = defaultdict(list)
     for c in eligible:
         buckets[(c["method"], c["task"])].append(c)
     for (method, task), bucket in sorted(buckets.items()):
-        failure_summary.append({"method": method, "task": task, "n_attempted": len(bucket),
-                                "n_failed": sum(c["status"] == "failed" for c in bucket),
-                                "failure_rate": sum(c["status"] == "failed" for c in bucket) / len(bucket)})
+        attempted = sum(c["status"] in ("failed", "evaluated") for c in bucket)
+        failed = sum(c["status"] == "failed" for c in bucket)
+        failure_summary.append({"method": method, "task": task, "n_planned": len(bucket),
+                                "n_attempted": attempted, "n_not_executed": len(bucket) - attempted,
+                                "n_failed": failed, "failure_rate_attempted": failed / attempted if attempted else None,
+                                "execution_coverage": attempted / len(bucket)})
     metadata = {
         "schema_version": "mycon.benchmark_result.v1", "run_id": run_id,
         "created_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -254,6 +268,8 @@ def run(manifest_path: Path, output_root: Path, *, run_id: str, include_fixtures
         "python": sys.version, "platform": platform.platform(), "machine": platform.machine(),
         "processor": platform.processor(), "gpu": "not_measured",
         "model_versions": doc.get("model_versions", {}),
+        "hardware_declaration": doc.get("hardware", {}),
+        "software_declaration": doc.get("software_versions", {}),
         "n_test_samples": sum(s["split"] == "test" for s in doc["samples"]),
         "statistical_unit": "site/building", "ci_method": "percentile_cluster_bootstrap_2000",
         "scientific_status": "evaluated" if summary else "not_executed",

@@ -3,7 +3,7 @@
 - **Work branch:** `research/mycon-validation-20261112`
 - **Target branch:** `research/mycon-integration-20261112`; **Issue:** #35; **no merge by C**.
 - **Contract base:** `f4fc2b4aad73e8516e031129780e56069e42257e`; branch-head at work start `33f1b68b2dc099db97d9e9101f56dd5ce2100d3f`.
-- **Commit SHA:** to be filled in final handoff update after first commit (the handoff's own commit will be on the PR).
+- **Implementation commit SHA:** `07980f5f81e9e89e00f5317ca599ad2973fe058c` (original 13-file commit); follow-up handoff/QA commit recorded in PR #36.
 
 ## Owned additions
 
@@ -26,7 +26,7 @@
 
 ## Tests and evidence status
 
-- Tests: local `pytest -q tests/test_research_validation_metrics.py`, synthetic unit smoke, no GPU or model calls. Exact pass count to be filled after final suite.
+- Tests: local `pytest -q tests/test_research_validation_metrics.py`, synthetic unit smoke, no GPU or model calls. 14 tests passed locally; no GPU or training. Full legacy 580+ test suite not runnable here because repository baseline was not present in local sandbox.
 - Real reconstruction, registration, IFC, physical progress, calibration, time/memory and ablations: **not_executed** (no independently approved site GT / paired live outputs supplied).
 - Synthetic fixture results: **tool-test only**; never in `scientific_results.json`, `paired_comparisons.json`, or paper comparison figures.
 - All committed code/config/docs contain no original training data or checkpoints. Input hash evidence is generated *at runtime* from supplied manifest and artifacts, not invented here.

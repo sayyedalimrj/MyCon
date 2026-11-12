@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import csv
 import math
+import re
 import struct
 from pathlib import Path
 from statistics import mean, median
@@ -288,8 +289,13 @@ def ifc_element_metrics(pred_rows, truth_rows):
         return d
     predicted, truth = convert(pred_rows), convert(truth_rows)
     hits = predicted.keys() & truth.keys()
+    ifc_guid = re.compile(r"[0-9A-Za-z_$]{22}")
+    bad_guid = sum(ifc_guid.fullmatch(k) is None for k in predicted)
+    missing_class = sum(not klass.startswith("Ifc") for klass in predicted.values())
     return {
         "n_gt_elements": len(truth), "n_pred_elements": len(predicted),
+        "n_invalid_ifc_globalid_format_pred": bad_guid,
+        "n_missing_or_invalid_ifc_class_pred": missing_class,
         "identity_precision": len(hits) / len(predicted) if predicted else None,
         "identity_recall": len(hits) / len(truth) if truth else None,
         "ifc_class_accuracy_matched": sum(predicted[x] == truth[x] for x in hits) / len(hits) if hits else None,

@@ -71,6 +71,7 @@ def test_ifc_identity_class():
     assert result["identity_precision"] == pytest.approx(0.5)
     assert result["identity_recall"] == pytest.approx(0.5)
     assert result["ifc_class_accuracy_matched"] == 1
+    assert result["n_invalid_ifc_globalid_format_pred"] == 2
 
 
 def test_manifest_group_leakage():
@@ -141,3 +142,31 @@ def test_site_split_leakage():
          "source_sha256": "b" * 64, "split": "test"}
     with pytest.raises(ValueError, match="Site leakage"):
         validate_manifest({"schema_version": "mycon.validation.v1", "samples": [s, t]})
+
+
+def test_binary_ply(tmp_path):
+    import struct
+    f = tmp_path / "binary.ply"
+    header = b"ply\nformat binary_little_endian 1.0\nelement vertex 2\nproperty float x\nproperty float y\nproperty float z\nend_header\n"
+    f.write_bytes(header + struct.pack("<ffffff", 1, 2, 3, 4, 5, 6))
+    points, total = read_ply_xyz(f)
+    assert total == 2
+    assert points == [(1., 2., 3.), (4., 5., 6.)]
+
+
+def test_real_requires_independent_gt_review(tmp_path):
+    base = tmp_path / "data"
+    base.mkdir()
+    (base / "capture.txt").write_text("raw")
+    import hashlib
+    digest = hashlib.sha256(b"raw").hexdigest()
+    manifest = {"schema_version": "mycon.validation.v1", "samples": [{
+        "id": "s", "site_id": "s", "building_id": "b", "capture_session_id": "c",
+        "split": "test", "source_sha256": digest, "source_path": "capture.txt",
+        "data_kind": "real", "ground_truth": {}, "methods": {"ours": {}}}]}
+    (base / "manifest.json").write_text(json.dumps(manifest))
+    out = tmp_path / "out"
+    result = run(base / "manifest.json", out, run_id="bench-reject-unreviewed")
+    assert result["scientific_status"] == "not_executed"
+    case = json.loads((out / "bench-reject-unreviewed" / "cases.json").read_text())[0]
+    assert case["reason"] == "real_sample_missing_independent_gt_provenance"
