@@ -88,6 +88,9 @@ def run_cleanup(cfg: Any, *, force: bool = False, log_level: str = "INFO") -> di
     logger = _configure_logger(cfg, log_level)
     paths = stage7_paths(cfg)
 
+    if force and bool_value(cfg_get(cfg, "cleanup.comparison_ready_enabled", False)):
+        raise Stage7CleanupError("Comparison-ready mode forbids destructive Stage-7 --force; use an independent geom-ready run")
+
     if force:
         clean_dir_guarded(paths["clean_dir"], force=True, required_token="clean", logger=logger)
     ensure_dir(paths["clean_dir"])
@@ -133,6 +136,47 @@ def run_cleanup(cfg: Any, *, force: bool = False, log_level: str = "INFO") -> di
         },
         "duration_sec": round(time.time() - started, 3),
     }
+    # Additive opt-in companion output, NEVER enabled for existing Stage-7 configs.
+    # Original source scan, legacy Stage-7 PLY, planes and mesh remain untouched.
+    if bool_value(cfg_get(cfg, "cleanup.comparison_ready_enabled", False)):
+        from .comparison_ready import run_ready
+
+        root = Path(str(cfg_get(cfg, "project.root", "."))).expanduser().resolve()
+        ready_id = str(cfg_get(cfg, "cleanup.comparison_ready_run_id", ""))
+        camera_spec = cfg_get(cfg, "cleanup.comparison_ready_camera_json", None)
+        camera_path = None
+        if camera_spec:
+            camera_path = Path(str(camera_spec))
+            if not camera_path.is_absolute():
+                camera_path = root / camera_path
+        try:
+            ready = run_ready(
+                paths["cleaned_cloud"], root, ready_id,
+                threshold=float(cfg_get(cfg, "cleanup.comparison_ready_threshold", 0.03)),
+                voxel=0.0, outlier_mad=0.0,  # Stage 7 already cleaned its output
+                min_plane_points=int(cfg_get(cfg, "cleanup.comparison_ready_min_plane_points", 40)),
+                trials=int(cfg_get(cfg, "cleanup.comparison_ready_trials", 250)),
+                seed=int(cfg_get(cfg, "project.random_seed", 42)),
+                camera_json=camera_path,
+                source_frame=str(cfg_get(cfg, "cleanup.comparison_ready_source_frame", "unknown_reconstruction_frame")),
+                source_units=str(cfg_get(cfg, "cleanup.comparison_ready_source_units", "unknown_reconstruction_units")),
+            )
+            report["comparison_ready"] = {
+                "status": "created",
+                "schema_version": ready["schema_version"],
+                "run_id": ready["run_id"],
+                "manifest_path": str(root / "runs" / ready_id / "geometry" / "comparison_ready.json"),
+                "metric_scale_verified": False,
+                "registration_verified": False,
+            }
+        except (ValueError, OSError, RuntimeError, ImportError) as exc:
+            report["comparison_ready"] = {
+                "status": "blocked_or_failed",
+                "reason": f"{type(exc).__name__}: {exc}",
+                "metric_scale_verified": False,
+                "registration_verified": False,
+            }
+            logger.warning("Comparison-ready optional output failed: %s", exc)
     write_json_atomic(paths["report_json"], report)
 
     if not quality_gate["passed"] and bool_value(cfg_get(cfg, "cleanup.fail_on_quality_gate", False)):
