@@ -72,6 +72,8 @@ def run_cams_gs_prepare(cfg: Any, *, force: bool = False, log_level: str = "INFO
     logger = logging.getLogger(LOGGER_NAME)
 
     paths = stage45_paths(cfg)
+    if bool_value(cfg_get(cfg, "cams_gs.execute_training", False)) and force:
+        raise Stage45CamsGsError("Refusing --force during 3DGS resume: existing artifacts must be preserved")
     clean_dir_guarded(paths["output_dir"], force=force, required_token="cams_gs")
     ensure_dir(paths["output_dir"])
     ensure_dir(paths["nerfstudio_dataset_dir"])
@@ -86,14 +88,55 @@ def run_cams_gs_prepare(cfg: Any, *, force: bool = False, log_level: str = "INFO
     warnings = list(inputs.warnings)
     training_executed = False
 
+    geometry_resume_evidence = None
     if inputs.image_count == 0:
         status = "skipped_missing_images"
-    elif execute_training and not tools.get("ns-train"):
-        status = "skipped_dependency_unavailable"
-        warnings.append("ns-train_not_found_training_not_executed")
     elif execute_training:
-        status = "training_execution_disabled_in_skeleton"
-        warnings.append("skeleton_does_not_run_training_yet")
+        # Research adapter is explicitly opt-in, resume-only, and uses isolated
+        # runs/geom-*/geometry/... paths; legacy Stage 4.5 paths remain stable.
+        resume_value = cfg_get(cfg, "cams_gs.research_resume_dir", None)
+        geom_id = str(cfg_get(cfg, "cams_gs.research_run_id", ""))
+        approved = bool_value(cfg_get(cfg, "cams_gs.research_resume_approved", False))
+        if not resume_value:
+            status = "training_blocked_resume_checkpoint_required"
+            warnings.append("resume_only_no_checkpoint_dir_configured")
+        elif not geom_id.startswith("geom-"):
+            status = "training_blocked_geom_run_id_required"
+            warnings.append("independent_geom_run_id_required")
+        elif not approved:
+            status = "training_blocked_explicit_resume_opt_in"
+            warnings.append("set_cams_gs.research_resume_approved_true_to_allow_compute")
+        elif not tools.get("ns-train"):
+            status = "skipped_dependency_unavailable"
+            warnings.append("ns-train_not_found_training_not_executed")
+        else:
+            from .config_access import project_root
+            from .research_training import run_resume
+
+            root = project_root(cfg)
+            resume_dir = Path(str(resume_value)).expanduser()
+            if not resume_dir.is_absolute():
+                resume_dir = root / resume_dir
+            camera_value = cfg_get(cfg, "cams_gs.research_camera_path_json", None)
+            camera_path = Path(str(camera_value)) if camera_value else None
+            if camera_path is not None and not camera_path.is_absolute():
+                camera_path = root / camera_path
+            try:
+                geometry_resume_evidence = run_resume(
+                    project_root=root,
+                    run_id=geom_id,
+                    images_dir=inputs.images_dir,
+                    sparse_dir=inputs.sparse_model_dir,
+                    resume_dir=resume_dir,
+                    execute=True,
+                    max_iterations=int(cfg_get(cfg, "cams_gs.max_num_iterations", 7000)),
+                    camera_path=camera_path,
+                )
+                training_executed = geometry_resume_evidence["status"] == "trained_checkpoint_present_render_unverified"
+                status = "resumed_checkpoint_verified" if training_executed else "training_resume_failed"
+            except (OSError, ValueError, RuntimeError) as exc:
+                status = "training_resume_blocked_or_failed"
+                warnings.append(f"geometry_resume_error:{type(exc).__name__}:{exc}")
     else:
         status = "prepared"
 
@@ -127,6 +170,7 @@ def run_cams_gs_prepare(cfg: Any, *, force: bool = False, log_level: str = "INFO
             "training_executed": training_executed,
             "nerfstudio_method": str(cfg_get(cfg, "cams_gs.nerfstudio_method", "splatfacto")),
             "suggested_commands": suggested_commands,
+            "geometry_resume_evidence": geometry_resume_evidence,
         },
         "warnings": warnings,
         "created_at_unix": time.time(),
