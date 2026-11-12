@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .evidence_metrics import element_scientific_fields
+from .evidence_metrics import element_scientific_fields, valid_sha256
 from .geometry_evidence_adapter import load_geometry_evidence_manifest
 
 SCHEMA = 'mycon.stage9.scientific_evidence.v2'
@@ -34,13 +34,14 @@ def enrich_scientific_evidence_rows(
 ) -> tuple[list[dict[str,Any]], dict[str,Any]]:
     ids=[str(r.get('global_id') or '').strip() for r in rows]
     count={gid:ids.count(gid) for gid in set(ids)}
+    independent_inputs_valid = (all(valid_sha256(x) for x in (expected_ifc_sha256, expected_scan_sha256, expected_registration_sha256)) and bool(expected_project_id))
     bundle=(load_geometry_evidence_manifest(
         manifest_path, project_root=project_root, expected_global_ids=set(ids),
         expected_ifc_sha256=expected_ifc_sha256,
         expected_scan_sha256=expected_scan_sha256,
         expected_registration_sha256=expected_registration_sha256,
         expected_project_id=expected_project_id,
-    ) if manifest_path else None)
+    ) if manifest_path and independent_inputs_valid else None)
     out=[]
     for row in rows:
         gid=str(row.get('global_id') or '').strip()
@@ -71,7 +72,9 @@ def enrich_scientific_evidence_rows(
         'input_element_count':len(rows),
         'distinct_global_id_count':len(count),
         'geometry_adapter_valid':bool(bundle and bundle.valid),
-        'geometry_adapter_reasons':list(bundle.reason_codes) if bundle else ['manifest_not_supplied'],
+        'geometry_adapter_reasons':list(bundle.reason_codes) if bundle else ([
+            'independent_ifc_scan_registration_hashes_or_project_id_missing'
+        ] if manifest_path else ['manifest_not_supplied']),
         'manifest_sha256':bundle.manifest_sha256 if bundle else None,
         'verified_quantity_count':sum(r['physical_progress_status']=='verified_quantity' for r in out),
         'unknown_geometry_count':sum(str(r['geometry_evidence_state']).startswith('unknown') for r in out),
