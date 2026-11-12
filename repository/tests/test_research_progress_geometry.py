@@ -58,6 +58,7 @@ def test_unobserved_not_synonym_for_not_built():
         "coverage": "0.0", "registration_confidence": "high",
         "assigned_scan_point_count": 0,
         "observability_ratio": 0, "observability_source": "raycast_zbuffer",
+        "geometry_adapter_valid": True, "geometry_evidence_state": "occluded",
     })
     assert fields["geometry_evidence_state"] == "occluded"
     assert fields["physical_progress_estimate"] is None
@@ -80,9 +81,13 @@ def test_registration_failure_and_overlap_separate_from_geom_nonconformance():
         "observability_ratio": 1, "observability_source": "raycast_zbuffer",
     }
     assert element_scientific_fields({**common, "registration_confidence":"low"})["geometry_evidence_state"] == "uncertain_registration"
-    assert element_scientific_fields({**common, "registration_confidence":"high"})["geometry_evidence_state"] == "unknown_overlap"
-    geom = {**common, "assigned_scan_point_count": 12, "ambiguous_scan_point_count": 0, "coverage":0.40, "in_tolerance_ratio":0.40, "registration_confidence":"high"}
-    assert element_scientific_fields(geom)["geometry_evidence_state"] == "partial_or_geometric_nonconformance"
+    assert element_scientific_fields({**common, "registration_confidence":"high"})["geometry_evidence_state"] == "unknown_geometry_identity"
+    # Coverage alone is not a QA-certified geometric nonconformance.
+    geom = {**common, "assigned_scan_point_count": 12, "ambiguous_scan_point_count": 0,
+            "coverage":0.40, "in_tolerance_ratio":0.40, "registration_confidence":"high"}
+    assert element_scientific_fields(geom)["geometry_evidence_state"] == "unknown_geometry_identity"
+    inspected = {**geom, "geometry_adapter_valid": True, "geometry_evidence_state": "geometric_nonconformance"}
+    assert element_scientific_fields(inspected)["geometry_evidence_state"] == "geometric_nonconformance"
 
 
 def test_invalid_quantities_or_unsigned_claims_are_not_progress():
@@ -101,6 +106,7 @@ def test_confidence_requires_separate_calibration():
         "registration_confidence": "high", "evidence_confidence": 0.8,
         "evidence_confidence_source": "heldout_calibration",
         "observability_ratio": 0.3, "observability_source": "manual_occlusion_audit",
+        "geometry_adapter_valid": True, "evidence_calibration_ref": "SYNTH-HELDOUT-CALIBRATION",
     }
     fields = element_scientific_fields(row)
     assert fields["evidence_confidence"] == 0.8
