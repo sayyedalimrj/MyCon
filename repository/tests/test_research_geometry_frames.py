@@ -54,4 +54,4 @@ def test_reject_shear_reflection_and_invalid_row() -> None:
         validate_scan_to_bim_transform(bad)
 
 
-pytestmark = pytest.mark.geometry
+pytestmark = pytest.mark.lightweight
