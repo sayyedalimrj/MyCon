@@ -285,14 +285,25 @@ def progress_metrics(pred_rows, truth_rows, *, bins=10):
                          "support_evaluated": sum(cm[label].values())}
     ece = None
     brier = None
+    reliability = []
+    risk_coverage = []
     if confidence_correct:
         ece = 0.0
         for i in range(bins):
             selected = [(c, y) for c, y in confidence_correct
                         if (i / bins <= c < (i + 1) / bins if i < bins - 1 else i / bins <= c <= 1)]
             if selected:
-                ece += len(selected) / len(confidence_correct) * abs(mean(c for c, _ in selected) - mean(y for _, y in selected))
+                avg_conf = mean(c for c, _ in selected)
+                avg_correct = mean(y for _, y in selected)
+                ece += len(selected) / len(confidence_correct) * abs(avg_conf - avg_correct)
+                reliability.append({"bin": i, "n": len(selected), "confidence": avg_conf,
+                                    "accuracy": avg_correct})
         brier = mean((c - y) ** 2 for c, y in confidence_correct)
+        for threshold in (0.0, 0.25, 0.5, 0.75, 0.9):
+            selected = [y for c, y in confidence_correct if c >= threshold]
+            risk_coverage.append({"threshold": threshold, "n": len(selected),
+                                  "coverage": len(selected) / len(confidence_correct),
+                                  "error_rate": 1 - mean(selected) if selected else None})
     total_error_weight = sum(w for _, w in absolute_errors)
     return {
         "n_truth": len(gt), "n_predictions_matched": sum(k in predictions for k in gt),
@@ -322,6 +333,8 @@ def progress_metrics(pred_rows, truth_rows, *, bins=10):
         "project_progress_upper_bound_fraction": (weighted_pred + total_weight - observed_weight) / total_weight,
         "ece_10bin_selective" if bins == 10 else "ece_selective": ece,
         "brier_selective": brier, "n_calibration": len(confidence_correct),
+        "reliability_bins_selective": reliability,
+        "risk_coverage_selective": risk_coverage,
     }
 
 
