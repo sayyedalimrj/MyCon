@@ -18,6 +18,8 @@ from .io_utils import read_csv, read_json, read_jsonl, write_csv_atomic, write_j
 from .decision_enrichment import enrich_progress_decisions_from_config
 from .bidirectional_metrics import BidirectionalResult, compute_bidirectional
 from .uncertainty import bootstrap_ci
+from .point_assignment import assign_exclusive_points, nearest_element_distances
+from .evidence_metrics import element_scientific_fields
 
 from pipeline.common.determinism import derived_seed, project_seed
 
@@ -233,6 +235,12 @@ def _fieldnames(*, include_bidirectional: bool = False, include_distance_ci: boo
             "f_score_wilson_hi",
             "bidirectional_notes",
         ])
+    base.extend([
+        "assigned_scan_point_count", "ambiguous_scan_point_count",
+        "ambiguous_bim_point_count", "scan_candidate_point_count",
+        "physical_progress_estimate", "observability_ratio", "evidence_confidence",
+        "physical_progress_status", "geometry_evidence_state", "scientific_metrics_schema",
+    ])
     return base
 
 
@@ -339,6 +347,8 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
     bim_points = _points(bim)
 
     elements = read_jsonl(paths["bim_elements"])
+    # Stage 8 supplies only coarse AABBs, not per-element mesh ownership.
+    # Disjoint owners are safe; ambiguous overlaps are explicitly excluded.
     reg_report = read_json(paths["registration_report"])
     schedule_rows = read_csv(paths["schedule_csv"])
     map_rows = read_csv(paths["element_activity_map"])
@@ -350,6 +360,8 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
     partial_observed_threshold = cfg_float(cfg, "progress.partial_observed_threshold", 0.20)
     bbox_margin = cfg_float(cfg, "progress.element_bbox_margin_m", max(0.05, threshold * 2.0))
     reg_quality = _registration_confidence(reg_report, cfg)
+    scan_owners, scan_candidates = assign_exclusive_points(scan_points, elements, bbox_margin)
+    bim_owners, bim_candidates = assign_exclusive_points(bim_points, elements, bbox_margin)
 
     # O2: bidirectional accuracy/completeness/F-score plus bootstrap CIs.
     # Both flags default ON for new runs; either can be disabled to reproduce
@@ -366,14 +378,19 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
     all_deviation_values: list[float] = []
     undercovered: list[dict[str, Any]] = []
 
-    for element in elements:
+    for element_index, element in enumerate(elements):
         gid = str(element.get("global_id", ""))
         activity_row = gid_to_activity.get(gid, {})
         activity_id = activity_row.get("activity_id", "UNMAPPED")
         act = activity_info.get(activity_id, {})
         mn = element.get("bounds_min", [0, 0, 0])
         mx = element.get("bounds_max", [0, 0, 0])
-        target_pts = _select_points_in_bbox(bim_points, mn, mx, bbox_margin)
+        target_pts = bim_points[bim_owners == element_index]
+        scan_pts_for_element = scan_points[scan_owners == element_index]
+        scan_candidate_pts = _select_points_in_bbox(scan_points, mn, mx, bbox_margin)
+        bim_candidate_pts = _select_points_in_bbox(bim_points, mn, mx, bbox_margin)
+        ambiguous_scan_count = len(scan_candidate_pts) - len(scan_pts_for_element)
+        ambiguous_bim_count = len(bim_candidate_pts) - len(target_pts)
 
         # B2: when bbox-crop yields too few BIM points (small/sliver elements:
         # railings, mullions, mullion stops), the previous code silently fell back
@@ -390,7 +407,7 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
             in_tol = 0.0
             mean_dev = median_dev = p95_dev = float("nan")
         else:
-            distances = _nearest_distances(target_pts, scan, limit=50000)
+            distances = nearest_element_distances(target_pts, scan_pts_for_element)
             if len(distances) == 0:
                 coverage = 0.0
                 in_tol = 0.0
@@ -429,7 +446,15 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
             "confidence": f"{confidence:.6f}",
             "registration_confidence": reg_quality["confidence_label"],
             "notes": ";".join(element_notes),
+            "assigned_scan_point_count": len(scan_pts_for_element),
+            "ambiguous_scan_point_count": ambiguous_scan_count,
+            "ambiguous_bim_point_count": ambiguous_bim_count,
+            "scan_candidate_point_count": len(scan_candidate_pts),
         }
+        row.update(element_scientific_fields(
+            row,
+            {**element, **activity_row, "synthetic_bim_fallback_used": reg_quality["synthetic_bim_fallback_used"]},
+        ))
 
         # O2a: percentile-bootstrap CIs for distance summaries (mean, median).
         # Skipped when distances has < 2 finite samples; the CI columns are
@@ -462,7 +487,6 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
         # Wilson CIs. Computed against the bbox-cropped scan and BIM points so
         # the metric is element-local. Pure-Python; no Open3D dependency.
         if bidirectional_enabled:
-            scan_pts_for_element = _select_points_in_bbox(scan_points, mn, mx, bbox_margin)
             if len(target_pts) < 10 or len(scan_pts_for_element) == 0:
                 bid = compute_bidirectional(
                     scan_points=np.zeros((0, 3), dtype=np.float64),
@@ -580,6 +604,14 @@ def _run_progress_unenriched(cfg: Any, *, force: bool = False, log_level: str = 
         },
         "element_count": len(element_rows),
         "activity_count": len(activity_rows),
+        "research_evidence_schema": "mycon.element_progress.v2",
+        "overlap_assignment": {
+            "policy": "exclusive_bbox_or_unknown",
+            "unowned_scan_points": int(np.sum(scan_owners == -1)),
+            "ambiguous_scan_points": int(np.sum(scan_owners == -2)),
+            "ambiguous_bim_points": int(np.sum(bim_owners == -2)),
+            "limitation": "AABB ownership is insufficient for coincident/overlapping elements; Stage 8 per-element surface identity required",
+        },
         "mode_note": mode_note,
         "elapsed_sec": time.perf_counter() - t0,
     }
