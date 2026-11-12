@@ -68,6 +68,26 @@ def render_suite(result_dir: Path):
                                      "n_classification_confidence_pairs": sum(ns)}
         else:
             status["calibration"] = {"status": "not_executed", "reason": "no_calibrated_real_predictions"}
+        risk = defaultdict(list)
+        for case in cases:
+            if (case.get("data_kind") == "real" and case.get("split") == "test"
+                    and case.get("status") == "evaluated" and case.get("task") == "progress"):
+                for pt in (case.get("metrics") or {}).get("risk_coverage_selective", []):
+                    if pt.get("n", 0) and pt.get("error_rate") is not None:
+                        risk[pt["threshold"]].append(pt)
+        if risk:
+            curve = []
+            for threshold, pts in sorted(risk.items()):
+                n = sum(pt["n"] for pt in pts)
+                curve.append((sum(pt["coverage"] * pt["n"] for pt in pts) / n,
+                              sum(pt["error_rate"] * pt["n"] for pt in pts) / n))
+            fig, ax = plt.subplots(figsize=(6, 5))
+            ax.plot([p[0] for p in curve], [p[1] for p in curve], marker="o")
+            ax.set(xlim=(0, 1), ylim=(0, 1), xlabel="Selective prediction coverage",
+                   ylabel="Error among retained classifications", title="Selective risk versus coverage (descriptive)")
+            status["selective_risk"] = {"status": "rendered", "files": _save(fig, root, "figure_selective_risk")}
+        else:
+            status["selective_risk"] = {"status": "not_executed", "reason": "no_calibrated_real_predictions"}
         failures = json.loads((root / "failure_summary.json").read_text(encoding="utf-8"))
         eligible = [x for x in failures if x.get("n_attempted", 0) > 0]
         if eligible:
@@ -85,6 +105,7 @@ def render_suite(result_dir: Path):
     else:
         status["calibration"] = {"status": "not_executed", "reason": "no_real_verified_benchmark"}
         status["failure_rate"] = {"status": "not_executed", "reason": "no_real_verified_benchmark"}
+        status["selective_risk"] = {"status": "not_executed", "reason": "no_real_verified_benchmark"}
     output = root / "figures_status.json"
     with output.open("x", encoding="utf-8") as stream:
         json.dump({"schema_version": "mycon.figures.v1", "scientific_status": metadata.get("scientific_status"),
