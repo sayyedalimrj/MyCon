@@ -5,6 +5,13 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .evidence_metrics import AUDITED_VISIBILITY_SOURCES, unit_ratio
+
+
+def _audited_observability(row: dict[str, Any]) -> float | None:
+    source = str(row.get("observability_source", "")).strip().lower()
+    return unit_ratio(row.get("observability_ratio")) if source in AUDITED_VISIBILITY_SOURCES else None
+
 
 def _safe_float(value: Any, default: float | None = None) -> float | None:
     try:
@@ -56,15 +63,15 @@ def infer_visibility_confidence(
 
 
 def infer_completion_state(row: dict[str, Any]) -> tuple[str, str, list[str]]:
-    coverage = _safe_float(row.get("coverage"), 0.0)
-    in_tolerance = _safe_float(row.get("in_tolerance_ratio"), coverage)
+    coverage = _safe_float(row.get("coverage"))
+    in_tolerance = _safe_float(row.get("in_tolerance_ratio"))
     confidence = _safe_float(row.get("confidence"), 0.0)
     point_count = _safe_int(row.get("point_count_evaluated"), 0)
 
     raw_status = str(row.get("status", "")).strip().lower()
     registration_confidence = str(row.get("registration_confidence", "")).strip().lower()
 
-    observed_surface_ratio = coverage
+    observed_surface_ratio = _audited_observability(row)
     visibility_conf = infer_visibility_confidence(
         point_count_evaluated=point_count,
         observed_surface_ratio=observed_surface_ratio,
@@ -76,7 +83,11 @@ def infer_completion_state(row: dict[str, Any]) -> tuple[str, str, list[str]]:
         notes.append("registration_low_progress_interpretation_blocked")
         return "uncertain_low_registration", "uncertain", notes
 
-    if visibility_conf < 0.20:
+    if observed_surface_ratio is None:
+        notes.append("visibility_not_independently_audited")
+        return "uncertain_visibility", "uncertain", notes
+
+    if observed_surface_ratio <= 0.0 or visibility_conf < 0.20:
         notes.append("not_enough_observed_surface_to_infer_progress")
         return "not_evidenced", "not_evidenced", notes
 
@@ -99,18 +110,18 @@ def infer_completion_state(row: dict[str, Any]) -> tuple[str, str, list[str]]:
 def upgrade_element_row(row: dict[str, Any]) -> dict[str, Any]:
     upgraded = dict(row)
 
-    coverage = _safe_float(row.get("coverage"), 0.0)
+    observed_surface_ratio = _audited_observability(row)
     point_count = _safe_int(row.get("point_count_evaluated"), 0)
     visibility_conf = infer_visibility_confidence(
         point_count_evaluated=point_count,
-        observed_surface_ratio=coverage,
+        observed_surface_ratio=observed_surface_ratio,
     )
     completion_state, evidence_state, notes = infer_completion_state(row)
 
     existing_notes = str(upgraded.get("notes", "")).strip()
     joined_notes = ";".join(item for item in [existing_notes, *notes] if item)
 
-    upgraded["observed_surface_ratio"] = _fmt(coverage)
+    upgraded["observed_surface_ratio"] = _fmt(observed_surface_ratio)
     upgraded["visibility_confidence"] = _fmt(visibility_conf)
     upgraded["completion_state"] = completion_state
     upgraded["evidence_state"] = evidence_state
@@ -207,6 +218,7 @@ def upgrade_progress_outputs(
         "notes": [
             "This is a conservative interpretation layer.",
             "not_evidenced means the element was not sufficiently observed; it does not mean not built.",
+            "Observed surface is only from audited visibility; legacy coverage is geometric proximity, not observability.",
             "Stage 8 registration confidence remains authoritative for progress interpretation.",
         ],
         "outputs": {
