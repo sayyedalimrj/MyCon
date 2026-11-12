@@ -146,3 +146,49 @@ the contract before merging A and B.
 - A source string indicating `quantity_verified` or
   `heldout_calibration` is only a data contract, not proof the site
   signed or the calibration was independently validated.
+
+
+---
+
+# Round 2 addendum — B / Scientific progress (2026-11-12)
+
+This section **supersedes earlier test-status statements for the new Round-2 module tests** but does not retroactively assert that any old Open3D or full repository tests ran. Authoritative contract read from integration: \`repository/docs/parallel_research_round2_contract_20261112.md\` (integration commit \`14f0fcdfa78a95bc3b990a2253a9b27ee8aeacbb\`); coordinator's two PR #37 comments reviewed. **Do not merge or rebase B yourself.**
+
+## Delivered Round-2 code (B ownership only)
+
+- \`pipeline/stage_09_progress/geometry_evidence_adapter.py\`: optional read-only producer-manifest adapter; project-relative SHA-256 sidecars, metric units/frame, independent IFC/scan/registration hash matching, per-sample IFC GlobalId, camera calibration/poses, capture session, audited visibility, segmentation and registration fail-closed. AABB overlap is **never** promoted to authenticated IFC element attribution.
+- \`pipeline/stage_09_progress/enrich_scientific_evidence.py\`: independently runnable Stage9 scientific CSV adapter, no Open3D dependency, preserves signed quantities when geometry is blocked.
+- \`pipeline/stage_09_progress/evidence_metrics.py\`: provenance-aware quantity, geometry, observability and calibrated quality as **separate** fields. Strict scientific v2 rejects missing date, approval ID, approver, document hash and inconsistent execution/planned units.
+- \`pipeline/stage_09_progress/run_progress.py\`: opt-in new manifest via \`progress.geometry_evidence_manifest_json\`, plus trusted SHA/project configuration and dated audit fields; leaves original Stage8 and existing Stage9 columns intact.
+- \`pipeline/common/bim_schedule_mapping.py\`: additive BOQ weight approval metadata (original constructors/defaults retained).
+- \`pipeline/stage_11_schedule_variance/scientific_progress.py\`: strict BOQ/quantity aggregation, partial-identification bounds, exact as-of approved baseline, WBS and project weights, separate schedule-decision Quality Gates, all per-element audit metadata.
+- \`pipeline/stage_11_schedule_variance/run_scientific_progress.py\`: stand-alone primary scientific v2 JSON CLI, input SHA-256, isolated progress-prefixed run ID.
+- \`pipeline/stage_11_schedule_variance/run_schedule_variance.py\`: legacy v1 preserved, explicitly logged as **legacy acceptance proxy**, optional distinct \`--baseline-csv\`, nested v2 unchanged schema family.
+- Tests: \`tests/test_round2_progress_contract.py\` (27 local passes); old B-owned scientific tests adjusted for stronger provenance requirements.
+- For C: \`configs/research_progress/round2_contract_fixture/\` includes immutable synthetic manifest and JSONL sidecars, IFC IDs, schedule/mapping/Stage9 CSV, \`expected.json\`, complete \`scientific_progress.v2.synthetic.json\`; provenance/units/unknown reason codes included.
+- Docs: \`docs/research_progress/round2_methodology.md\`; \`docs/research_progress/round2_execution_log_20261112.md\` for commands, dependency versions, exit codes, fixture SHA-256, caveats.
+
+All paths above are prefixed with \`repository/\` in GitHub.
+
+## Executed verification (do not misrepresent)
+
+- \`python -m compileall -q pipeline/stage_09_progress pipeline/stage_11_schedule_variance\`: **exit 0** (present local B modules).
+- \`python -m pytest -q -ra tests/test_round2_progress_contract.py\`: **exit 0, 27 passed**, one warning about \`pytest.mark.lightweight\` registration in partial mirror, ~0.12s.
+- Stage9 standalone manifest+quantity adapter CLI: **exit 0**, produced 2-element CSV, \`geometry_gate=pass\` for the **synthetic** manifest. This is schema validation, not independent capture validation.
+- Stage11 scientific v2 CLI: **exit 0**; synthetic progress unknown, [60,85]% bounds, observability 0.375, approved synthetic planned 50%, variance bounds [+10,+35] pp, \`quality_gate=blocked\`. E2 occluded but has unknown physical execution; no synthetic physical point estimate fabricated.
+- The local test tree contains exact Git-blob-verified B source and fixture bytes; **the common mapping/schedule loaders are compatible local mirrors, not original GitHub checkout bytes**. Full original Stage9/11 regression suite, GPU/Open3D geometry, and **real-world end-to-end** were **not executed**. No CI run was available. These remain mandatory coordinator release blockers.
+- Python 3.13.5, pytest 9.0.2, NumPy 2.3.5, SciPy 1.17.0, Linux x86_64; no GPU/Open3D tested.
+
+## A→B and B→C interface / unresolved inputs
+
+**Owner A action:** publish canonical \`runs/<run_id>/reports/bim_geometry_evidence.v1.json\` and associated authentic hash-checked element surfaces, registered camera poses and audited visibility. Producer must document metric scale/held-out control error, registration residual and independently verified IFC and scan hashes. **Owner B never changed Stage8.** The current A branch was checked, but no actual v1 manifest or comparable calibrated real survey files were available for direct consumption. The B reader and synthetic contract fixture are ready independently.
+
+**Owner C action:** read the B v2 schema/fixture; score IFC categorical geometry state **separately** from physical fraction and observability, preserve numeric verified fractions even if geometry unknown, report missing counts/denominators and held-out building/session splits, and do not equate identification bounds with CIs. B did not modify C tests/benchmark code.
+
+**Coordinator acceptance gate:** run full relevant lightweight pytest in a **real checked-out GitHub tree**, run Open3D Stage 9 tests, exercise real Stage8 producer-to-B reader with original as-built capture + approved BOQ/quantity/schedule and external independent ground truth. Then review scientific and dashboard consumers; PR #37 remains Draft, unmerged. No valid publication/real-case result is claimed from B software synthetic fixture.
+
+## Unique run IDs and status
+
+- Round-2 local execution ID: \`progress-round2-27\`.
+- Schema: \`mycon.bim_geometry_evidence.v1\` (A→B) and \`mycon.scientific_progress.v2\` (B→C).
+- \`implemented: true\`, \`unit_tested_local_synthetic: true\`, \`full_repo_tested: false\`, \`gpu_validated: false\`, \`real_case_validated: false\`, \`publication_ready: false\`.
