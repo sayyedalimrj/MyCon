@@ -220,6 +220,10 @@ def main(argv: list[str] | None = None) -> int:
     dashboard_payload = dashboard.to_dict()
     dashboard_payload["provenance"] = provenance
 
+    for legacy_output in (activity_progress, variance_payload, dashboard_payload):
+        legacy_output["legacy_progress_validity"] = "acceptance_status_proxy_only_not_physical_progress"
+        legacy_output["legacy_interval_validity"] = "wilson_estimand_mismatch_not_valid_for_weighted_progress"
+
     # v1 fields and schema versions remain intact for old consumers.
     # v2 is a DISTINCT estimand; never substitute v1 acceptance scores.
     scientific_report["provenance"] = provenance
@@ -243,6 +247,12 @@ def main(argv: list[str] | None = None) -> int:
     scientific_path = args.scientific_progress_json or (
         args.schedule_variance_json.parent / research_run_id / "scientific_progress.v2.json"
     )
+    legacy_paths = (
+        args.activity_progress_json, args.schedule_variance_json, args.dashboard_summary_json
+    )
+    if scientific_path.resolve() in {p.resolve() for p in legacy_paths}:
+        print("STAGE_11_FAILED: v2 output cannot overwrite a v1 output path", file=sys.stderr)
+        return 1
     if scientific_path.exists():
         print(f"STAGE_11_FAILED: scientific report exists: {scientific_path}", file=sys.stderr)
         return 1
