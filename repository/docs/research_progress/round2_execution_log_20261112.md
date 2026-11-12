@@ -17,7 +17,7 @@
 | # | Actual command | Exit code | Result |
 |---|---|---:|---|
 | 1 | \`python -m compileall -q pipeline/stage_09_progress pipeline/stage_11_schedule_variance\` | **0** | No compile errors for present local B modules |
-| 2 | \`python -m pytest -q -ra tests/test_round2_progress_contract.py\` | **0** | \`27 passed, 1 warning in 0.12s\` |
+| 2 | \`python -m pytest -q -ra tests/test_round2_progress_contract.py\` | **0** | \`28 passed, 1 warning in 0.10s\` |
 | 3 | \`python -m pipeline.stage_09_progress.enrich_scientific_evidence\` (full args below) | **0** | \`STAGE9_SCIENTIFIC_OK elements=2 geometry_gate=pass\` |
 | 4 | \`python -m pipeline.stage_11_schedule_variance.run_scientific_progress\` (full args below) | **0** | \`STAGE11_SCIENTIFIC_OK run_id=progress-round2-27 quality_gate=blocked status=unknown_evidence\` |
 
@@ -64,6 +64,8 @@ mapping.csv                    e71c73da8ee02e3843b2a8306b47b9e7dfbfbb1131ef246a6
 schedule.csv                   f69680206e91ba94beb23455e032dfbfcbd443d5a60a435dd8ed82479989edb3
 expected.json                  089cbba562bf925ccbbdcb0179c37e4948be391306f72286fdba877f9e3b239a
 \`\`\`
+
+The 28th test additionally validates the complete B→C exemplar JSON schema, stable IFC IDs, fraction-vs-percent units, null states, and independent one-view geometry QA. Executed locally with `python -m pytest -q -ra tests/test_round2_progress_contract.py`; observed **exit code 0, `28 passed, 1 warning in 0.10s`**.
 
 ## Outstanding acceptance gates
 
