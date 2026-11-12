@@ -237,3 +237,15 @@ def test_edge_detection_rejects_invalid_support_radius():
     for bad in (float("nan"), float("inf"), 0., -1.):
         with pytest.raises(ValueError):
             extract_edges(points, [], radius=bad)
+
+
+def test_two_sparse_endpoints_cannot_be_inferred_as_long_observed_edge():
+    points = np.array([[0., 0., .02], [1.8, 0., .02],
+                       [0., .02, 0.], [1.8, .02, 0.]])
+    planes = [
+        {"plane_id": "y0", "normal": [0, 1, 0], "coefficients": [0, 1, 0, 0],
+         "support_indices": [0, 1]},
+        {"plane_id": "z0", "normal": [0, 0, 1], "coefficients": [0, 0, 1, 0],
+         "support_indices": [2, 3]},
+    ]
+    assert extract_edges(points, planes, radius=.08, min_support=2, min_length=.2) == []
