@@ -1,0 +1,212 @@
+{
+  "schema_version": "mycon.model_agnostic_stress.v1",
+  "result_status": "not_executed",
+  "seeds": [
+    11,
+    23,
+    42,
+    67,
+    101
+  ],
+  "baselines": [
+    "raw_COLMAP_geometry",
+    "Open3D_statistical_radius_cleaning",
+    "Open3D_voxel_RANSAC_finite_planes",
+    "A_comparison_ready_geometry_v1",
+    "optional_GS_extracted_geometry_if_available"
+  ],
+  "scenarios": [
+    {
+      "scenario": "control",
+      "perturbation": {},
+      "status": "not_executed"
+    },
+    {
+      "scenario": "density_25pct",
+      "perturbation": {
+        "density_fraction": 0.25
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "density_50pct",
+      "perturbation": {
+        "density_fraction": 0.5
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "density_100pct",
+      "perturbation": {
+        "density_fraction": 1
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "noise_sigma_005",
+      "perturbation": {
+        "noise_std_source_units": 0.005
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "noise_sigma_03",
+      "perturbation": {
+        "noise_std_source_units": 0.03
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "outlier_1pct",
+      "perturbation": {
+        "outlier_fraction": 0.01
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "outlier_10pct",
+      "perturbation": {
+        "outlier_fraction": 0.1
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "missing_surface_25pct",
+      "perturbation": {
+        "occluded_surface_fraction": 0.25
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "missing_surface_60pct",
+      "perturbation": {
+        "occluded_surface_fraction": 0.6
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "slanted_15deg",
+      "perturbation": {
+        "plane_slope_deg": 15
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "slanted_35deg",
+      "perturbation": {
+        "plane_slope_deg": 35
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "corner_occluded",
+      "perturbation": {
+        "corner_state": "unknown"
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "corner_hypothetical",
+      "perturbation": {
+        "corner_state": "candidate_extrapolated"
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "near_parallel_planes",
+      "perturbation": {
+        "plane_intersection_angle_deg": 2
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "finite_patch_gap",
+      "perturbation": {
+        "support_overlap_fraction": 0
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "three_views",
+      "perturbation": {
+        "n_calibrated_views": 3
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "twelve_views",
+      "perturbation": {
+        "n_calibrated_views": 12
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "oblique_70deg",
+      "perturbation": {
+        "camera_angle_deg": 70
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "ransac_tau_01",
+      "perturbation": {
+        "ransac_threshold_source_units": 0.01
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "ransac_tau_08",
+      "perturbation": {
+        "ransac_threshold_source_units": 0.08
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "voxel_01",
+      "perturbation": {
+        "voxel_size_source_units": 0.01
+      },
+      "status": "not_executed"
+    },
+    {
+      "scenario": "voxel_10",
+      "perturbation": {
+        "voxel_size_source_units": 0.1
+      },
+      "status": "not_executed"
+    }
+  ],
+  "primary_metrics": [
+    "structure_retention_fraction",
+    "outlier_removal_fraction",
+    "fscore_at_tau",
+    "plane_f1",
+    "edge_f1",
+    "corner_f1",
+    "corner_localization_mae",
+    "corner_unknown_rate"
+  ],
+  "secondary_metrics": [
+    "normal_angular_mae_deg",
+    "normal_flip_rate",
+    "chamfer_l1_source_units",
+    "point_removal_fraction",
+    "wall_time_sec",
+    "peak_rss_mb",
+    "peak_vram_mb",
+    "failure_rate"
+  ],
+  "independence": "site-disjoint train/validation/test; never treat seeds, points, or video frames as independent sites",
+  "ablations": [
+    "no_statistical_outlier_filter",
+    "no_radius_filter",
+    "no_adaptive_voxel",
+    "no_plane_RANSAC",
+    "no_multiview_support",
+    "no_3dGS",
+    "no_corner_support_gate_diagnostic_only"
+  ],
+  "pairing": "identical capture, frozen annotated GT, same tau/coordinate unit and source seed across methods",
+  "claim_gate": "No numerical superiority without real same-case paired results; no MAX/BIM fitting required",
+  "paper_tables": "not_executed_until_verified_real_data"
+}
