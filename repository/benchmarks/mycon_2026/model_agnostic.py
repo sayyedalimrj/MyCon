@@ -62,8 +62,14 @@ def load_ready(path,root=None):
     if m.get("units") not in {"m","arbitrary","reconstruction_units","unitless"}:
         raise ValueError("source units must be declared")
     if not m.get("coordinate_frame"): raise ValueError("missing source frame")
-    if m.get("metric_scale_verified") is True and not m.get("independent_metric_evidence"):
-        raise ValueError("metric scaling requires independent controls")
+    if m.get("metric_scale_verified") is True:
+        control=m.get("independent_metric_evidence")
+        if not isinstance(control,dict) or not control.get("path") or not control.get("sha256"):
+            raise ValueError("metric scaling requires hashed independent controls")
+        survey=resolve_input(root,control["path"])
+        if (not survey.is_file() or sha256(survey).lower()!=str(control["sha256"]).lower()
+                or control.get("source") not in {"approved_survey","total_station_survey","independent_lidar"}):
+            raise ValueError("metric controls are not independently verifiable")
     if m.get("registration_verified") is True and not m.get("independent_registration_evidence"):
         raise ValueError("BIM registration requires independent evidence")
     files={}
@@ -152,7 +158,7 @@ def evaluate_ready(ready,truth,*,root=None,tau=.05,max_points=20000,seed=42,min_
         distances=nearest_distances(true,cloud)
         result["structure_retention_fraction"]=sum(x<=tau for x in distances)/len(distances)
         result.update(reconstruction_metrics(cloud,true,tau_m=tau))
-        if m["units"]!="m":
+        if m["units"]!="m" or m.get("metric_scale_verified") is not True:
             result["chamfer_l1_source_units"]=result.pop("chamfer_l1_m")
             result["chamfer_l2_source_units_squared"]=result.pop("chamfer_l2_m2")
             result["tau_source_units"]=result.pop("tau_m")
