@@ -368,10 +368,26 @@ def bootstrap_environment(
         {"name": r.name, "ok": r.ok, "detail": r.detail} for r in validation
     ]
 
-    # The environment is "ok" if the core probes and python install passed.
-    py_ok = all(r.ok for r in py_results if r.name in {"requirements-core", "numpy-pin"})
+    # Report failures in all layers requested by the user. An unavailable
+    # optional geometry/DA3/UI package must not be hidden behind 'core OK'.
+    required = {"requirements-core", "numpy-pin",
+                "requirements-research-geometry.txt",
+                "requirements-research-validation.txt"}
+    if install_da3:
+        required.add("requirements-da3")
+    if install_ui:
+        required.add("ui-deps")
+    py_status = {r.name: r.ok for r in py_results}
+    py_ok = all(py_status.get(name) is True for name in required)
+    probe_names = {"numpy", "yaml", "cv2", "PIL"}
+    if install_ui:
+        probe_names.add("gradio")
     core_probe_ok = all(
-        r.ok for r in validation if r.name in {"numpy", "yaml", "cv2", "PIL"}
+        r.ok for r in validation if r.name in probe_names
     )
-    summary["ok"] = bool(py_ok and core_probe_ok)
+    apt_ok = not install_apt or (apt_result is not None and apt_result.ok)
+    summary["ok"] = bool(apt_ok and py_ok and core_probe_ok)
+    summary["failed_steps"] = [r.name for r in py_results if not r.ok]
+    if install_apt and not apt_ok:
+        summary["failed_steps"].append("apt")
     return summary
