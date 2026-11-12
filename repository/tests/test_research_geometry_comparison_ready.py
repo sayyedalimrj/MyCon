@@ -8,7 +8,7 @@ import pytest
 
 from pipeline.stage_07_cleanup.comparison_ready import (
     SCHEMA, clean_points, extract_planes, extract_edges, extract_corners,
-    project_corner, run_ready, _ply_write, _ply_read,
+    project_corner, run_ready, reuse_stage7_planes, _ply_write, _ply_read,
 )
 
 
@@ -154,5 +154,27 @@ def test_non_orthogonal_planes_kept_without_false_orthogonality_claim():
     assert len(pl)==3
     assert all(p["fit_state"]=="candidate_observed_patch" for p in pl)
     assert all(c["state"] in {"observed_supported","candidate_extrapolated","unknown"} for c in co)
+
+def test_reuse_existing_stage7_guided_planes_without_duplicate_ownership(tmp_path: Path):
+    xyz = room(n=15)
+    inp = tmp_path / "stage7_cleaned.ply"
+    _ply_write(inp, xyz, None)
+    planes = []
+    for index in range(3):
+        source = tmp_path / f"plane_{index+1:03d}.ply"
+        _ply_write(source, xyz[index*225:(index+1)*225], None)
+        planes.append({"plane_id": f"plane_{index+1:03d}", "label": "unknown",
+                       "cloud_path": source.as_posix()})
+    stage7 = tmp_path / "stage7_planes.json"
+    stage7.write_text(json.dumps({"planes": planes}), encoding="utf-8")
+    patches = reuse_stage7_planes(xyz, stage7, threshold=.03, min_points=55)
+    assert len(patches) == 3
+    assert len(set().union(*(set(p["support_indices"]) for p in patches))) == sum(p["point_count"] for p in patches)
+    run = run_ready(inp, tmp_path, "geom-ready-stage7-reuse-001", threshold=.03,
+                    min_plane_points=55, stage7_planes_json=stage7, preview=False)
+    assert run["plane_source"] == "reused_stage7_plane_clouds"
+    assert run["source_stage7_planes_sha256"] is not None
+    assert run["plane_count"] == 3
+
 
 pytestmark=pytest.mark.lightweight
