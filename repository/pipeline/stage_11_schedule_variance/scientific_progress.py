@@ -159,6 +159,8 @@ def build_scientific_progress_report(
                 'physical_progress_reason_codes':parsed['physical_progress_reason_codes'],
                 'geometry_evidence_state':parsed['geometry_evidence_state'],
                 'geometry_conformance_state':parsed.get('geometry_conformance_state','unknown'),
+                'geometry_quality_gate':parsed.get('geometry_quality_gate','blocked'),
+                'geometry_n_views':parsed.get('geometry_n_views'),
                 'observability_ratio':parsed['observability_ratio'],
                 'evidence_confidence':parsed['evidence_confidence'],
                 'quantity_audit_gate':parsed['quantity_audit_gate'],
