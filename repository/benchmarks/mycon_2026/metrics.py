@@ -215,8 +215,8 @@ def progress_metrics(pred_rows, truth_rows, *, bins=10):
         key = str(r.get("global_id", "")).strip()
         if not key or key in gt:
             raise ValueError("Duplicate/empty truth global_id")
-        if r.get("status") not in {"built", "not_built", "partial"}:
-            raise ValueError("Ground truth requires independent built/not_built/partial label")
+        if r.get("status") not in {"built", "not_built", "partial", "", "unknown", None}:
+            raise ValueError("GT categorical label must be built/not_built/partial/unknown")
         gt[key] = r
     for r in pred_rows:
         key = str(r.get("global_id", "")).strip()
@@ -230,6 +230,7 @@ def progress_metrics(pred_rows, truth_rows, *, bins=10):
     reported_observability = []
     cm = {c: {k: 0 for k in ("built", "not_built", "partial")} for c in ("built", "not_built", "partial")}
     known = missing = prediction_missing = explicit_abstentions = 0
+    eligible_classification = 0
     numeric_gt_available = numeric_prediction_available = 0
     confidence_correct, absolute_errors = [], []
     total_weight = observed_weight = weighted_pred = weighted_true_known = 0.0
@@ -238,7 +239,10 @@ def progress_metrics(pred_rows, truth_rows, *, bins=10):
         predicted = _status(p.get("completion_state") or p.get("status", ""))
         if p.get("observability_ratio") is not None and str(p["observability_ratio"]).strip():
             reported_observability.append(_fraction(p["observability_ratio"]))
-        true = r["status"]
+        true = r.get("status")
+        true_known = true in cm
+        if true_known:
+            eligible_classification += 1
         weight = float(r.get("weight") or 1.0)
         if not math.isfinite(weight) or weight <= 0:
             raise ValueError("GT weights must be positive")
@@ -258,16 +262,17 @@ def progress_metrics(pred_rows, truth_rows, *, bins=10):
             observed_weight += weight
             weighted_pred += fraction * weight
             weighted_true_known += truth_fraction * weight
-        if predicted is None:
-            missing += 1
-            if key in predictions:
-                explicit_abstentions += 1
-        else:
-            known += 1
-            cm[true][predicted] += 1
-            conf = _confidence(p.get("evidence_confidence") if p.get("evidence_confidence") not in (None, "") else p.get("confidence"))
-            if conf is not None:
-                confidence_correct.append((conf, float(predicted == true)))
+        if true_known:
+            if predicted is None:
+                missing += 1
+                if key in predictions:
+                    explicit_abstentions += 1
+            else:
+                known += 1
+                cm[true][predicted] += 1
+                conf = _confidence(p.get("evidence_confidence") if p.get("evidence_confidence") not in (None, "") else p.get("confidence"))
+                if conf is not None:
+                    confidence_correct.append((conf, float(predicted == true)))
     scores = {}
     for label in cm:
         tp = cm[label][label]
@@ -291,18 +296,21 @@ def progress_metrics(pred_rows, truth_rows, *, bins=10):
     total_error_weight = sum(w for _, w in absolute_errors)
     return {
         "n_truth": len(gt), "n_predictions_matched": sum(k in predictions for k in gt),
-        "n_evaluated": known, "n_unknown": missing, "unknown_rate": missing / len(gt),
+        "n_evaluated": known, "n_unknown": missing,
+        "n_gt_classification_available": eligible_classification,
+        "n_gt_classification_unavailable": len(gt) - eligible_classification,
+        "unknown_rate": missing / eligible_classification if eligible_classification else None,
         "n_categorical_missing_output": prediction_missing,
         "n_categorical_abstained": explicit_abstentions,
         "categorical_abstention_rate_all_gt": explicit_abstentions / len(gt),
-        "classification_coverage": known / len(gt),
+        "classification_coverage": known / eligible_classification if eligible_classification else None,
         "n_numeric_gt_available": numeric_gt_available,
         "n_numeric_prediction_available": numeric_prediction_available,
         "n_numeric_missing_or_unpaired": len(gt) - len(absolute_errors),
         "numeric_pair_coverage": len(absolute_errors) / len(gt),
         "observability_ratio_mean_reported": mean(reported_observability) if reported_observability else None,
         "confusion_matrix": cm,
-        "per_class": scores, "macro_f1_selective": mean(v["f1"] for v in scores.values()),
+        "per_class": scores, "macro_f1_selective": mean(v["f1"] for v in scores.values()) if eligible_classification else None,
         "micro_accuracy_selective": sum(cm[c][c] for c in cm) / known if known else None,
         "micro_precision_selective": sum(cm[c][c] for c in cm) / known if known else None,
         "micro_recall_selective": sum(cm[c][c] for c in cm) / known if known else None,
