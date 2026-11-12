@@ -36,6 +36,8 @@ def test_not_observed_is_not_marked_not_built() -> None:
         "point_count_evaluated": "0",
         "status": "candidate",
         "registration_confidence": "high",
+        "observability_ratio": "0.0",
+        "observability_source": "raycast_zbuffer",
     }
 
     upgraded = upgrade_element_row(row)
@@ -63,6 +65,8 @@ def test_upgrade_progress_outputs_writes_interpreted_csvs(tmp_path: Path) -> Non
             "point_count_evaluated": "1000",
             "status": "candidate",
             "registration_confidence": "high",
+            "observability_ratio": "0.9",
+            "observability_source": "raycast_zbuffer",
         }
     ]
     activity_rows = [
@@ -102,3 +106,13 @@ def test_upgrade_progress_outputs_writes_interpreted_csvs(tmp_path: Path) -> Non
         row = next(csv.DictReader(f))
     assert row["completion_state"] == "complete_candidate"
     assert row["metric_truth_source"] == "stage8_registration_and_stage9_deterministic_metrics"
+
+
+def test_missing_audited_visibility_never_derived_from_coverage() -> None:
+    upgraded = upgrade_element_row({
+        "coverage": "1.0", "in_tolerance_ratio": "1.0",
+        "confidence": "1.0", "point_count_evaluated": "5000",
+        "registration_confidence": "high",
+    })
+    assert upgraded["observed_surface_ratio"] == ""
+    assert upgraded["completion_state"] == "uncertain_visibility"
