@@ -94,3 +94,25 @@ def test_runner_synthetic_never_publishes_real_results(tmp_path):
     assert json.loads((tmp_path.parent/"output"/"bench-bim-free-smoke"/"scientific_results.json").read_text())==[]
     cases=json.loads((tmp_path.parent/"output"/"bench-bim-free-smoke"/"cases.json").read_text())
     assert next(r for r in cases if r["task"]=="geometry_ready")["metrics"]["plane_tp"]==1
+
+def test_metric_units_require_independent_survey(tmp_path):
+    m,gt=fixture(tmp_path)
+    manifest=json.loads(m.read_text())
+    truth=json.loads(gt.read_text())
+    manifest["units"]="m"
+    truth["units"]="m"
+    m.write_text(json.dumps(manifest))
+    gt.write_text(json.dumps(truth))
+    result=evaluate_ready(m,gt,root=tmp_path)
+    assert "chamfer_l1_m" not in result and "chamfer_l1_source_units" in result
+    manifest["metric_scale_verified"]=True
+    m.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError,match="independent controls"):
+        load_ready(m,tmp_path)
+    survey=tmp_path/"control_survey.txt"
+    survey.write_text("synthetic only")
+    manifest["independent_metric_evidence"]={"path":survey.name,"sha256":sha256(survey),
+                                             "source":"approved_survey"}
+    m.write_text(json.dumps(manifest))
+    result=evaluate_ready(m,gt,root=tmp_path)
+    assert "chamfer_l1_m" in result and result["metric_scale_verified"]
