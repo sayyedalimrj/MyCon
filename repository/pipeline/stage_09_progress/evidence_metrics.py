@@ -92,6 +92,8 @@ def element_scientific_fields(
         'executed_quantity':done,
     }
     if require_audit:
+        if data_date is None:
+            reasons.append('missing_data_date')
         required = ('quantity_record_id','quantity_approval_id','quantity_approved_by')
         approved = as_utc(audit['quantity_approved_at_utc'])
         asof = as_utc(audit['quantity_as_of_utc'])
