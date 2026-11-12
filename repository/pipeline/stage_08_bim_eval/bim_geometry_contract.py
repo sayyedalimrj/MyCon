@@ -64,6 +64,16 @@ def validate_manifest(manifest_path: Path, project_root: Path, *, require_verifi
                              or not (qa.get("independent_controls") or {}).get("passed")
                              or not (qa.get("stage8") or {}).get("passed")):
         reasons.append("metric_registration_not_independently_verified")
+    provenance = m.get("provenance") or {}
+    if require_verified:
+        commit = provenance.get("code_commit")
+        config_hash = provenance.get("config_hash")
+        if not isinstance(commit, str) or len(commit) != 40 or any(x not in "0123456789abcdef" for x in commit.lower()):
+            reasons.append("missing_or_invalid_producer_code_commit")
+        if not isinstance(config_hash, str) or len(config_hash) != 64:
+            reasons.append("missing_or_invalid_config_fingerprint")
+        if not m.get("independent_control_evidence_ref"):
+            reasons.append("missing_independent_control_reference")
     payloads = {}
     for key in ("surface_samples", "camera_poses", "element_visibility"):
         payloads[key], error = _read_records(project_root, m.get(key), key)
