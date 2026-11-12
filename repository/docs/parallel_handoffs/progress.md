@@ -192,3 +192,38 @@ All paths above are prefixed with \`repository/\` in GitHub.
 - Round-2 local execution ID: \`progress-round2-27\`.
 - Schema: \`mycon.bim_geometry_evidence.v1\` (A→B) and \`mycon.scientific_progress.v2\` (B→C).
 - \`implemented: true\`, \`unit_tested_local_synthetic: true\`, \`full_repo_tested: false\`, \`gpu_validated: false\`, \`real_case_validated: false\`, \`publication_ready: false\`.
+
+
+---
+
+# Model-agnostic Comparison-Ready Geometry addendum — 2026-11-12
+
+**Current priority supersedes room-specific 14021208/MAX work:** read Integration's repository/docs/integration/model_agnostic_geometry_readiness_contract_20261112.md and coordinator's latest PR #37 comment. No MAX, CAD, IFC, or specific building was used as a fitting/registration baseline in this work. A/C ownership unchanged. PR remains Draft, unmerged, based on research/mycon-integration-20261112.
+
+## New B-only code and artefacts
+
+- repository/pipeline/stage_09_progress/comparison_ready_adapter.py — reader for mycon.comparison_ready_geometry.v1: clean PLY/NPY, unit/frame metadata, finite plane/edge/corner candidate QA, sample support, camera sidecar, source provenance and SHA-256. Reports false/degenerate corners as unknown. An unscaled valid generic reconstruction is diagnostic-only. An independent future IFC mapping is required to unlock geometric agreement. Never infers completed quantity.
+- repository/pipeline/stage_09_progress/run_comparison_ready_diagnostics.py — runnable CLI requiring no IFC, model, Open3D, GPU or external reference. Reports exact feature counts, audit counts, quality metrics, metric/registration flags and null physical progress.
+- repository/pipeline/stage_09_progress/enrich_scientific_evidence.py — optional generic-manifest and separately hashed IFC mapping arguments. Existing signed-quantity progress does not depend on geometry success; mapping/scale failure leaves comparison fields unknown.
+- repository/pipeline/stage_09_progress/run_progress.py — optional new generic comparison-ready manifest in Stage9 pipeline using progress.comparison_ready_manifest_json and independently expected mapping SHA; additional columns without deleting legacy keys.
+- repository/pipeline/stage_11_schedule_variance/scientific_progress.py — independently exposes generic reconstruction quality/association audit, geometry conformance, registration and visibility in each element's scientific-v2 record, plus data-presence flags and exact quantity-aggregation formula. No feature field participates in a quantity or BOQ numerator/denominator.
+- repository/tests/test_comparison_ready_progress_contract.py — 21 actually executed local CPU tests: feature state, false corner, duplicate IDs, invalid plane, arbitrary scale, hash tamper, path traversal, camera QA, occlusion, mapping, IFC hash/metric gate and cross-element ambiguity.
+- repository/configs/research_progress/comparison_ready_fixture/ — seven hashed synthetic inputs including binary .npy, clean .ply, plane/edge/corner/camera JSON, model-independent manifest, plus an actual synthetic diagnostic JSON for C. No real MAX/BIM reference.
+- repository/docs/research_progress/comparison_ready_geometry_methodology_20261112.md — A→B optional producer/consumer and future B→C interface semantics, conservative scale/registration/IFC gates, precise units and unknown states.
+- repository/docs/research_progress/comparison_ready_execution_log_20261112.md — exact commands, exit codes, dependency versions, Git blob and content hashes and limitations.
+
+## Actual verification, versus blocked full-integration gates
+
+**PASS on local mirror with Git-blob-identical newly authored B adapter, CLI, tests and synthetic fixture:** Python 3.13.5 / pytest 9.0.2 / NumPy 2.3.5, Linux CPU; compileall exit 0; pytest 21 passed (0.16 s), exit 0; model-independent diagnostics CLI exit 0, producing 4 planes / 1 edge / 2 corners of which one is false and unsupported, and physical_progress_estimate=null. Duplicate output-path run exit 2 without overwrite. Invalid manifest run exit 2, with blocked diagnostic gate. The output diagnostic JSON content hash is bf810d39b860d81c940f3be52e373104d4d32a82131d36bbfce700037cad04f9. In all cases the synthetic package has units=arbitrary and false scale/registration flags.
+
+**NOT EXECUTED IN THIS ROUND:** full original repository checkout, integrated legacy Stage9/11 tests, actual Open3D processing of real captures and an authentic A-produced comparison-ready package. The local runner cannot clone GitHub, and the original shared pipeline files were not mirrored/executed in this test. Prior Round2 28-passing-test log remains a distinct execution record, not proof of current integrated success. No field/ground-truth metrics or statistical CIs claimed.
+
+## A→B and B→C handoff / explicit blockers
+
+**A / #38:** publish the actual geom-ready-* manifest and stable clean-cloud, plane, edge, corner, quality, camera files in the versioned agreed schema. Define source units/frame and genuine camera feature provenance. No forced MAX/IFC alignment and no synthetic completion. This B fixture is an interface proposal pending producer conformity.
+
+**C / #36:** use the synthetic comparison_ready_fixture and B's separate scientific-v2 contract. Check structural feature state and metric scale **separately** from physical quantity; no 0% for absent/out-of-view/occluded features. Keep stable plane/edge/corner IDs distinct from IFC GlobalId. C benchmark must not promote candidate corners or inferred AABB ownership to independent site ground truth.
+
+**Coordinator:** G0 ownership check, original-repo compile+pytest and Stage9/11 CLI, real A source artefact with independent camera QA and later surveyed scale/BIM links. Only **independently signed quantity, approved BOQ weights, dated baseline and evidence trace** can enable scientific physical progress or schedule decisions. Full G1–G5 research/real-site gates remain blocked until verified inputs. Review PR #37 before any merge.
+
+**Status:** implemented=true; local synthetic adapter unit_tested=true (21); standalone diagnostic CLI_executed=true; original_repo_full_tested=false; real_geometry_validated=false; verified_metric_bim_mapping=false; publication_ready=false.
