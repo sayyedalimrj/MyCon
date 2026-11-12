@@ -308,3 +308,17 @@ def test_at_as_of_date_does_not_reuse_stale_quantity():
     r=_report(element_rows=rows,date=dt.datetime(2026,1,17,tzinfo=dt.timezone.utc))
     assert r['activities'][0]['physical_progress_estimate'] is None
     assert r['activities'][0]['physical_progress_lower_bound_pct']==0
+
+
+def test_low_image_count_downgrades_geometry_qa_not_quantity():
+    b=_bundle()
+    assert b.valid
+    assert b.rows[E1]['geometry_n_views']==1
+    assert b.rows[E1]['geometry_quality_gate']=='limited_view_support_or_unassessed_geometry'
+    rows=_rows('elements_stage9.csv')
+    upgraded,report=enrich_scientific_evidence_rows(rows,manifest_path=FIX/'bim_geometry_evidence.v1.json',
+        project_root=ROOT,expected_ifc_sha256='1'*64,expected_scan_sha256='2'*64,
+        expected_registration_sha256='3'*64,expected_project_id='mycon-round2-synthetic',
+        data_date=DATE)
+    assert upgraded[0]['physical_progress_estimate']==0.8
+    assert upgraded[0]['geometry_quality_gate']!='pass'
