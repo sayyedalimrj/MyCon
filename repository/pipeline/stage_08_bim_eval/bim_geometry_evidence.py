@@ -440,7 +440,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--scan", type=Path, required=True)
     parser.add_argument("--registration-report", type=Path, required=True)
     parser.add_argument("--transform-json", type=Path, required=True)
-    parser.add_argument("--mesh-ply", type=Path, required=True)
+    parser.add_argument("--mesh-ply", type=Path, help="Stage 8 real IFC triangle mesh PLY")
+    parser.add_argument("--mesh-json", type=Path, help="Explicit CPU test mesh JSON with vertices and triangles")
     parser.add_argument("--elements-jsonl", type=Path, required=True)
     parser.add_argument("--ifc-units", required=True)
     parser.add_argument("--camera-json", type=Path)
@@ -448,14 +449,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--inspect", action="store_true", help="Validate without writing any output")
     args = parser.parse_args(argv)
     try:
-        import open3d as o3d
-        mesh = o3d.io.read_triangle_mesh(str(args.mesh_ply))
+        if bool(args.mesh_ply) == bool(args.mesh_json):
+            raise ValueError("Exactly one of --mesh-ply or --mesh-json is required")
+        if args.mesh_json:
+            mesh_data = json.loads(args.mesh_json.read_text(encoding="utf-8"))
+            vertices, triangles = mesh_data["vertices"], mesh_data["triangles"]
+        else:
+            import open3d as o3d
+            mesh = o3d.io.read_triangle_mesh(str(args.mesh_ply))
+            vertices, triangles = np.asarray(mesh.vertices), np.asarray(mesh.triangles)
         meta = [json.loads(line) for line in args.elements_jsonl.read_text().splitlines() if line.strip()]
         mat = json.loads(args.transform_json.read_text())["matrix_4x4_scan_to_bim"]
         result = create_bim_geometry_evidence(
             project_root=args.project_root, run_id=args.run_id, project_id=args.project_id,
             ifc_path=args.ifc, scan_path=args.scan, registration_report_path=args.registration_report,
-            transform=mat, vertices=np.asarray(mesh.vertices), triangles=np.asarray(mesh.triangles),
+            transform=mat, vertices=vertices, triangles=triangles,
             elements=meta, ifc_units=args.ifc_units, extraction_source="ifcopenshell",
             camera_path=args.camera_json, independent_controls_path=args.controls_json,
             write=not args.inspect)
