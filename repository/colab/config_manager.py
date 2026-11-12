@@ -224,6 +224,9 @@ def build_effective_config(
     _set_dotted(data, "project.name", project_name)
     _set_dotted(data, "project.run_id", run_id)
     _set_dotted(data, "project.root", str(Path(project_root).resolve()))
+    # Stage-7 finite-feature output requires an independent, safe run id.
+    # This is only an ID: research feature generation remains opt-in.
+    _set_dotted(data, "cleanup.comparison_ready_run_id", f"geom-ready-{run_id}")
 
     # Re-anchor any absolute paths in `paths:` that referenced a different
     # run_id-bearing report path. We only touch the report/log files we
