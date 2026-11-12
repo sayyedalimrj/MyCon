@@ -96,4 +96,4 @@ def test_backend_inspection_and_missing_export(tmp_path: Path) -> None:
         prepare_backend_command("dust3r", tmp_path, tmp_path)
 
 
-pytestmark = pytest.mark.geometry
+pytestmark = pytest.mark.lightweight
