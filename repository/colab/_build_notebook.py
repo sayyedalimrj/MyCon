@@ -179,7 +179,7 @@ CELLS: list[dict] = [
         "from colab.environment import is_colab",
         "import secrets",
         "if EXECUTION_MODE == 'ui':",
-        "    ui = build_ui(repo_root=REPO_ROOT, log=boot_log)",
+        "    ui = build_ui(repo_root=REPO_ROOT, log=boot_log, initial_run_id=RUN_ID, initial_profile=PROFILE)",
         "    ui.queue()",
         "    if is_colab():",
         "        # Colab Gradio queues can fail with share=False; protect its tunnel with auth.",
