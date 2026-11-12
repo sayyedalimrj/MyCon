@@ -77,7 +77,7 @@ def test_manifest_a_to_b_hashes_stable_and_fail_closed(tmp_path):
     result=create_bim_geometry_evidence(project_root=tmp_path,run_id='geom-test-real-control',
       project_id='site01',ifc_path=ifc,scan_path=scan,registration_report_path=report,
       transform=np.eye(4),vertices=v,triangles=f,elements=e,ifc_units='METRE',
-      extraction_source='ifcopenshell',camera_path=camera,independent_controls_path=controls)
+      extraction_source='ifcopenshell',camera_path=camera,independent_controls_path=controls,code_commit="0"*40)
     assert result['schema_version']==SCHEMA and result['metric_scale_verified'] is True
     assert result['status']=='geometry_and_visibility_evaluable'
     for key in ('surface_samples','camera_poses','element_visibility'):
@@ -87,7 +87,7 @@ def test_manifest_a_to_b_hashes_stable_and_fail_closed(tmp_path):
       create_bim_geometry_evidence(project_root=tmp_path,run_id='geom-test-real-control',
         project_id='site01',ifc_path=ifc,scan_path=scan,registration_report_path=report,
         transform=np.eye(4),vertices=v,triangles=f,elements=e,ifc_units='METRE',
-        extraction_source='ifcopenshell',camera_path=camera,independent_controls_path=controls)
+        extraction_source='ifcopenshell',camera_path=camera,independent_controls_path=controls,code_commit="0"*40)
     no_control=create_bim_geometry_evidence(project_root=tmp_path,run_id='geom-test-without-control',
       project_id='site01',ifc_path=ifc,scan_path=scan,registration_report_path=report,
       transform=np.eye(4),vertices=v,triangles=f,elements=e,ifc_units='METRE',
@@ -113,7 +113,7 @@ def test_validator_accepts_correct_fixture_and_rejects_tampering(tmp_path):
     m=create_bim_geometry_evidence(project_root=tmp_path,run_id='geom-validation-001',
       project_id='site01',ifc_path=ifc,scan_path=scan,registration_report_path=report,
       transform=np.eye(4),vertices=v,triangles=f,elements=e,ifc_units='METRE',
-      extraction_source='ifcopenshell',camera_path=camera,independent_controls_path=controls)
+      extraction_source='ifcopenshell',camera_path=camera,independent_controls_path=controls,code_commit="0"*40)
     path=Path(m['manifest_path'])
     assert validate_manifest(path,tmp_path)['valid']
     with (tmp_path/m['surface_samples']['path']).open('a') as fp:fp.write('garbage\n')
@@ -161,7 +161,7 @@ def test_cli_cpu_mesh_json_real_subprocess(tmp_path):
          '--project-id','synthetic-site','--ifc',str(ifc),'--scan',str(scan),
          '--registration-report',str(report),'--transform-json',str(transform),
          '--mesh-json',str(mesh),'--elements-jsonl',str(elements),'--ifc-units','METRE',
-         '--camera-json',str(camera),'--controls-json',str(controls)]
+         '--camera-json',str(camera),'--controls-json',str(controls),'--code-commit','0'*40]
     proc=subprocess.run(cmd,capture_output=True,text=True,check=False)
     assert proc.returncode==0,proc.stderr+proc.stdout
     m=tmp_path/'runs/geom-cli-smoke-001/reports/bim_geometry_evidence.v1.json'
