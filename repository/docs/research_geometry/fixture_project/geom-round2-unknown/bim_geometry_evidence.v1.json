@@ -1,0 +1,85 @@
+{
+  "schema_version": "mycon.bim_geometry_evidence.v1",
+  "run_id": "geom-round2-unknown",
+  "project_id": "SYNTHETIC_FIXTURE_NOT_REAL",
+  "created_at_utc": "2026-11-12T13:55:00Z",
+  "coordinate_frame": "bim_world",
+  "units": "m",
+  "ifc_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "scan_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "registration_report_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "registration_quality_gate": {
+    "stage8": {
+      "status": "unknown",
+      "passed": false
+    },
+    "independent_controls": {
+      "passed": false,
+      "reason": "missing_independent_survey"
+    },
+    "status": "unknown_unverified"
+  },
+  "scan_to_bim_4x4": [
+    [
+      1,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      1,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      1
+    ]
+  ],
+  "metric_scale_verified": false,
+  "independent_control_evidence_ref": null,
+  "ifc_unit_label_original": "METRE",
+  "source": "SYNTHETIC_FIXTURE_ONLY",
+  "status": "unknown_unverified_geometry_or_cameras",
+  "provenance": {
+    "code_commit": null,
+    "config_hash": null,
+    "seed": 42,
+    "note": "SYNTHETIC_SCHEMA_ONLY_NO_REAL_PROGRESS"
+  },
+  "sampling": {
+    "sampling_policy": "SYNTHETIC_SCHEMA_ONLY"
+  },
+  "counts": {
+    "surface_samples": 1,
+    "camera_poses": 0,
+    "element_visibility_records": 0
+  },
+  "surface_samples": {
+    "path": "geom-round2-unknown/bim_surface_samples.v1.jsonl",
+    "sha256": "a8326d8dc9bde5a41cb8025c125a536b03f202fe49863c02a094fc0550c27b5e",
+    "records": 1,
+    "format": "jsonl"
+  },
+  "camera_poses": {
+    "path": "geom-round2-unknown/bim_camera_poses.v1.jsonl",
+    "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "records": 0,
+    "format": "jsonl"
+  },
+  "element_visibility": {
+    "path": "geom-round2-unknown/bim_element_visibility.v1.jsonl",
+    "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "records": 0,
+    "format": "jsonl"
+  }
+}

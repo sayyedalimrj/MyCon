@@ -62,6 +62,8 @@ def run_registration(cfg: Any, *, force: bool = False, log_level: str = "INFO") 
     if _existing_outputs(paths) and not force:
         return {"status": "skipped_existing_outputs", "report_json": paths["report_json"].as_posix()}
     if force:
+        if paths["aligned_dir"].exists() and any(paths["aligned_dir"].iterdir()):
+            raise RuntimeError("Destructive --force refused: aligned BIM directory contains existing artifacts")
         clean_dir(paths["aligned_dir"], force=True, expected_leaf="aligned")
     else:
         paths["aligned_dir"].mkdir(parents=True, exist_ok=True)
@@ -154,6 +156,42 @@ def run_registration(cfg: Any, *, force: bool = False, log_level: str = "INFO") 
     }
     report["quality_gate"] = evaluate_registration_quality(cfg, report)
     write_json_atomic(paths["report_json"], report)
+    if cfg_bool(cfg, "bim.geometry_evidence_enabled", False):
+        from .bim_geometry_evidence import create_bim_geometry_evidence
+        research_id = str(cfg_get(cfg, "bim.geometry_evidence_run_id", "geom-" + run_id(cfg)))
+        camera_value = cfg_get(cfg, "bim.geometry_evidence_cameras_json", None)
+        controls_value = cfg_get(cfg, "bim.geometry_evidence_independent_controls_json", None)
+        def _optional_path(value: Any) -> Path | None:
+            if not value:
+                return None
+            p = Path(str(value))
+            return p if p.is_absolute() else resolve_project_path(cfg, "__unused__", str(p))
+        manifest = create_bim_geometry_evidence(
+            project_root=resolve_project_path(cfg, "__unused__", "."),
+            run_id=research_id,
+            project_id=project_name(cfg),
+            ifc_path=selected_ifc.path,
+            scan_path=selected_scan.path,
+            registration_report_path=paths["report_json"],
+            transform=icp.transformation,
+            vertices=extraction.mesh.vertices,
+            triangles=extraction.mesh.triangles,
+            elements=extraction.elements,
+            ifc_units=extraction.units,
+            extraction_source=extraction.source,
+            camera_path=_optional_path(camera_value),
+            independent_controls_path=_optional_path(controls_value),
+            seed=int(cfg_get(cfg, "project.random_seed", 42)),
+            control_rmse_limit_m=float(cfg_get(cfg, "bim.geometry_evidence_control_rmse_limit_m", 0.05)),
+            code_commit=cfg_get(cfg, "bim.geometry_evidence_code_commit", None),
+            scan_aligned_xyz=scan_aligned.points,
+            bim_reference_xyz=bim_pcd.points,
+        )
+        report["optional_bim_geometry_evidence"] = {
+            "manifest_path": manifest["manifest_path"],
+            "metric_scale_verified": manifest["metric_scale_verified"],
+            "status": manifest["status"],
+        }
     if report["quality_gate"]["status"] == "fail" and cfg_bool(cfg, "bim.fail_on_low_registration_quality", False):
         raise RuntimeError("Stage 8 registration quality gate failed: " + "; ".join(report["quality_gate"].get("errors", [])))
     logger.info(

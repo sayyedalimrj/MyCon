@@ -1,0 +1,1 @@
+{"sample_id":"fixture-sample-wall-000","global_id":"SYNTHETIC_WALL_NOT_REAL","ifc_class":"IfcWall","geometry_id":"fixture-not-measured","geometry_version":"synthetic-not-an-ifc-hash","triangle_id":0,"surface_id":"SYNTHETIC_WALL_NOT_REAL:tri:0","xyz_m":[0.0,0.0,2.0],"normal":[0.0,0.0,1.0],"triangle_area_m2":0.5,"ownership":"ifc_triangle_face","candidate_global_ids":[]}

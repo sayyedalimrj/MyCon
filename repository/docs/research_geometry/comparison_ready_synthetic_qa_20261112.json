@@ -1,0 +1,81 @@
+{
+  "schema": "mycon.geometry.synthetic_qa.v1",
+  "status": "synthetic_cpu_executed",
+  "field_capture_used": false,
+  "independent_ground_truth_survey_used": false,
+  "reconstruction_comparison_real_case": false,
+  "source": "generated_three_planar_patches_seed55_not_project_data",
+  "run_id": "geom-ready-qa-20261112",
+  "source_sha256": "509bde00a3509600a4ef3ecd1a20b7fea7834ca99dea23e0263f51512e7fac63",
+  "module_sha256": "571186cd1ae78db22fe8573cd455250e1058197d92a5ff467fbb596d59b45ecb",
+  "cmd_pytest": "PYTHONPATH=. pytest -q tests/test_research_geometry_comparison_ready.py",
+  "pytest": {
+    "exit_code": 0,
+    "passed": 13,
+    "failed": 0,
+    "warning": "PytestUnknownMarkWarning in isolated local checkout; full repo marker registry not loaded",
+    "elapsed_seconds_approx": 2.11
+  },
+  "cmd_cli": "PYTHONPATH=. python -m pipeline.stage_07_cleanup.comparison_ready --input-ply /mnt/data/mycon_ready_work/local_run/synthetic_three_planes.ply --project-root /mnt/data/mycon_ready_work/local_run --run-id geom-ready-qa-20261112 --threshold .02 --min-plane-points 90 --trials 350",
+  "cli": {
+    "exit_code": 0,
+    "input_points": 2352,
+    "clean_points": 2352,
+    "removed_count": 0,
+    "finite_planes": 3,
+    "candidate_edges": 3,
+    "observed_supported_corners": 1,
+    "unverified_corners": 0,
+    "corner_error_to_constructed_origin_reconstruction_units": 0.000158424,
+    "corner_multiscale_drift_reconstruction_units": 0.00014841754311569836,
+    "plane_p95_residuals_reconstruction_units": [
+      0.002047,
+      0.002031,
+      0.00198
+    ]
+  },
+  "software": {
+    "python": "3.13.5",
+    "numpy": "2.3.5",
+    "scipy": "1.17.0",
+    "pytest": "9.0.2",
+    "trimesh": "4.11.1",
+    "matplotlib": "3.10.8",
+    "open3d": "not_installed",
+    "cuda": "not_available"
+  },
+  "outputs_sha256": {
+    "clean_cloud.ply": "509bde00a3509600a4ef3ecd1a20b7fea7834ca99dea23e0263f51512e7fac63",
+    "clean_cloud.npy": "35ea918676d3929bf0381a7f2e8efda5c3f1839b94100d655ce5ee4c698474a4",
+    "planes.json": "b521d93dbff862756a7704eddef4e64c85df29d259736079ecaaec6b8f1d9143",
+    "edges.json": "a1ae34da0a92c7d6cd0f4145e9074e22038e2e9d81b8d47821ffbc9a7006717e",
+    "corners.json": "aec7b9ae4e3d9dc9d080ce6b4704a7f39a98fe6f7e9ccbad34946d31304c7de2",
+    "normal_samples.npz": "bb247e4fb26e42d0d1d70564295cb14b373b936136c053aba09c6c41389ca618",
+    "xy_geometry_preview.png": "c024e2713d5e420dc29ed302b11c40ff4f4fef80e35ac1027207cbeb9b27d554",
+    "xyz_geometry_preview.png": "a76f0aab22c0a53f5ad511bcba20a7f1350868993c542d1ccce4e22419f1f583"
+  },
+  "metric_scale_verified": false,
+  "registration_verified": false,
+  "limitations": [
+    "synthetic planes not full building",
+    "no real PLY run",
+    "no true-corner detection rate outside synthetic fixtures",
+    "no full GitHub checkout regression",
+    "non-metric source units"
+  ],
+  "cli_help_exit_code": 0,
+  "cli_duplicate_id_refusal_exit_code": 2,
+  "output_artifact_hashes_validated": 8,
+  "stage7_plane_reuse_synthetic": {
+    "status": "executed_local_cpu_synthetic",
+    "run_id": "geom-ready-stage7-reuse-20261112",
+    "exit_code": 0,
+    "source_planes": 3,
+    "edge_candidates": 1,
+    "corner_candidates": 1,
+    "observed_supported_corners": 0,
+    "note": "Trihedral mathematical candidate retained but rejected as measured/observed corner because local original Stage-7 support insufficient",
+    "prior_stage7_planes_json_sha256": "5ca0b9beaf1749d79ccc1d7a1b8fafa8a7c9df843ee11f91ef47064c273a367d",
+    "output_sha256_verified_count": 8
+  }
+}

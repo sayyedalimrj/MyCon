@@ -1,0 +1,16 @@
+# Additive research-only dependencies; install inside a dedicated environment.
+# The production base requirements and CUDA toolchain are intentionally unchanged.
+# CPU geometry metrics / frame diagnostics:
+numpy>=1.24
+scipy>=1.10
+# PLY reading and Stage 8 3D registration on a supported Python build:
+open3d>=0.18
+# Optional external GPU trainers (Nerfstudio, official gsplat, VGGT, DUSt3R)
+# MUST be installed separately against compatible torch/CUDA versions after
+# checking upstream licenses and exact runtime constraints. Never pip install
+# heavyweight optional packages as a side-effect of running diagnostics.
+
+# Comparison-ready PLY read/write (required for the standalone geometry CLI)
+trimesh>=4.0
+# Optional planar/3D review previews; CLI can use --no-preview without this.
+matplotlib>=3.8
