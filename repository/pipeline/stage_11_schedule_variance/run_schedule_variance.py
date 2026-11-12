@@ -240,6 +240,13 @@ def main(argv: list[str] | None = None) -> int:
         "overall": scientific_report["overall"],
     }
 
+    scientific_path = args.scientific_progress_json or (
+        args.schedule_variance_json.parent / research_run_id / "scientific_progress.v2.json"
+    )
+    if scientific_path.exists():
+        print(f"STAGE_11_FAILED: scientific report exists: {scientific_path}", file=sys.stderr)
+        return 1
+
     for path, payload in (
         (args.activity_progress_json, activity_progress),
         (args.schedule_variance_json, variance_payload),
@@ -248,9 +255,6 @@ def main(argv: list[str] | None = None) -> int:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload, indent=2, allow_nan=False), encoding="utf-8")
 
-    scientific_path = args.scientific_progress_json or (
-        args.schedule_variance_json.parent / research_run_id / "scientific_progress.v2.json"
-    )
     scientific_path.parent.mkdir(parents=True, exist_ok=True)
     # Exclusive create: never overwrite an earlier scientific research run.
     try:
