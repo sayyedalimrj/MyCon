@@ -74,6 +74,11 @@ def run_cams_gs_prepare(cfg: Any, *, force: bool = False, log_level: str = "INFO
     paths = stage45_paths(cfg)
     if bool_value(cfg_get(cfg, "cams_gs.execute_training", False)) and force:
         raise Stage45CamsGsError("Refusing --force during 3DGS resume: existing artifacts must be preserved")
+    if force and paths["output_dir"].exists() and any(paths["output_dir"].iterdir()):
+        raise Stage45CamsGsError(
+            "Refusing destructive --force on a nonempty CAMS-GS directory; "
+            "choose a new isolated project/run path instead"
+        )
     clean_dir_guarded(paths["output_dir"], force=force, required_token="cams_gs")
     ensure_dir(paths["output_dir"])
     ensure_dir(paths["nerfstudio_dataset_dir"])
