@@ -1,0 +1,43 @@
+{
+  "schema_version": "mycon.validation.v1",
+  "model_versions": {"colmap": "record_commit_and_version", "mycon": "record_commit_and_model_checkpoint_sha256"},
+  "samples": [
+    {
+      "id": "SITE01_BUILDING01_SESSION01",
+      "site_id": "SITE01",
+      "building_id": "BUILDING01",
+      "capture_session_id": "SESSION01",
+      "split": "test",
+      "data_kind": "real",
+      "source_path": "CAPTURE_FILE.zip",
+      "source_sha256": "REPLACE_WITH_64_CHARACTER_REAL_SHA256",
+      "gt_independently_verified": true,
+      "gt_review": {"reviewer": "independent_surveyor_id", "review_date_utc": "2026-11-12", "survey_instrument": "total_station_or_lidar"},
+      "ground_truth": {
+        "reconstruction_gt_ply": "GT_REFERENCE_IN_METRES.ply",
+        "asbuilt_gt_ply": "GT_AS_BUILT_IN_BIM_FRAME.ply",
+        "survey_anchors_csv": "GT_ANCHORS.csv",
+        "ifc_elements_csv": "GT_IFC_ELEMENTS.csv",
+        "progress_csv": "GT_ELEMENTS_PROGRESS.csv"
+      },
+      "methods": {
+        "colmap": {
+          "reconstruction_ply": "COLMAP_SCALED_AND_ALIGNED_TO_GT.ply",
+          "aligned_scan_ply": "COLMAP_IN_BIM_FRAME.ply",
+          "registered_anchors_csv": "COLMAP_ANCHORS.csv",
+          "ifc_elements_csv": "COLMAP_ELEMENTS.jsonl",
+          "element_metrics_csv": "COLMAP_STAGE9.csv",
+          "telemetry_json": "COLMAP_TELEMETRY.json"
+        },
+        "mycon": {
+          "reconstruction_ply": "MYCON_SCALED_AND_ALIGNED_TO_GT.ply",
+          "aligned_scan_ply": "data/bim/aligned/PROJECT/scan_aligned.ply",
+          "registered_anchors_csv": "MYCON_REGISTERED_ANCHORS.csv",
+          "ifc_elements_csv": "MYCON_BIM_ELEMENTS.jsonl",
+          "element_metrics_csv": "data/bim/metrics/PROJECT/element_metrics.csv",
+          "telemetry_json": "MYCON_TELEMETRY.json"
+        }
+      }
+    }
+  ]
+}

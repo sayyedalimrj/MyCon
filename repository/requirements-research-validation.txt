@@ -1,0 +1,7 @@
+# Standalone benchmark metrics use stdlib for tiny fixtures.
+# Required for scalable nearest-neighbor evaluation on real point clouds:
+scipy>=1.11,<2
+# Optional research figure exporter:
+matplotlib>=3.7,<4
+# Isolated test suite:
+pytest>=7,<10
