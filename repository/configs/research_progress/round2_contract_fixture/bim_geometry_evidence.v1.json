@@ -1,0 +1,67 @@
+{
+  "camera_poses": {
+    "path": "configs/research_progress/round2_contract_fixture/camera_poses.jsonl",
+    "sha256": "4060c5741b08ea48b0283af1bc17c48ab002270fe6d846919ef3df8161e8e522"
+  },
+  "coordinate_frame": "bim_world",
+  "created_at_utc": "2026-01-16T00:00:00+00:00",
+  "element_visibility": {
+    "path": "configs/research_progress/round2_contract_fixture/element_visibility.jsonl",
+    "sha256": "1b196b22d3d53a2f1ef91cf288b549b5979cb3dc042dce30bb8a2a3a6c76278b"
+  },
+  "ifc_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "independent_control_evidence_ref": "SYNTH-CONTROL-NOT-REAL",
+  "metric_scale_verified": true,
+  "project_id": "mycon-round2-synthetic",
+  "provenance": {
+    "capture_session_id": "SYNTH-SESSION-1",
+    "code_commit": "fixture-not-production",
+    "config_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+    "dataset_id": "synthetic-only",
+    "hardware": "synthetic-cpu",
+    "seed": 0,
+    "software_versions": {
+      "python": "3.13"
+    }
+  },
+  "registration_quality_gate": {
+    "independent_anchor_rmse_m": 0.01,
+    "rmse_m": 0.01,
+    "status": "pass"
+  },
+  "registration_report_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+  "run_id": "geometry-synthetic-1",
+  "scan_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+  "scan_to_bim_4x4": [
+    [
+      1,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      1,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      1
+    ]
+  ],
+  "schema_version": "mycon.bim_geometry_evidence.v1",
+  "surface_samples": {
+    "path": "configs/research_progress/round2_contract_fixture/surface_samples.jsonl",
+    "sha256": "542851fca3e9ef039389dc3d760999f429523438950d86c82e997cdfa977c3b6"
+  },
+  "units": "m"
+}
