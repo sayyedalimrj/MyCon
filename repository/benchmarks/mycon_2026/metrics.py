@@ -207,7 +207,8 @@ def progress_metrics(pred_rows, truth_rows, *, bins=10):
         raise ValueError("bins must be an integer >= 2")
     reported_observability = []
     cm = {c: {k: 0 for k in ("built", "not_built", "partial")} for c in ("built", "not_built", "partial")}
-    known = missing = 0
+    known = missing = prediction_missing = explicit_abstentions = 0
+    numeric_gt_available = numeric_prediction_available = 0
     confidence_correct, absolute_errors = [], []
     total_weight = observed_weight = weighted_pred = weighted_true_known = 0.0
     for key, r in gt.items():
@@ -221,20 +222,30 @@ def progress_metrics(pred_rows, truth_rows, *, bins=10):
             raise ValueError("GT weights must be positive")
         total_weight += weight
         truth_fraction = _fraction(r.get("completion_fraction"))
-        if predicted is None:
-            missing += 1
-            continue
-        known += 1
-        cm[true][predicted] += 1
-        conf = _confidence(p.get("evidence_confidence") if p.get("evidence_confidence") not in (None, "") else p.get("confidence"))
-        if conf is not None:
-            confidence_correct.append((conf, float(predicted == true)))
+        # Independent estimands: a categorical abstention cannot discard a verified
+        # numeric fraction (and a categorical success cannot invent one).
+        if key not in predictions:
+            prediction_missing += 1
+        if truth_fraction is not None:
+            numeric_gt_available += 1
         fraction = _fraction(p.get("physical_progress_estimate"))
+        if fraction is not None:
+            numeric_prediction_available += 1
         if fraction is not None and truth_fraction is not None:
             absolute_errors.append((abs(fraction - truth_fraction), weight))
             observed_weight += weight
             weighted_pred += fraction * weight
             weighted_true_known += truth_fraction * weight
+        if predicted is None:
+            missing += 1
+            if key in predictions:
+                explicit_abstentions += 1
+        else:
+            known += 1
+            cm[true][predicted] += 1
+            conf = _confidence(p.get("evidence_confidence") if p.get("evidence_confidence") not in (None, "") else p.get("confidence"))
+            if conf is not None:
+                confidence_correct.append((conf, float(predicted == true)))
     scores = {}
     for label in cm:
         tp = cm[label][label]
@@ -259,7 +270,14 @@ def progress_metrics(pred_rows, truth_rows, *, bins=10):
     return {
         "n_truth": len(gt), "n_predictions_matched": sum(k in predictions for k in gt),
         "n_evaluated": known, "n_unknown": missing, "unknown_rate": missing / len(gt),
+        "n_categorical_missing_output": prediction_missing,
+        "n_categorical_abstained": explicit_abstentions,
+        "categorical_abstention_rate_all_gt": explicit_abstentions / len(gt),
         "classification_coverage": known / len(gt),
+        "n_numeric_gt_available": numeric_gt_available,
+        "n_numeric_prediction_available": numeric_prediction_available,
+        "n_numeric_missing_or_unpaired": len(gt) - len(absolute_errors),
+        "numeric_pair_coverage": len(absolute_errors) / len(gt),
         "observability_ratio_mean_reported": mean(reported_observability) if reported_observability else None,
         "confusion_matrix": cm,
         "per_class": scores, "macro_f1_selective": mean(v["f1"] for v in scores.values()),
