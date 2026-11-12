@@ -14,6 +14,13 @@ PLOTS = (
     ("physical_progress", "progress", "progress_mae_fraction_known"),
     ("activity_progress", "activity_progress", "physical_progress_mae_pp"),
     ("heldout_nvs", "nvs", "psnr_db_mean_finite"),
+    ("geometry_ready_structure_retention", "geometry_ready", "structure_retention_fraction"),
+    ("geometry_ready_plane_f1", "geometry_ready", "plane_f1"),
+    ("geometry_ready_edge_f1", "geometry_ready", "edge_f1"),
+    ("geometry_ready_corner_f1", "geometry_ready", "corner_f1"),
+    ("geometry_ready_corner_unknown", "geometry_ready", "corner_unknown_rate"),
+    ("geometry_ready_normal_angle", "geometry_ready", "normal_angular_mae_deg"),
+    ("vlm_grounding_hallucination", "vlm_grounding", "hallucination_rate_asserted"),
 )
 
 
