@@ -346,7 +346,8 @@ def create_bim_geometry_evidence(*, project_root: Path, run_id: str, project_id:
     vertices: Any, triangles: Any, elements: list[dict], ifc_units: str,
     extraction_source: str, camera_path: Path | None = None,
     independent_controls_path: Path | None = None, seed: int = 42,
-    control_rmse_limit_m: float = 0.05, write: bool = True) -> dict:
+    control_rmse_limit_m: float = 0.05, code_commit: str | None = None,
+    write: bool = True) -> dict:
     """Optional producer. Reject any overwrite and emit untrusted/unknown states.
 
     All source inputs are read-only; no metric claim without independent survey.
@@ -402,7 +403,13 @@ def create_bim_geometry_evidence(*, project_root: Path, run_id: str, project_id:
         "ifc_unit_label_original": ifc_units,
         "source": extraction_source,
         "surface_samples": None, "camera_poses": None, "element_visibility": None,
-        "provenance": {"code_commit": None, "config_hash": None, "seed": seed,
+        "provenance": {"code_commit": code_commit,
+                       "config_hash": _digest(_json_bytes({"run_id": run_id, "project_id": project_id,
+                           "seed": seed, "control_rmse_limit_m": control_rmse_limit_m,
+                           "ifc_units": ifc_units, "extraction_source": extraction_source,
+                           "camera_manifest_sha256": sha256_file(camera_path) if camera_path and camera_path.is_file() else None})),
+                       "config_hash_scope": "research_geometry_producer_options_only",
+                       "seed": seed,
                        "hardware": platform.machine(), "python": platform.python_version(),
                        "numpy": np.__version__, "dataset_capture_ids": [c["capture_session_id"] for c in cameras],
                        "independent_survey_id": survey.get("survey_id"),
@@ -447,6 +454,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--camera-json", type=Path)
     parser.add_argument("--controls-json", type=Path)
     parser.add_argument("--inspect", action="store_true", help="Validate without writing any output")
+    parser.add_argument("--code-commit", help="Exact Git commit SHA of checked-out producer source")
     args = parser.parse_args(argv)
     try:
         if bool(args.mesh_ply) == bool(args.mesh_json):
@@ -466,6 +474,7 @@ def main(argv: list[str] | None = None) -> int:
             transform=mat, vertices=vertices, triangles=triangles,
             elements=meta, ifc_units=args.ifc_units, extraction_source="ifcopenshell",
             camera_path=args.camera_json, independent_controls_path=args.controls_json,
+            code_commit=args.code_commit,
             write=not args.inspect)
         print(json.dumps({"status": result.get("status") if not args.inspect else result["manifest"]["status"],
                           "manifest_path": result.get("manifest_path"),
