@@ -29,7 +29,13 @@ def _schedule(ids=("A1",)):
 
 
 def _mapping(entries):
-    entries = tuple(MappingEntry(*e) for e in entries)
+    entries = tuple(MappingEntry(
+        *e,
+        weight_approval_id="SYNTH-W1",
+        weight_approved_by="SYNTH-REVIEWER",
+        weight_approved_at_utc="2026-01-10T00:00:00+00:00",
+        weight_document_sha256="7"*64,
+    ) for e in entries)
     groups = {}
     for e in entries:
         groups.setdefault(e.activity_id, []).append(e)
@@ -39,7 +45,12 @@ def _mapping(entries):
 def _signed(gid, done=0, total=10):
     return {"global_id":gid, "planned_quantity":total, "executed_quantity":done,
             "quantity_unit":"m3", "quantity_source":"approved_measurement",
-            "quantity_verified":"true", "registration_confidence":"high"}
+            "quantity_verified":"true", "registration_confidence":"high",
+            "quantity_record_id":"SYNTH-Q1", "quantity_approval_id":"SYNTH-Q-APP",
+            "quantity_approved_by":"SYNTH-REVIEWER",
+            "quantity_approved_at_utc":"2026-01-15T00:00:00+00:00",
+            "quantity_as_of_utc":"2026-01-16T00:00:00+00:00",
+            "quantity_document_sha256":"6"*64}
 
 
 def _report(mapping, rows, ids=("A1",), **kwargs):
@@ -53,7 +64,15 @@ def _report(mapping, rows, ids=("A1",), **kwargs):
 def _baseline(percent=50):
     return [{"activity_id":"A1", "baseline_source":"approved_baseline",
              "baseline_id":"baseline-r1", "approved_planned_percent":percent,
-             "activity_weight":100, "activity_weight_basis":"approved_cost"}]
+             "activity_weight":100, "activity_weight_basis":"approved_cost",
+             "planned_as_of_utc":"2026-01-16T00:00:00+00:00",
+             "baseline_approved_at_utc":"2026-01-10T00:00:00+00:00",
+             "baseline_approved_by":"SYNTH-PLANNER",
+             "baseline_document_sha256":"8"*64,
+             "activity_weight_approval_id":"SYNTH-APP-100",
+             "activity_weight_approved_by":"SYNTH-PLANNER",
+             "activity_weight_approved_at_utc":"2026-01-10T00:00:00+00:00",
+             "activity_weight_document_sha256":"9"*64}]
 
 
 def test_missing_observation_is_not_zero_percent():
@@ -94,7 +113,7 @@ def test_missing_boq_weights_stops_invented_progress():
                 schedule_rows=_baseline())["activities"][0]
     assert a["physical_progress_estimate"] is None
     assert a["physical_progress_lower_bound_pct"] is None
-    assert "mapping_weights_unverified_or_invalid" in a["warnings"]
+    assert "invalid_or_incomparable_element_weights" in a["warnings"]
 
 
 def test_registration_failure_does_not_erase_independent_signed_quantity():
@@ -141,14 +160,14 @@ def test_full_verified_zero_quantity_is_real_zero():
 def test_cli_output_versioned_and_legacy_keys_preserved(tmp_path: Path):
     schedule = tmp_path/"schedule.csv"
     schedule.write_text(
-        "activity_id,activity_name,planned_start_iso,planned_finish_iso,approved_planned_percent,baseline_source,baseline_id,activity_weight,activity_weight_basis\n"
-        "A1,Walls,2026-01-01,2026-02-01,50,approved_baseline,B1,10,approved_cost\n", encoding="utf-8")
+        "activity_id,activity_name,planned_start_iso,planned_finish_iso,approved_planned_percent,baseline_source,baseline_id,activity_weight,activity_weight_basis,planned_as_of_utc,baseline_approved_at_utc,baseline_approved_by,baseline_document_sha256,activity_weight_approval_id,activity_weight_approved_by,activity_weight_approved_at_utc,activity_weight_document_sha256\n"
+        "A1,Walls,2026-01-01,2026-02-01,50,approved_baseline,B1,10,approved_cost,2026-01-16T00:00:00+00:00,2026-01-10T00:00:00+00:00,SYNTH-PLANNER," + "8"*64 + ",SYNTH-AW1,SYNTH-PLANNER,2026-01-10T00:00:00+00:00," + "9"*64 + "\n", encoding="utf-8")
     mapping = tmp_path/"mapping.csv"
-    mapping.write_text("activity_id,ifc_global_id,weight,weight_basis\nA1,E1,2,approved_boq\n", encoding="utf-8")
+    mapping.write_text("activity_id,ifc_global_id,weight,weight_basis,weight_approval_id,weight_approved_by,weight_approved_at_utc,weight_document_sha256\nA1,E1,2,approved_boq,SYNTH-BOQ1,SYNTH-REVIEWER,2026-01-10T00:00:00+00:00," + "7"*64 + "\n", encoding="utf-8")
     elements = tmp_path/"metrics.csv"
     elements.write_text(
-        "global_id,status,planned_quantity,executed_quantity,quantity_unit,quantity_source,quantity_verified,registration_confidence\n"
-        "E1,likely_completed,10,6,m3,approved_measurement,true,high\n", encoding="utf-8")
+        "global_id,status,planned_quantity,executed_quantity,quantity_unit,quantity_source,quantity_verified,registration_confidence,quantity_record_id,quantity_approval_id,quantity_approved_by,quantity_approved_at_utc,quantity_as_of_utc,quantity_document_sha256\n"
+        "E1,likely_completed,10,6,m3,approved_measurement,true,high,SYNTH-Q1,SYNTH-QAPP,SYNTH-REVIEWER,2026-01-15T00:00:00+00:00,2026-01-16T00:00:00+00:00," + "6"*64 + "\n", encoding="utf-8")
     args = ["--schedule-csv",str(schedule),"--mapping-csv",str(mapping),
             "--element-metrics-csv",str(elements),
             "--activity-progress-json",str(tmp_path/"activities.json"),
