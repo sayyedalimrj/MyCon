@@ -175,6 +175,9 @@ def evaluate_ready(ready,truth,*,root=None,tau=.05,max_points=20000,seed=42,min_
     visible=[c for c in gt.get("corners",[]) if c.get("observable",True) is True]
     c=match(observed,visible,lambda a,b:math.dist(vec(a.get("xyz",a.get("point"))),vec(b.get("xyz",b.get("point")))),tau)
     result.update(counts("corner",len(observed),len(visible),c))
+    result["corner_false_positive_rate_asserted"]=result["corner_fp"]/len(observed) if observed else None
+    result["corner_n_unsupported_observed_assertions"]=sum(
+        x.get("state")=="observed_supported" and x not in observed for x in pred["corners"])
     result["corner_n_unknown_or_extrapolated"]=len(pred["corners"])-len(observed)
     result["corner_unknown_rate"]=(len(pred["corners"])-len(observed))/len(pred["corners"]) if pred["corners"] else None
     result["n_gt_corners_unobservable"]=len(gt.get("corners",[]))-len(visible)
