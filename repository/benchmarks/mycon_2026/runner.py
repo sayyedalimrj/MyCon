@@ -297,7 +297,8 @@ def run(manifest_path: Path, output_root: Path, *, run_id: str, include_fixtures
                 task_started = time.perf_counter()
                 result = {"data_kind": sample.get("data_kind", "unverified"), "sample_id": sample["id"], "site_id": sample["site_id"],
                           "building_id": sample["building_id"], "split": sample["split"],
-                          "method": method, "task": task, "status": "not_executed"}
+                          "method": method, "task": task, "status": "not_executed",
+                          "scenario": sample.get("scenario", {}), "capture_session_id": sample["capture_session_id"]}
                 if sample["split"] != "test":
                     result["reason"] = "not_test_split"
                 elif sample.get("data_kind") != "real" and not include_fixtures:
