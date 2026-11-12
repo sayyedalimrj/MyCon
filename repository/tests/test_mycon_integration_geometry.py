@@ -83,3 +83,24 @@ def test_native_a_false_metric_claim_is_blocked(native_a_run):
     assert bundle.valid is False
     with pytest.raises(ValueError, match="metric"):
         load_ready(manifest, root=root)
+
+
+def test_a_native_output_runs_c_scientific_metric_code_without_false_meter_units(native_a_run):
+    """Synthetic self-match checks C's *execution path*, not field performance."""
+    from benchmarks.mycon_2026.model_agnostic import evaluate_ready
+
+    root, manifest = native_a_run
+    points = np.load(manifest.parent / "clean_cloud.npy", allow_pickle=False)
+    gt = {"schema_version": "mycon.structural_gt.v1", "units": "reconstruction_units",
+          "coordinate_frame": "test_reconstruction",
+          "points": [{"xyz": p.tolist(), "class": "structure"} for p in points],
+          "planes": [], "edges": [], "corners": []}
+    gt_path = root / "synthetic_self_match_gt.json"
+    gt_path.write_text(json.dumps(gt), encoding="utf-8")
+    score = evaluate_ready(manifest, gt_path, root=root, tau=.04)
+    assert score["metric_scale_verified"] is False
+    assert score["registration_verified"] is False
+    assert score["fscore_at_tau"] == pytest.approx(1.0)
+    assert "chamfer_l1_source_units" in score
+    assert "chamfer_l1_m" not in score
+    assert "tau_m" not in score
