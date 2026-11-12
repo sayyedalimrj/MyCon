@@ -77,13 +77,18 @@ def _stage_status_table(state: UIState) -> list[list[str]]:
 # ---------------------------------------------------------------------------
 
 
-def build_ui(*, repo_root: Path, log: Optional[LogBuffer] = None):
+def build_ui(*, repo_root: Path, log: Optional[LogBuffer] = None,
+             initial_run_id: Optional[str] = None, initial_profile: Optional[str] = None):
     """Construct and return a Gradio Blocks app for the MyCon pipeline."""
     import gradio as gr  # imported lazily so the package is optional at import time
 
     repo_root = Path(repo_root).resolve()
     log = log or LogBuffer(max_lines=4000)
     state = UIState(repo_root=repo_root, log=log)
+    if initial_profile is not None:
+        if initial_profile not in _config_manager.PROFILES:
+            raise ValueError(f"Unknown UI profile: {initial_profile}")
+        state.profile = initial_profile
 
     log.banner("Gradio UI starting")
     log.append(f"[ui] repo_root = {repo_root}")
@@ -529,7 +534,7 @@ def build_ui(*, repo_root: Path, log: Optional[LogBuffer] = None):
                 with gr.Column():
                     run_id_in = gr.Textbox(
                         label="Run ID",
-                        value=_config_manager.default_run_id(),
+                        value=initial_run_id or _config_manager.default_run_id(),
                         info="Used as the project subfolder on Drive and the pipeline run_id. "
                         "Re-use the same Run ID to resume a previous run.",
                     )
@@ -540,7 +545,7 @@ def build_ui(*, repo_root: Path, log: Optional[LogBuffer] = None):
                     )
                     profile_in = gr.Dropdown(
                         choices=sorted(_config_manager.PROFILES.keys()),
-                        value=_config_manager.DEFAULT_PROFILE,
+                        value=state.profile,
                         label="Execution profile",
                         info="colab_safe = bounded/mock; colab_gpu = full single-GPU run; "
                         "production = server-grade settings.",
