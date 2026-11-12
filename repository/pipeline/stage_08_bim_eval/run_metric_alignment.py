@@ -58,14 +58,15 @@ def main() -> int:
         residual_fail_m=float(cfg_get(cfg, "metric_alignment.residual_fail_m", 0.15)),
     )
 
+    accepted = report.get("can_feed_stage8") is True and report.get("quality_gate", {}).get("passed") is True
     print(
-        "STAGE_08_METRIC_ALIGNMENT_OK "
-        f"status={report.get('status')} "
-        f"confidence={report.get('confidence')} "
-        f"usable_anchors={report.get('usable_registration_anchor_count')} "
-        f"report={report_json}"
+        ("STAGE_08_METRIC_ALIGNMENT_OK " if accepted else "STAGE_08_METRIC_ALIGNMENT_BLOCKED ")
+        + f"status={report.get('status')} "
+        + f"confidence={report.get('confidence')} "
+        + f"usable_anchors={report.get('usable_registration_anchor_count')} "
+        + f"report={report_json}"
     )
-    return 0
+    return 0 if accepted else 2
 
 
 if __name__ == "__main__":
