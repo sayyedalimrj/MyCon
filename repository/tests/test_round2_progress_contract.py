@@ -322,3 +322,22 @@ def test_low_image_count_downgrades_geometry_qa_not_quantity():
         data_date=DATE)
     assert upgraded[0]['physical_progress_estimate']==0.8
     assert upgraded[0]['geometry_quality_gate']!='pass'
+
+
+def test_b_to_c_example_separates_fraction_null_and_approved_baseline():
+    example=json.loads((FIX/'scientific_progress.v2.synthetic.json').read_text())
+    assert example['schema_version']=='mycon.scientific_progress.v2'
+    assert example['fixture_type'].startswith('synthetic_only')
+    assert example['units']['element_progress']=='fraction_0_1'
+    assert example['units']['activity_and_project_percent']=='percent_0_100'
+    a=example['activities'][0]
+    assert a['physical_progress_estimate'] is None
+    assert a['physical_progress_lower_bound_pct']==pytest.approx(60)
+    assert a['physical_progress_upper_bound_pct']==pytest.approx(85)
+    assert a['schedule_decision_quality_gate']=='blocked'
+    assert a['baseline_audit']['baseline_id']=='SYNTH-BL1'
+    e1,e2=a['elements']
+    assert e1['ifc_global_id']==E1 and e1['physical_progress_estimate']==0.8
+    assert e2['ifc_global_id']==E2 and e2['physical_progress_estimate'] is None
+    assert e2['geometry_evidence_state']=='occluded' and e2['observability_ratio']==0
+    assert e1['geometry_quality_gate']!='pass'  # one view is not enough
