@@ -167,7 +167,8 @@ def run_resume(
             evidence["failure_reason"] = f"rc={rc}, configs={len(configs)}, checkpoints={len(checkpoints)}"
         else:
             evidence["status"] = "trained_checkpoint_present_render_unverified"
-            evidence["gpu_validated"] = True
+            evidence["trainer_process_succeeded"] = True
+            evidence["gpu_validated"] = False  # success does not prove CUDA use
             evidence["config_yml"] = str(configs[-1])
             evidence["trained_checkpoint"] = str(checkpoints[-1])
             if camera_path is not None and shutil.which("ns-render"):
@@ -217,7 +218,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"status": "blocked", "reason": str(exc)}))
         return 2
     print(json.dumps(result, indent=2))
-    return 0 if not result["status"].endswith("failed") else 1
+    return 0 if result["status"] in {"inspected_only", "trained_checkpoint_present_render_unverified"} else 1
 
 
 if __name__ == "__main__":
