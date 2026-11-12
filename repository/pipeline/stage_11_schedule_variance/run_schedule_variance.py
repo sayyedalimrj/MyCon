@@ -73,6 +73,7 @@ def _build_provenance(
     schedule_csv: Path,
     mapping_csv: Path,
     element_metrics_csv: Path,
+    baseline_csv: Path,
     data_date_utc: str,
     on_schedule_band_pct: float,
 ) -> dict[str, Any]:
@@ -92,6 +93,11 @@ def _build_provenance(
                 "path": str(mapping_csv.resolve()),
                 "sha256": _sha256(mapping_csv),
                 "bytes": mapping_csv.stat().st_size,
+            },
+            "baseline_csv": {
+                "path": str(baseline_csv.resolve()),
+                "sha256": _sha256(baseline_csv),
+                "bytes": baseline_csv.stat().st_size,
             },
             "element_metrics_csv": {
                 "path": str(element_metrics_csv.resolve()),
@@ -127,6 +133,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--schedule-csv", required=True, type=Path)
     p.add_argument("--mapping-csv", required=True, type=Path)
     p.add_argument("--element-metrics-csv", required=True, type=Path)
+    p.add_argument("--baseline-csv", type=Path, default=None,
+                   help="Approved baseline as-of CSV; defaults to schedule CSV.")
     p.add_argument("--activity-progress-json", required=True, type=Path)
     p.add_argument("--schedule-variance-json", required=True, type=Path)
     p.add_argument("--dashboard-summary-json", required=True, type=Path)
@@ -168,7 +176,8 @@ def main(argv: list[str] | None = None) -> int:
         schedule = load_schedule_csv(args.schedule_csv)
         mapping = load_mapping_csv(args.mapping_csv)
         element_rows = _read_element_metrics_csv(args.element_metrics_csv)
-        with args.schedule_csv.open("r", encoding="utf-8-sig", newline="") as handle:
+        baseline_csv = args.baseline_csv or args.schedule_csv
+        with baseline_csv.open("r", encoding="utf-8-sig", newline="") as handle:
             schedule_rows = list(csv.DictReader(handle))
     except (FileNotFoundError, ValueError) as exc:
         print(f"STAGE_11_FAILED: input error: {exc}", file=sys.stderr)
@@ -202,6 +211,7 @@ def main(argv: list[str] | None = None) -> int:
         schedule_csv=args.schedule_csv,
         mapping_csv=args.mapping_csv,
         element_metrics_csv=args.element_metrics_csv,
+        baseline_csv=baseline_csv,
         data_date_utc=report.data_date_utc,
         on_schedule_band_pct=args.on_schedule_band_pct,
     )
@@ -276,12 +286,12 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"SCIENTIFIC_PROGRESS_V2_OK run_id={research_run_id} output={scientific_path}")
     print(
-        f"STAGE_11_OK n_activities={report.n_activities} "
+        f"STAGE_11_LEGACY_PROXY_ONLY n_activities={report.n_activities} "
         f"on={report.n_on_schedule} ahead={report.n_ahead} "
         f"behind={report.n_behind} unknown={report.n_unknown_evidence} "
-        f"overall_actual={report.overall_actual_percent_complete:.2f}%% "
-        f"overall_planned={report.overall_planned_percent_complete:.2f}%% "
-        f"variance={report.overall_schedule_variance_percent:+.2f}pp"
+        f"legacy_acceptance_proxy={report.overall_actual_percent_complete:.2f}%% "
+        f"legacy_planned={report.overall_planned_percent_complete:.2f}%% "
+        f"legacy_proxy_variance={report.overall_schedule_variance_percent:+.2f}pp"
     )
     return 0
 
