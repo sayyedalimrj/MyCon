@@ -88,8 +88,12 @@ def run_cleanup(cfg: Any, *, force: bool = False, log_level: str = "INFO") -> di
     logger = _configure_logger(cfg, log_level)
     paths = stage7_paths(cfg)
 
-    if force and bool_value(cfg_get(cfg, "cleanup.comparison_ready_enabled", False)):
-        raise Stage7CleanupError("Comparison-ready mode forbids destructive Stage-7 --force; use an independent geom-ready run")
+    if bool_value(cfg_get(cfg, "cleanup.comparison_ready_enabled", False)):
+        if force:
+            raise Stage7CleanupError("Comparison-ready mode forbids destructive Stage-7 --force; use an independent geom-ready run")
+        previous = [str(paths[k]) for k in ("cleaned_cloud", "downsampled_cloud", "planes_json", "mesh_ply", "report_json") if paths[k].exists()]
+        if previous:
+            raise Stage7CleanupError("Comparison-ready Stage-7 pipeline refuses to overwrite earlier outputs: " + ", ".join(previous) + "; run comparison_ready CLI on existing cleaned PLY instead")
 
     if force:
         clean_dir_guarded(paths["clean_dir"], force=True, required_token="clean", logger=logger)
