@@ -1,0 +1,41 @@
+{
+  "schema_version": "mycon.reconstruction.real_train_overlap_diagnostic_summary.v1",
+  "run_id": "recon-real-room-20261114T0020Z",
+  "dataset_manifest_sha256": "b31e720a06d7234d2b416cba5181b069057b798440d10c590a03b4e15bbe9f54",
+  "full_local_report_sha256": "7fbbcc2eced26f6ad284c428ca34a4e412ebac5d54c377a68aa9a266797406e6",
+  "full_local_report_bytes": 18890,
+  "source_video_sha256": "b622c340cef772b5f14456889ca59ecbc5720652506e0ff70d0d98a714984424",
+  "source_video_name": "20260816_090005.mp4",
+  "real_input_used": true,
+  "train_images_processed": 42,
+  "test_images_processed": 0,
+  "train_pairs_compared": 41,
+  "median_good_sift_matches": 263,
+  "median_fundamental_ransac_inliers": 217,
+  "weak_pairs_less_than20_F_inliers": 1,
+  "max_gap_between_train_frames_seconds": 8.497348,
+  "weakest_pair": {
+    "left": "room20260816_00001350",
+    "right": "room20260816_00001860",
+    "gap_seconds": 8.497348,
+    "good_sift_matches": 48,
+    "fundamental_inliers": 9,
+    "homography_inliers": 7
+  },
+  "another_low_pair": {
+    "left": "room20260816_00000930",
+    "right": "room20260816_00000960",
+    "gap_seconds": 0.499844,
+    "good_sift_matches": 46,
+    "fundamental_inliers": 27
+  },
+  "algorithm": "SIFT Lowe .75, fundamental RANSAC threshold 1.5px, homography RANSAC threshold 3px, reduced image width<=960",
+  "actual_colmap_executed": false,
+  "registered_new_cameras": null,
+  "view_intrinsics_verified": false,
+  "metric_scale_verified": false,
+  "physical_surface_coverage_verified": false,
+  "interpretation": "Weak pair crosses an 8.497s train gap due held-out temporal block; possible SfM connectivity risk, not confirmed map break or missing physical coverage.",
+  "evidence_type": "real_training_images_only_not_test_set",
+  "gpu_training_executed": false
+}
