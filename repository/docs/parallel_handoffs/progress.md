@@ -280,3 +280,12 @@ These are historical documented fixture hashes, not newly revalidated on this br
 4. B→A interface requirement remains a matching project-relative, SHA-verified optional mycon.bim_geometry_evidence.v1 manifest and source image QA; B modified no Stage08 path. C should consume independently audited ground truth and avoid computing numeric MAE from categorical unknowns.
 
 **Merge safety:** No merge, no rebase, no Force, no main edits; all changed files confined to B ownership.
+
+
+## CI evidence update — 2026-11-13 (post-fix, authentic checked-out GitHub Actions)
+
+A new failure emerged in the first PR CI run: `ScheduleProvenance.n_skipped` is not a field in the canonical loader; the correct field is `n_rows_skipped`. The first run (43491464016) produced **142 passed, 1 skipped, 1 failed** on SHA `a05e6853cbd8c7369474cdc0a324bd95092214ea`, and is **not** considered passed.
+
+Owner B corrected only the new B CLI in SHA `f7e5b31505677ce5ca14c21c74447d428d935ecb`. **Re-run on exactly that source commit**: [GitHub Actions run 43491939417](https://github.com/sayyedalimrj/MyCon/actions/runs/43491939417), job 132115085728, Ubuntu GitHub runner, Python 3.11.18 / pytest 9.2.0; recorded **143 passed, 1 skipped, 0 failed in 2.65s**, exit code 0; compile stage, package source, official server handoff export and verifier passed. This is the repository's existing **cross-workstream selected CPU suite**, including B's new five-file CLI and Stage8 SHA-verified image evidence tests embedded in `tests/test_research_progress_scientific.py`. The CI checkout was authentic, unlike the earlier isolated mirror tests. The produced GitHub Actions release candidates are not evidence of a real site.
+
+**Still NOT EXECUTED:** `tests/test_research_progress_monitor.py` full dedicated test selection, all full Open3D/Stage9 legacy integration, real GPU/IFC/capture/BOQ and held-out site survey evaluation. These acceptance tests and G2–G4 remain outstanding. No Precision/Recall/F1/MAE from real GT is claimed. The status of additional tests must not be inferred from this CI pass.
