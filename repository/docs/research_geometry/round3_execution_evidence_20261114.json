@@ -1,0 +1,200 @@
+{
+  "schema_version": "mycon.civil_camera_round3_execution_evidence.v1",
+  "date_utc": "2026-11-14",
+  "source_data": "real-derived (nonmetric), NOT field-verified",
+  "source_civil_manifest_sha256": "d9f5cc124a0b176b11473dd59407a44ac1cae862d2af1db252a003ccffc719b0",
+  "source_file_sha256": {
+    "civil_geometry_manifest.json": "d9f5cc124a0b176b11473dd59407a44ac1cae862d2af1db252a003ccffc719b0",
+    "colmap_sparse_unscaled.ply": "4b9a20b5642c1c3da8a9ed96e0585778f097358e87dd7561e4ef74db9b0df5c7",
+    "cameras.txt": "4630c9deee24da80337e0d8c70d46077c395c2c0ae24e693343839b06e4e1b14",
+    "images.txt": "b5b6d85cc739ec29a853e9fa593dcc5b3ef2058e9c50a29636ac6593fa37cb94",
+    "points3D.txt": "a735bdbcb15c58e5e9ccb0357f76ad7fbc969d6345e83084cd9fceba0330fbed"
+  },
+  "colmap_sparse_ply_to_track_consistency": {
+    "points": 51894,
+    "max_nearest_distance_source_units": 9.57277071524179e-07,
+    "status": "sparse_ply_matches_points3D_within_1e-5_units",
+    "is_evidence_of_depth_fusion_registration": false
+  },
+  "colmap_192_image_count": 192,
+  "photo_count": 5,
+  "photo_statistics": [
+    {
+      "name": "frame_000096.jpg",
+      "sha256": "4ea00a1a713bf9bc859e33a38358071fe4a13ea114df9d59c2ca1a6f8bfcddc0",
+      "num_registered_2d_3d": 871,
+      "median_px": 0.6735950939754639,
+      "p95_px": 1.8777276305034818,
+      "max_px": 3.5696805599797012,
+      "status": "internal_sparse_camera_consistent",
+      "is_evidence_of_depth_fusion_registration": false
+    },
+    {
+      "name": "frame_000120.jpg",
+      "sha256": "1687d6004fdf9deb150575fda484da51c7c7fc54464a7ba1544923b7d155c447",
+      "num_registered_2d_3d": 1719,
+      "median_px": 0.7803629684351955,
+      "p95_px": 2.136628564185874,
+      "max_px": 3.6627558553114112,
+      "status": "internal_sparse_camera_consistent",
+      "is_evidence_of_depth_fusion_registration": false
+    },
+    {
+      "name": "frame_000144.jpg",
+      "sha256": "a3afaca52f885103f19c03162dcd1e3c934fad517589f399f125d4172aa25063",
+      "num_registered_2d_3d": 957,
+      "median_px": 0.7621074729662122,
+      "p95_px": 2.4452836144913306,
+      "max_px": 3.934156025564269,
+      "status": "internal_sparse_camera_consistent",
+      "is_evidence_of_depth_fusion_registration": false
+    },
+    {
+      "name": "frame_000168.jpg",
+      "sha256": "ebc3ce11bbece5aa0a7cced9537d89cb43540be4ca1244b9ed5a9774979a9cc4",
+      "num_registered_2d_3d": 2258,
+      "median_px": 0.7448320850755663,
+      "p95_px": 2.029361436108141,
+      "max_px": 3.5116673274961383,
+      "status": "internal_sparse_camera_consistent",
+      "is_evidence_of_depth_fusion_registration": false
+    },
+    {
+      "name": "frame_000192.jpg",
+      "sha256": "4a279ee0c7d690f6a4de3b17a3b77eef2fd88c15a2e1f1ef28317d38b46741cb",
+      "num_registered_2d_3d": 1033,
+      "median_px": 0.7132664047358614,
+      "p95_px": 1.987600102919344,
+      "max_px": 2.9915391230729313,
+      "status": "internal_sparse_camera_consistent",
+      "is_evidence_of_depth_fusion_registration": false
+    }
+  ],
+  "proximity_diagnostic": {
+    "measurement": "as-is nearest-neighbor spatial overlap; not matched point IDs, not calibration or registration proof",
+    "depth_sample_count": 30000,
+    "sparse_count": 51894,
+    "identity_hypothesis": {
+      "n": 30000,
+      "median_source_units": 0.35730600673823254,
+      "p95_source_units": 1.0914553717610285,
+      "fraction_within_0_1_source_units": 0.118
+    },
+    "translation_x_plus_1_control": {
+      "n": 30000,
+      "median_source_units": 0.2621865863751866,
+      "p95_source_units": 1.1380096528271948,
+      "fraction_within_0_1_source_units": 0.12886666666666666
+    },
+    "reflection_x_control": {
+      "n": 30000,
+      "median_source_units": 0.7146550733671493,
+      "p95_source_units": 1.7965715974227254,
+      "fraction_within_0_1_source_units": 0.048266666666666666
+    },
+    "interpretation": "proximity/overlap alone cannot certify identical coordinate frame; correspondence/provenance missing"
+  },
+  "registration_status": "UNREGISTERED",
+  "changed_feature_counts": {
+    "planes": 15,
+    "edges": 49,
+    "corners": 7,
+    "field_verified": 0,
+    "unclassified_points": 57850
+  },
+  "registration_verified": false,
+  "metric_scale_verified": false,
+  "photo_support_confirmed_count": 0,
+  "unknowns": [
+    "physical wall/floor/ceiling ID",
+    "depth fusion to camera transform",
+    "verified metric scale",
+    "occluded geometry",
+    "field-review decision"
+  ],
+  "executed": [
+    {
+      "command": "PYTHONPATH=. pytest -q tests/test_research_geometry_camera_bridge.py tests/test_research_geometry_structural_review.py",
+      "passed": 22,
+      "failed": 0,
+      "exit_code": 0,
+      "runtime_seconds": 5.64
+    },
+    {
+      "command": "PYTHONPATH=. python -m pipeline.stage_07_cleanup.camera_geometry_bridge --... --run-id geom-civil-camera-20261114-real-depth-002",
+      "exit_code": 0,
+      "result": "5 original photos, 192 registered camera model, 51894 sparse tracks, 71 unverified features; registration UNREGISTERED"
+    }
+  ],
+  "not_executed": [
+    "GitHub exact HEAD CI for round3 until commit",
+    "GPU/GS training",
+    "depth-to-camera geometric registration",
+    "real browser WebGL",
+    "independent survey and engineer confirmation"
+  ],
+  "output_files": {
+    "frame_000192.jpg": {
+      "sha256": "4a279ee0c7d690f6a4de3b17a3b77eef2fd88c15a2e1f1ef28317d38b46741cb",
+      "bytes": 281610
+    },
+    "feature_evidence.json": {
+      "sha256": "3ae7635e9afdec45b21d8aece30056957382d1851db28fd2655298492f417823",
+      "bytes": 292369
+    },
+    "real_photo_shape3_review_01.png": {
+      "sha256": "9555bf807e5a62dfec92f32b97b0f10ec24267cf92323805c2eadf2a4e85ec8a",
+      "bytes": 596118
+    },
+    "unknown_point_indices.npy": {
+      "sha256": "817a9b977ddfbe2d7d409ca74da6161f8ff19379632b5e7e4e63690e861af658",
+      "bytes": 462928
+    },
+    "real_photo_shape3_review_02.png": {
+      "sha256": "eee4736da6b6640aa923f08b8c15bb90f9d034b6db96ff391df69c53a5adc9a2",
+      "bytes": 581575
+    },
+    "real_photo_shape3_review_03.png": {
+      "sha256": "bea0782fade2ce3ab51c62d89cf2bdd4508776ed40cd1a88b7b2539a031b8284",
+      "bytes": 643518
+    },
+    "frame_000096.jpg": {
+      "sha256": "4ea00a1a713bf9bc859e33a38358071fe4a13ea114df9d59c2ca1a6f8bfcddc0",
+      "bytes": 191406
+    },
+    "viewer_handoff.json": {
+      "sha256": "0cf1896eb988197b1558c8c86f60aa951ec1c526ee9a9334dabc7c06e96e67aa",
+      "bytes": 9146
+    },
+    "registration_qa.json": {
+      "sha256": "ce123618ea2a24fed85cf69d1475243a305485422471214747591eb2f74293ea",
+      "bytes": 48897
+    },
+    "frame_000120.jpg": {
+      "sha256": "1687d6004fdf9deb150575fda484da51c7c7fc54464a7ba1544923b7d155c447",
+      "bytes": 156896
+    },
+    "feature_review.csv": {
+      "sha256": "dbaba4493bd67006d6f394894b0287988abdf5a50b6f251379a87fe163cf3e05",
+      "bytes": 4437
+    },
+    "round3_shape3_photo_review.html": {
+      "sha256": "effaac7ef04cd094acf470d2d3ee798a9ba1866cea69dbf13c7d689d7f527828",
+      "bytes": 2245
+    },
+    "unknown_regions.json": {
+      "sha256": "87dd7cec3fba895d44e48c92609beb716dc98128c69a2d0b83994acfc15c3c62",
+      "bytes": 7811
+    },
+    "frame_000144.jpg": {
+      "sha256": "a3afaca52f885103f19c03162dcd1e3c934fad517589f399f125d4172aa25063",
+      "bytes": 199108
+    },
+    "frame_000168.jpg": {
+      "sha256": "ebc3ce11bbece5aa0a7cced9537d89cb43540be4ca1244b9ed5a9774979a9cc4",
+      "bytes": 192196
+    }
+  },
+  "license_notes": "COLMAP BSD-3 Clause, Open3D MIT, 2DGS research-only",
+  "provenance_warning": "Only SHA for downloaded photo bytes and historical COLMAP text files; source-capture original photo hashes/time mapping to Depth Fusion not certified; source images are not depth-plane image evidence."
+}
