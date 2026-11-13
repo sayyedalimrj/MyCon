@@ -199,6 +199,37 @@
           }
         }
       }
+    },
+    "source_units": {
+      "type": "string",
+      "const": "reconstruction_units",
+      "description": "Explicit source reconstruction units; omitted only for backwards-compatible v1 fixtures."
+    },
+    "registration": {
+      "type": "object",
+      "description": "Optional robust similar-registration setting; never changes field-validation gate.",
+      "properties": {
+        "method": {
+          "enum": [
+            "umeyama",
+            "ransac_umeyama"
+          ]
+        },
+        "inlier_threshold_m": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Operator-supplied RANSAC consensus threshold IN METRES"
+        },
+        "max_trials": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "seed": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "$defs": {
