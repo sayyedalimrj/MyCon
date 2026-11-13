@@ -1,252 +1,186 @@
-/* MyCON read-only Civil Viewer, Plotly/WebGL with Canvas fallback. No network calls. */
-"use strict";
+/* MyCON civil inspection UI - independent Plotly WebGL frontend, no backend calls. */
+'use strict';
 (() => {
-  const payload = JSON.parse(document.getElementById("mycon-payload").textContent);
-  const A = payload.assets, M = payload.manifest, $ = id => document.getElementById(id);
-  const state = {mode: "confidence", selectedCamera: null,
-    layers: {mesh: true, planes: false, edges: true, corners: true, unknown: true,
-             cameras: true, path: true, point_cloud: true, bim: false, deviation: false}};
-  const names = {mesh:"Reconstruction mesh", planes:"Finite surface patches", edges:"Structural edge candidates",
-    corners:"Corner candidates", unknown:"Unknown / insufficient evidence", cameras:"Calibrated camera frustums",
-    path:"Camera capture trajectory", point_cloud:"Point samples", bim:"Reference BIM overlay",
-    deviation:"Verified metric deviation"};
-  const palette = {mesh:"#55a88b", planes:"#5dbbad", edges:"#e8b76e", corners:"#83cbdb",
-    unknown:"#c280ab", cameras:"#73d5c5", path:"#9da7ff", point_cloud:"#d0a3df",
-    bim:"#b9a4e7", deviation:"#e98b72"};
-  const view = {yaw:.65, pitch:.4, zoom:1, panX:0, panY:0, canvas:null, markers:[]};
-  let hasWebGL = false, usingCanvas = false;
-  try {
-    let c = document.createElement("canvas");
-    hasWebGL = !!(c.getContext("webgl2") || c.getContext("webgl") || c.getContext("experimental-webgl"));
-  } catch (e) { hasWebGL = false; }
-  const cameras = A.camera_poses.cameras, frames = new Map(A.frame_manifest.frames.map(f => [f.frame_id,f]));
-  const world = (m,p) => [0,1,2].map(i=>m[i][0]*p[0]+m[i][1]*p[1]+m[i][2]*p[2]+m[i][3]);
-  const positions = () => cameras.map(c => world(c.camera_to_world,[0,0,0]));
-  const frustum = c => {
-    const z = .45, dx = .45*c.width/(2*c.fx), dy = .45*c.height/(2*c.fy), m=c.camera_to_world;
-    const o=world(m,[0,0,0]), q=[[-dx,-dy,z],[dx,-dy,z],[dx,dy,z],[-dx,dy,z]].map(p=>world(m,p));
-    return {origin:o, corners:q};
-  };
-  const cssColor = (value, status) => {
-    if (value === null || value === undefined || !Number.isFinite(Number(value)) || status==="unknown"
-        || status==="candidate_extrapolated") return palette.unknown;
-    if (state.mode === "neutral") return "#8ca5af";
-    let v = Math.max(0,Math.min(1,Number(value)));
-    return v>.8?"#5bc5a0":v>.55?"#d9bb69":v>.3?"#dd9870":"#bd7181";
-  };
-  function setBadge() {
-    $("run-name").textContent = M.run_id;
-    $("source-status").textContent = M.synthetic ? "SYNTHETIC • NOT FIELD EVIDENCE" :
-      payload.deviation_enabled ? "METRIC GATE VERIFIED" : "GEOMETRY • METRIC NOT VERIFIED";
-    $("metric-status").textContent = payload.deviation_enabled ?
-      "Metric deviation available only for independently verified source faces." :
-      "Numerical deviation DISABLED: " + payload.deviation_reason + ". Unknown does not imply zero progress.";
-    $("frame-coordinates").textContent = "FRAME " + M.coordinate_frame + " / UNITS " + M.units;
-    $("evidence").textContent = "Surfaces " + (A.planes.planes||[]).length + " • edges " +
-      (A.edges.edges||[]).length + " • corners " + (A.corners.corners||[]).length +
-      " • cameras " + cameras.length;
-    $("uncertainty").textContent = M.synthetic ?
-      "DEMO: confidence and coverage are illustrative, not calibrated." :
-      "Visual coverage/quality are not physical progress or surveyed geometry.";
-  }
-  function selectCamera(id) {
-    const c=cameras.find(x=>x.camera_id===id);
-    if(!c) throw new Error("Camera does not exist: "+id);
-    const f=frames.get(c.frame_id);
-    if(!f) throw new Error("Camera frame missing: "+id);
-    state.selectedCamera=id;
-    $("selected-camera").textContent=id;
-    $("selected-frame").src=f.preview_path;
-    $("selected-frame").alt="Recorded frame for "+id;
-    $("frame-meta").textContent=f.frame_id+" • "+c.width+"×"+c.height+" • "+(f.quality?.state||"source verified by SHA256");
-    $("camera-position").textContent=c.camera_to_world.slice(0,3).map(r=>r[3].toFixed(3)).join(", ")+" ("+M.units+")";
-    document.querySelectorAll("button[data-camera]").forEach(b=>b.classList.toggle("active",b.dataset.camera===id));
-    if(usingCanvas) drawCanvas();
-    return f.frame_id;
-  }
-  function refreshToggles() {
-    const node=$("layers");node.replaceChildren();
-    Object.keys(names).forEach(k=>{
-      const label=document.createElement("label");label.className="layer";
-      const span=document.createElement("span");span.textContent=names[k];
-      const dot=document.createElement("i");dot.style.background=palette[k];span.prepend(dot);
-      const input=document.createElement("input");input.type="checkbox";input.dataset.layer=k;
-      input.checked=state.layers[k];input.disabled=(k==="deviation"&&!payload.deviation_enabled);
-      input.title=input.disabled?payload.deviation_reason:"";
-      input.addEventListener("change",()=>setLayer(k,input.checked));
-      label.append(span,input);node.append(label);
-    });
-  }
-  function setLayer(key,value) {
-    if(!Object.hasOwn(state.layers,key)) throw new Error("Unknown layer "+key);
-    if(key==="deviation"&&!payload.deviation_enabled) return false;
-    state.layers[key]=Boolean(value);
-    refreshToggles(); render();
-    return true;
-  }
-  function traces() {
-    const t=[], add=(key,trace)=>{ if(state.layers[key]) t.push({...trace,showlegend:false}); };
-    const line=(p,color,width=3,extra={})=>({type:"scatter3d",mode:"lines",
-      x:p.map(a=>a?.[0]??NaN), y:p.map(a=>a?.[1]??NaN), z:p.map(a=>a?.[2]??NaN),
-      line:{color,width},hoverinfo:"skip",...extra});
-    const mesh=A.mesh, verts=mesh.vertices||[], faces=mesh.faces||[], attr=mesh.face_attributes||[];
-    const x=verts.map(v=>v[0]),y=verts.map(v=>v[1]),z=verts.map(v=>v[2]);
-    const faceColor=i=>cssColor(attr[i]?.[state.mode==="coverage"?"coverage":"confidence"],attr[i]?.state);
-    if(faces.length) add("mesh",{type:"mesh3d",x,y,z,i:faces.map(f=>f[0]),j:faces.map(f=>f[1]),
-      k:faces.map(f=>f[2]),facecolor:faces.map((_,i)=>faceColor(i)),opacity:.3,flatshading:true,hoverinfo:"skip"});
-    for (const p of A.planes.planes||[]) if(p.vertices?.length>=3) {
-      const v=p.vertices;
-      add(p.state==="unknown"?"unknown":"planes",line([...v,v[0]],cssColor(p[state.mode==="coverage"?"coverage":"confidence"],p.state),4));
-    }
-    for(const e of A.edges.edges||[]) add(
-      e.state==="unknown"||e.state==="candidate_extrapolated"?"unknown":"edges",
-      line([e.start,e.end],cssColor(e.confidence,e.state),5,{text:[e.id,e.id],hoverinfo:"text"}));
-    for(const c of A.corners.corners||[]) add(
-      c.state==="unknown"||c.confidence==null?"unknown":"corners",
-      {type:"scatter3d",mode:"markers",x:[c.xyz[0]],y:[c.xyz[1]],z:[c.xyz[2]],
-       marker:{color:cssColor(c.confidence,c.state),size:6},text:[c.id],hoverinfo:"text"});
-    const pos=positions();
-    add("path",line(pos,palette.path,4));
-    for(const c of cameras) {
-      const f=frustum(c), pts=[];
-      for(const corner of f.corners) pts.push(f.origin,corner,[NaN,NaN,NaN]);
-      add("cameras",line([...pts,...f.corners,f.corners[0]],palette.cameras,3));
-    }
-    add("cameras",{type:"scatter3d",mode:"markers+text",x:pos.map(v=>v[0]),
-      y:pos.map(v=>v[1]),z:pos.map(v=>v[2]),
-      marker:{size:7,color:"#79eed1"},text:cameras.map(c=>c.camera_id),
-      textposition:"top center",textfont:{size:10,color:"#c2ded9"},
-      customdata:cameras.map(c=>c.camera_id),hovertemplate:"%{customdata}<extra></extra>"});
-    if(A.point_cloud?.points?.length) add("point_cloud",{type:"scatter3d",mode:"markers",
-      x:A.point_cloud.points.map(p=>p[0]),y:A.point_cloud.points.map(p=>p[1]),
-      z:A.point_cloud.points.map(p=>p[2]),marker:{size:2,color:palette.point_cloud},hoverinfo:"skip"});
-    const bim=mesh.bim_overlay;
-    if(bim?.vertices?.length&&bim?.faces?.length) {
-      const edges=new Set();
-      bim.faces.forEach(f=>{for(let k=0;k<3;k++){let a=f[k],b=f[(k+1)%3];edges.add([Math.min(a,b),Math.max(a,b)].join(","));}});
-      for (const e of edges) {const [a,b]=e.split(",").map(Number);
-        add("bim",line([bim.vertices[a],bim.vertices[b]],palette.bim,2));}
-    }
-    if(payload.deviation_enabled&&mesh.deviations?.per_face_m){
-      const v=mesh.deviations.per_face_m, finite=v.filter(Number.isFinite);
-      const max=Math.max(.000001,...finite.map(Math.abs));
-      add("deviation",{type:"mesh3d",x,y,z,i:faces.map(f=>f[0]),j:faces.map(f=>f[1]),
-        k:faces.map(f=>f[2]),facecolor:v.map(q=>q==null?palette.unknown:q < -max*.35?"#69b5db":q>max*.35?"#e6877b":"#74c8aa"),
-        opacity:.7,hoverinfo:"skip"});
-    }
-    return t;
-  }
-  function project(p,W,H) {
-    const x=p[0],y=p[1],z=p[2]-1.5,ca=Math.cos(view.yaw),sa=Math.sin(view.yaw);
-    const a=ca*x-sa*y,b=sa*x+ca*y,cp=Math.cos(view.pitch),sp=Math.sin(view.pitch);
-    const k=1+.018*(b*cp+z*sp),scale=Math.min(W/12,H/8)*view.zoom;
-    return [W/2+view.panX+a*scale/k,H/2+view.panY+(b*sp-z*cp)*scale/k,b*cp+z*sp];
-  }
-  function makeCanvas() {
-    usingCanvas=true;
-    if(view.canvas)return;
-    const host=$("scene");host.replaceChildren();
-    const canvas=document.createElement("canvas");canvas.id="scene-canvas";
-    canvas.style.width="100%";canvas.style.height="100%";canvas.style.touchAction="none";
-    host.append(canvas);view.canvas=canvas;
-    let down=null;
-    canvas.addEventListener("pointerdown",e=>{down={x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,shift:e.shiftKey};canvas.setPointerCapture(e.pointerId);});
-    canvas.addEventListener("pointermove",e=>{if(!down)return;const dx=e.clientX-down.x,dy=e.clientY-down.y;
-      if(down.shift){view.panX+=dx;view.panY+=dy;}else{view.yaw+=dx*.008;view.pitch=Math.max(-1,Math.min(1.2,view.pitch+dy*.005));}
-      down.x=e.clientX;down.y=e.clientY;drawCanvas();});
-    canvas.addEventListener("pointerup",e=>{if(!down)return;const moved=Math.hypot(e.clientX-down.startX,e.clientY-down.startY);down=null;
-      if(moved>5)return;const rect=canvas.getBoundingClientRect(),x=e.clientX-rect.left,y=e.clientY-rect.top;
-      const hit=view.markers.find(m=>Math.hypot(m.x-x,m.y-y)<16);if(hit)selectCamera(hit.id);});
-    canvas.addEventListener("wheel",e=>{e.preventDefault();view.zoom=Math.max(.25,Math.min(5,view.zoom*(e.deltaY<0?1.12:.89)));drawCanvas();},{passive:false});
-    window.addEventListener("resize",()=>{if(view.canvas)drawCanvas();});
-  }
-  function drawCanvas() {
-    makeCanvas();
-    const canvas=view.canvas, host=$("scene"),W=Math.max(300,host.clientWidth),H=Math.max(300,host.clientHeight),dpr=window.devicePixelRatio||1;
-    canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);
-    const ctx=canvas.getContext("2d");ctx.scale(dpr,dpr);
-    const bg=ctx.createLinearGradient(0,0,W,H);bg.addColorStop(0,"#102b3b");bg.addColorStop(1,"#07111d");
-    ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
-    const pr=p=>project(p,W,H);
-    function line(pts,color,width=2,dash=[]) {
-      ctx.strokeStyle=color;ctx.lineWidth=width;ctx.setLineDash(dash);ctx.beginPath();
-      pts.forEach((p,i)=>{const q=pr(p);i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);});
-      ctx.stroke();ctx.setLineDash([]);
-    }
-    function dot(pos,color,size=4,text) {
-      const p=pr(pos);ctx.fillStyle=color;ctx.beginPath();ctx.arc(p[0],p[1],size,0,2*Math.PI);ctx.fill();
-      if(text){ctx.fillStyle="#c5dde3";ctx.font="11px sans-serif";ctx.fillText(text,p[0]+8,p[1]-6);}
-      return p;
-    }
-    if(state.layers.mesh) {
-      const v=A.mesh.vertices;A.mesh.faces.forEach((face,i)=>{
-        const attr=A.mesh.face_attributes?.[i]||{},q=face.map(k=>pr(v[k]));
-        ctx.beginPath();ctx.moveTo(q[0][0],q[0][1]);for(let k=1;k<q.length;k++)ctx.lineTo(q[k][0],q[k][1]);ctx.closePath();
-        ctx.globalAlpha=.23;ctx.fillStyle=cssColor(attr[state.mode==="coverage"?"coverage":"confidence"],attr.state);ctx.fill();ctx.globalAlpha=1;
-        ctx.strokeStyle="#375569";ctx.stroke();
-      });
-    }
-    if(state.layers.planes) for(const p of A.planes.planes||[])if(p.vertices?.length>2)
-      line([...p.vertices,p.vertices[0]],cssColor(p[state.mode==="coverage"?"coverage":"confidence"],p.state),2,[4,3]);
-    for(const e of A.edges.edges||[]) {
-      const unknown=e.state==="unknown"||e.state==="candidate_extrapolated";
-      if(state.layers[unknown?"unknown":"edges"])line([e.start,e.end],cssColor(e.confidence,e.state),unknown?2:3,unknown?[4,4]:[]);
-    }
-    for(const c of A.corners.corners||[]) {
-      const unknown=c.state==="unknown"||c.confidence==null;
-      if(state.layers[unknown?"unknown":"corners"])dot(c.xyz,cssColor(c.confidence,c.state),unknown?5:4);
-    }
-    if(state.layers.path)line(positions(),palette.path,2,[4,5]);
-    if(state.layers.bim&&A.mesh.bim_overlay?.vertices){
-      let b=A.mesh.bim_overlay,seen=new Set();
-      for(const f of b.faces)for(let i=0;i<3;i++){const a=f[i],z=f[(i+1)%3],k=[Math.min(a,z),Math.max(a,z)].join("-");
-        if(!seen.has(k)){seen.add(k);line([b.vertices[a],b.vertices[z]],palette.bim,1,[3,3]);}}
-    }
-    if(state.layers.point_cloud)for(const p of A.point_cloud?.points||[])dot(p,palette.point_cloud,1);
-    view.markers=[];
-    if(state.layers.cameras)for(const c of cameras){
-      const f=frustum(c);for(const q of f.corners)line([f.origin,q],palette.cameras,1);
-      line([...f.corners,f.corners[0]],palette.cameras,1.5);
-      const q=dot(f.origin,c.camera_id===state.selectedCamera?"#ffc97c":palette.cameras,5,c.camera_id);
-      view.markers.push({id:c.camera_id,x:q[0],y:q[1]});
-    }
-    ctx.font="11px sans-serif";ctx.fillStyle="#94b7c7";
-    ctx.fillText("CANVAS FALLBACK • RECONSTRUCTION UNITS • NO METRIC CLAIM",14,H-18);
-  }
-  let plotlyStarted=false;
-  function render() {
-    if(!hasWebGL||typeof Plotly==="undefined"){drawCanvas();return Promise.resolve();}
-    const opts={paper_bgcolor:"rgba(0,0,0,0)",margin:{l:0,r:0,t:0,b:0},showlegend:false,
-      scene:{aspectmode:"data",bgcolor:"rgba(0,0,0,0)",
-      xaxis:{title:"X",color:"#86a6b5"},yaxis:{title:"Y",color:"#86a6b5"},
-      zaxis:{title:"Z",color:"#86a6b5"}}};
-    let job=plotlyStarted?Plotly.react("scene",traces(),opts,{responsive:true,displaylogo:false}):
-      Plotly.newPlot("scene",traces(),opts,{responsive:true,displaylogo:false});
-    plotlyStarted=true;
-    return job.then(()=>{const node=$("scene");
-      if(!node.__cameraClickBound){node.__cameraClickBound=true;node.on("plotly_click",ev=>{
-        const id=ev?.points?.[0]?.customdata;if(typeof id==="string"&&cameras.some(c=>c.camera_id===id))selectCamera(id);
-      });}
-    }).catch(e=>{console.warn("WebGL rejected; Canvas fallback",e);hasWebGL=false;drawCanvas();});
-  }
-  function orbit(t) {
-    if(usingCanvas){view.yaw=t*.5;drawCanvas();return Promise.resolve();}
-    return Plotly.relayout("scene",{"scene.camera.eye":{x:2*Math.cos(t*.45),y:2*Math.sin(t*.45),z:1.2}});
-  }
-  function init() {
-    setBadge();refreshToggles();
-    const list=$("camera-list");
-    for(const c of cameras){const btn=document.createElement("button");btn.dataset.camera=c.camera_id;
-      btn.textContent=c.camera_id+" / "+c.frame_id;
-      btn.addEventListener("click",()=>selectCamera(c.camera_id));list.append(btn);}
-    document.querySelectorAll("button[data-mode]").forEach(btn=>btn.addEventListener("click",()=>{
-      state.mode=btn.dataset.mode;
-      document.querySelectorAll("button[data-mode]").forEach(b=>b.classList.toggle("active",b===btn));
-      render();
-    }));
-    render().then(()=>{if(cameras.length)selectCamera(cameras[0].camera_id);window.__VIEWER_READY__=true;})
-      .catch(e=>{window.__VIEWER_ERROR__=String(e);});
-  }
-  window.MyCONViewer={state,selectCamera,setLayer,orbit,cameraMarkers:()=>view.markers.map(m=>({...m}))};
-  window.__VIEWER_READY__=false;window.__VIEWER_ERROR__=null;init();
+const B = JSON.parse(document.getElementById('mycon-payload').textContent);
+const A=B.assets, M=B.manifest;
+const $=id=>document.getElementById(id);
+const state={mode:'confidence',selectedCamera:null,layers:{mesh:true,point_cloud:true,planes:false,edges:true,corners:true,cameras:true,path:true,unknown:true,bim:false,deviation:false}};
+const swatches={point_cloud:'#caa9df',mesh:'#4cb8a4',planes:'#577f99',edges:'#f1bc7e',corners:'#c6e6f0',cameras:'#b4e3f1',path:'#7cb9e6',unknown:'#ce8ab2',bim:'#8799c1',deviation:'#ef7777'};
+const labels={point_cloud:'Point samples (optional)',mesh:'Reconstructed surfaces',planes:'Plane patches',edges:'Edges / corners lines',corners:'Corner candidates',cameras:'Camera frustums',path:'Camera trajectory',unknown:'Unknown / unsupported',bim:'Shape 4 / BIM overlay',deviation:'Metric deviation heatmap'};
+const traces=[], groupIndices={};
+const HAS_WEBGL=(()=>{try{const c=document.createElement('canvas');return !!(c.getContext('webgl')||c.getContext('experimental-webgl'));}catch(e){return false}})();
+const fallback={yaw:.74,pitch:.42,zoom:1,canvas:null,coords:[]};
+const extent=[[ -5,5],[-4,4],[-1,4]];
+function add(group, trace) { trace.visible=state.layers[group] ? true : false; trace.showlegend=false; trace.hoverinfo=trace.hoverinfo||'skip'; traces.push(trace); (groupIndices[group]??=[]).push(traces.length-1); }
+function scalarColor(value,mode){
+ if(value===null||value===undefined||!Number.isFinite(Number(value)))return '#b176a8';
+ if(mode==='neutral')return '#668e9a';
+ const v=Math.max(0,Math.min(1,Number(value)));
+ return v>.8?'#58c5a6':v>.55?'#d4be74':v>.3?'#d58c65':'#ad6d75';
+}
+function world(m,v) {return [0,1,2].map(i=>m[i][0]*v[0]+m[i][1]*v[1]+m[i][2]*v[2]+m[i][3]);}
+function line(points, color, width=3,extra={}) {
+ return {type:'scatter3d',mode:'lines',x:points.map(p=>p[0]),y:points.map(p=>p[1]),z:points.map(p=>p[2]),line:{color,width},...extra};
+}
+function buildTraces(){
+ traces.length=0;Object.keys(groupIndices).forEach(k=>delete groupIndices[k]);
+ const mesh=A.mesh,attrs=mesh.face_attributes||[];
+ if(A.point_cloud?.points?.length){
+  const pts=A.point_cloud.points;
+  add('point_cloud',{type:'scatter3d',mode:'markers',x:pts.map(p=>p[0]),y:pts.map(p=>p[1]),z:pts.map(p=>p[2]),
+   marker:{size:2,color:'#caa9df'},hoverinfo:'skip'});
+ }
+ const xs=mesh.vertices.map(v=>v[0]),ys=mesh.vertices.map(v=>v[1]),zs=mesh.vertices.map(v=>v[2]);
+ const perFace=mesh.faces.map((f,i)=>scalarColor(attrs[i]?.[state.mode==='coverage'?'coverage':'confidence'],state.mode));
+ add('mesh',{type:'mesh3d',x:xs,y:ys,z:zs,i:mesh.faces.map(f=>f[0]),j:mesh.faces.map(f=>f[1]),k:mesh.faces.map(f=>f[2]),facecolor:perFace,opacity:.29,flatshading:true,lighting:{ambient:0.9,diffuse:0.4},hovertemplate:'Geometry candidate<extra></extra>'});
+ (A.planes.planes||[]).forEach(plane=>{
+  const v=plane.vertices;if(!v||v.length<3)return;
+  add(plane.state==='unknown'?'unknown':'planes',{type:'mesh3d',x:v.map(t=>t[0]),y:v.map(t=>t[1]),z:v.map(t=>t[2]),i:[0,0],j:[1,2],k:[2,3],color:scalarColor(plane[state.mode==='coverage'?'coverage':'confidence'],state.mode),opacity:.18,hovertemplate:'Plane '+plane.id+'<extra></extra>'});
+ });
+ (A.edges.edges||[]).forEach(edge=>{
+  const unknown=edge.state==='unknown'||edge.state==='candidate_extrapolated';
+  add(unknown?'unknown':'edges',line([edge.start,edge.end],scalarColor(edge.confidence,state.mode),6,{hoverinfo:'text',text:[edge.id,edge.id]}));
+ });
+ const known=A.corners.corners.filter(c=>c.state!=='unknown'&&c.confidence!==null);
+ const unknown=A.corners.corners.filter(c=>c.state==='unknown'||c.confidence===null);
+ for(const [group,arr] of [['corners',known],['unknown',unknown]]){
+  if(arr.length)add(group,{type:'scatter3d',mode:'markers',x:arr.map(c=>c.xyz[0]),y:arr.map(c=>c.xyz[1]),z:arr.map(c=>c.xyz[2]),marker:{size:6,color:arr.map(c=>scalarColor(c.confidence,state.mode)),symbol:group==='unknown'?'diamond':'circle',line:{color:'#dbe6ec',width:.5}},text:arr.map(c=>c.id),hoverinfo:'text'});
+ }
+ const cameras=A.camera_poses.cameras;
+ add('cameras',{type:'scatter3d',mode:'markers+text',x:cameras.map(c=>c.camera_to_world[0][3]),y:cameras.map(c=>c.camera_to_world[1][3]),z:cameras.map(c=>c.camera_to_world[2][3]),marker:{size:7,color:'#83e7d1',symbol:'diamond',line:{color:'#e9fff5',width:1}},text:cameras.map(c=>c.camera_id.replace('CAM-','C')),textposition:'top center',textfont:{size:10,color:'#bde8e3'},customdata:cameras.map(c=>c.camera_id),hovertemplate:'Camera %{customdata}<extra></extra>'});
+ cameras.forEach(c=>{
+  const m=c.camera_to_world, center=world(m,[0,0,0]),z=.45,dx=z*(c.width/2)/c.fx,dy=z*(c.height/2)/c.fy;
+  const fl=[world(m,[-dx,-dy,z]),world(m,[dx,-dy,z]),world(m,[dx,dy,z]),world(m,[-dx,dy,z])];
+  const pts=[];for(const f of fl){pts.push(center,f,[NaN,NaN,NaN]);}
+  pts.push(fl[0],fl[1],fl[2],fl[3],fl[0]);
+  add('cameras',line(pts,'#70cbb8',3));
+ });
+ add('path',line(cameras.map(c=>[c.camera_to_world[0][3],c.camera_to_world[1][3],c.camera_to_world[2][3]]),'#86aaff',4));
+ const bim=mesh.bim_overlay;
+ if(bim?.vertices?.length&&bim?.faces?.length){
+  const edgeSet=new Set();bim.faces.forEach(t=>{for(let j=0;j<3;j++){const a=t[j],b=t[(j+1)%3];edgeSet.add([Math.min(a,b),Math.max(a,b)].join(','));}});
+  for(const s of edgeSet){const [a,b]=s.split(',').map(Number);add('bim',line([bim.vertices[a],bim.vertices[b]],'#b1a1dc',2));}
+ }
+ if(B.deviation_enabled && A.mesh.deviations?.per_face_m){
+  const vals=A.mesh.deviations.per_face_m;
+  const maxAbs=Math.max(1e-9,...vals.filter(v=>typeof v==='number'&&Number.isFinite(v)).map(v=>Math.abs(v)));
+  add('deviation',{type:'mesh3d',x:xs,y:ys,z:zs,i:mesh.faces.map(f=>f[0]),j:mesh.faces.map(f=>f[1]),k:mesh.faces.map(f=>f[2]),facecolor:vals.map(v=>v===null?'#7a6685':v<-.35*maxAbs?'#62aac8':v>.35*maxAbs?'#e47e67':'#73baab'),opacity:.60,hoverinfo:'skip'});
+ }
+}
+function render(preserve=true){
+ if(!HAS_WEBGL){renderCanvas();return Promise.resolve();}
+ const camera=preserve && $('scene')._fullLayout?.scene?.camera ? $('scene')._fullLayout.scene.camera : {eye:{x:1.55,y:1.7,z:1.07},up:{x:0,y:0,z:1}};
+ buildTraces();
+ return Plotly.react('scene',traces,{paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',margin:{l:0,r:0,t:0,b:0},showlegend:false,
+   scene:{bgcolor:'rgba(0,0,0,0)',camera,aspectmode:'data',xaxis:{range:extent[0],title:'X',gridcolor:'#2d475577',zerolinecolor:'#2d4755',showbackground:false,color:'#7893a7',tickfont:{size:9}},yaxis:{range:extent[1],title:'Y',gridcolor:'#2d475577',zerolinecolor:'#2d4755',showbackground:false,color:'#7893a7',tickfont:{size:9}},zaxis:{range:extent[2],title:'Z',gridcolor:'#2d475577',zerolinecolor:'#2d4755',showbackground:false,color:'#7893a7',tickfont:{size:9}}}},
+ {responsive:true,displaylogo:false,modeBarButtonsToRemove:['sendDataToCloud','lasso2d','select2d']});
+}
+function refreshLayers(){
+ const holder=$('layers');holder.innerHTML='';Object.entries(labels).forEach(([key,name])=>{
+  const isDisabled=key==='deviation'&&!B.deviation_enabled;
+  const wrap=document.createElement('label');wrap.className='layer'+(isDisabled?' disabled':'');wrap.title=isDisabled?'Disabled: '+B.deviation_reason:'';
+  const badge=document.createElement('span');badge.className='name';
+  const sw=document.createElement('i');sw.className='swatch';sw.style.background=swatches[key];badge.appendChild(sw);badge.appendChild(document.createTextNode(name));
+  const cb=document.createElement('input');cb.type='checkbox';cb.checked=state.layers[key];cb.disabled=isDisabled;cb.dataset.layer=key;
+  cb.addEventListener('change',()=>setLayer(key,cb.checked));wrap.append(badge,cb);holder.appendChild(wrap);
+ });
+}
+function setLayer(key,on){
+ if(!(key in state.layers))throw new Error('Unknown layer '+key);
+ if(key==='deviation'&&!B.deviation_enabled){state.layers.deviation=false;refreshLayers();return false;}
+ state.layers[key]=!!on;
+ const idx=groupIndices[key]||[];
+ if(!HAS_WEBGL)renderCanvas();else if(idx.length)Plotly.restyle('scene',{visible:state.layers[key]},idx);
+ refreshLayers();return true;
+}
+function selectCamera(id){
+ const c=A.camera_poses.cameras.find(c=>c.camera_id===id);if(!c)throw new Error('Camera not found: '+id);
+ const f=A.frame_manifest.frames.find(f=>f.frame_id===c.frame_id);if(!f)throw new Error('Missing linked frame '+c.frame_id);
+ state.selectedCamera=id;$('selected-camera').textContent=id;$('camera-position').textContent='Pose in '+M.coordinate_frame+' · units: '+M.units;
+ $('selected-frame').src=f.preview_path;$('selected-frame').alt='Source frame for '+id;
+ $('frame-meta').textContent=f.frame_id+' · '+c.width+' × '+c.height+' px · '+f.quality?.state+' provenance';
+ document.querySelectorAll('.camera-btn').forEach(el=>el.classList.toggle('active',el.dataset.camera===id));
+ if(!HAS_WEBGL && fallback.canvas)renderCanvas();
+ return c.frame_id;
+}
+function orbit(t){if(!HAS_WEBGL){fallback.yaw=t*.4;renderCanvas();return Promise.resolve()}const a=t*.40;return Plotly.relayout('scene',{'scene.camera.eye':{x:1.9*Math.cos(a),y:1.9*Math.sin(a),z:1.08}});}
+
+// Zero-network, Canvas 2D perspective fallback for research review environments
+// with disabled WebGL (for example restricted CI/remote Chromium). Geometry is
+// projected from actual XYZ and is still rotatable/zoomable and layer selectable.
+function canvasProject(p,W,H){
+ const x=p[0],y=p[1],z=p[2]-1.5,ca=Math.cos(fallback.yaw),sa=Math.sin(fallback.yaw),cp=Math.cos(fallback.pitch),sp=Math.sin(fallback.pitch);
+ const a=ca*x-sa*y,b=sa*x+ca*y;
+ const perspective=1 + .018*(b*cp+z*sp);
+ const scale=Math.min(W/10,H/7.5)*fallback.zoom;
+ return [W/2+a*scale/perspective,H/2+(b*sp-z*cp)*scale/perspective,b*cp+z*sp];
+}
+function renderCanvas(){
+ let canvas=fallback.canvas;
+ const host=$('scene');
+ if(!canvas){host.innerHTML='';canvas=document.createElement('canvas');canvas.id='scene-canvas';canvas.style.width='100%';canvas.style.height='100%';canvas.style.display='block';host.appendChild(canvas);fallback.canvas=canvas;
+ let down=null;
+ canvas.addEventListener('pointerdown',e=>{const r=canvas.getBoundingClientRect();down={x:e.clientX,y:e.clientY,rx:e.clientX-r.left,ry:e.clientY-r.top,moved:false};canvas.setPointerCapture(e.pointerId)});
+ canvas.addEventListener('pointermove',e=>{if(!down)return;const dx=e.clientX-down.x,dy=e.clientY-down.y;if(Math.abs(dx)+Math.abs(dy)>2)down.moved=true;fallback.yaw+=dx*.006;fallback.pitch=Math.max(-1.0,Math.min(1.18,fallback.pitch+dy*.004));down.x=e.clientX;down.y=e.clientY;renderCanvas()});
+ canvas.addEventListener('pointerup',e=>{if(!down)return;const old=down;down=null;if(old.moved)return;const r=canvas.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;let found=null,dist=18;for(const q of fallback.coords){const d=Math.hypot(q.x-x,q.y-y);if(d<dist){dist=d;found=q.id}}if(found)selectCamera(found)});
+ canvas.addEventListener('wheel',e=>{e.preventDefault();fallback.zoom=Math.min(3.3,Math.max(.45,fallback.zoom*(e.deltaY<0?1.09:.91)));renderCanvas()},{passive:false});
+ window.addEventListener('resize',()=>{if(fallback.canvas)renderCanvas()});
+ }
+ const W=Math.max(500,Math.round(host.clientWidth||800)),H=Math.max(350,Math.round(host.clientHeight||700)),dpr=window.devicePixelRatio||1;
+ if(canvas.width!==Math.round(W*dpr)||canvas.height!==Math.round(H*dpr)){canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr)}
+ const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);
+ const gr=ctx.createLinearGradient(0,0,W,H);gr.addColorStop(0,'#0f293c');gr.addColorStop(.6,'#0a1a2a');gr.addColorStop(1,'#07131e');ctx.fillStyle=gr;ctx.fillRect(0,0,W,H);
+ const proj=p=>canvasProject(p,W,H);
+ function stroke(points,color,width=2,dash=[]){const good=points.filter(p=>p&&p.every(Number.isFinite));if(good.length<2)return;ctx.strokeStyle=color;ctx.lineWidth=width;ctx.setLineDash(dash);ctx.beginPath();let penDown=false;for(const p of points){if(!p||p.some(x=>!Number.isFinite(x))){penDown=false;continue}const t=proj(p);if(penDown)ctx.lineTo(t[0],t[1]);else{ctx.moveTo(t[0],t[1]);penDown=true}}ctx.stroke();ctx.setLineDash([])}
+ function point(p,color,size=4,caption=''){const q=proj(p);ctx.fillStyle=color;ctx.beginPath();ctx.arc(q[0],q[1],size,0,Math.PI*2);ctx.fill();if(caption){ctx.fillStyle='#b8d5e4';ctx.font='10px Segoe UI, sans-serif';ctx.fillText(caption,q[0]+9,q[1]-9)}return q}
+ // Reference grid in nonmetric/local coordinates, no scale claim.
+ for(let x=-4;x<=4;x+=1){stroke([[x,-3,0],[x,3,0]],'#2b4557',.65)}
+ for(let y=-3;y<=3;y+=1){stroke([[-4,y,0],[4,y,0]],'#2b4557',.65)}
+ const mesh=A.mesh;
+ if(state.layers.point_cloud){for(const p of (A.point_cloud?.points||[]))point(p,'#caa9df',1.5)}
+ if(state.layers.mesh||state.layers.unknown){let f=mesh.faces.map((face,i)=>({pts:face.map(idx=>mesh.vertices[idx]),attr:mesh.face_attributes?.[i]||{},id:i}));
+ f.sort((a,b)=>(b.pts.reduce((s,p)=>s+proj(p)[2],0)/3)-(a.pts.reduce((s,p)=>s+proj(p)[2],0)/3));
+ for(const face of f){const unknown=face.attr.state==='unknown';if((unknown&&!state.layers.unknown)||(!unknown&&!state.layers.mesh))continue;
+  const pts=face.pts.map(proj);ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);pts.slice(1).forEach(q=>ctx.lineTo(q[0],q[1]));ctx.closePath();ctx.globalAlpha=.20;ctx.fillStyle=scalarColor(face.attr[state.mode==='coverage'?'coverage':'confidence'],state.mode);ctx.fill();ctx.globalAlpha=.50;ctx.strokeStyle=unknown?'#be7baf':'#567d87';ctx.lineWidth=.8;ctx.stroke();ctx.globalAlpha=1;
+ }}
+ if(state.layers.planes){for(const p of A.planes.planes){if(p.vertices?.length>2)stroke([...p.vertices,p.vertices[0]],scalarColor(p[state.mode==='coverage'?'coverage':'confidence'],state.mode),2,[5,3])}}
+ if(state.layers.edges||state.layers.unknown){for(const e of A.edges.edges){const u=e.state==='candidate_extrapolated'||e.state==='unknown';if((u&&!state.layers.unknown)||(!u&&!state.layers.edges))continue;stroke([e.start,e.end],scalarColor(e.confidence,state.mode),u?2.2:3.1,u?[4,4]:[])}}
+ if(state.layers.bim&&mesh.bim_overlay?.vertices){const bim=mesh.bim_overlay;const set=new Set();for(const t of bim.faces){for(let i=0;i<3;i++){const a=t[i],b=t[(i+1)%3];set.add([Math.min(a,b),Math.max(a,b)].join(':'))}}for(const k of set){const [a,b]=k.split(':').map(Number);stroke([bim.vertices[a],bim.vertices[b]],'#b6a4e9',1.4,[4,5])}}
+ if(state.layers.corners||state.layers.unknown){for(const c of A.corners.corners){const u=c.confidence===null||c.state==='unknown';if((u&&!state.layers.unknown)||(!u&&!state.layers.corners))continue;point(c.xyz,scalarColor(c.confidence,state.mode),u?5:4)}}
+ const cams=A.camera_poses.cameras;
+ if(state.layers.path)stroke(cams.map(c=>c.camera_to_world.map(r=>r[3]).slice(0,3)),'#7fa6fa',2.8,[6,5]);
+ fallback.coords=[];
+ if(state.layers.cameras){for(const c of cams){const m=c.camera_to_world,cen=world(m,[0,0,0]),z=.55,dx=z*c.width/2/c.fx,dy=z*c.height/2/c.fy;
+  const far=[world(m,[-dx,-dy,z]),world(m,[dx,-dy,z]),world(m,[dx,dy,z]),world(m,[-dx,dy,z])];
+  for(const corner of far)stroke([cen,corner],'#81ddca',1.1);
+  stroke([...far,far[0]],'#81ddca',1.3);
+  const q=point(cen,c.camera_id===state.selectedCamera?'#fbd08d':'#7de3d0',5,c.camera_id.replace('CAM-','C'));
+  fallback.coords.push({id:c.camera_id,x:q[0],y:q[1]});
+ }}
+ ctx.font='11px Segoe UI, sans-serif';ctx.fillStyle='#7fa2b4';ctx.fillText('CANVAS 3D · WEBGL UNAVAILABLE IN THIS ENVIRONMENT',19,H-20);
+ ctx.fillStyle='#608fa4';ctx.fillText('X / Y / Z = RECONSTRUCTION FRAME • NONMETRIC',19,26);
+}
+
+function init(){
+ $('run-name').textContent=M.run_id;
+ $('badge').textContent=M.synthetic?'SYNTHETIC • NO FIELD METRICS':B.deviation_enabled?'VERIFIED METRIC INPUT':'METRIC UNVERIFIED';
+ $('frame-coordinates').textContent='FRAME  '+M.coordinate_frame+'  /  '+M.units;
+ $('metric-state').textContent=B.deviation_enabled?'METRIC DEVIATION AVAILABLE':'METRIC SCALE NOT VERIFIED · NO DEVIATION VALUES';
+ $('integrity-note').textContent=M.synthetic?'All geometry, frames, coverage and confidence are illustrative. No progress or as-built accuracy conclusions.':'Source SHA256 validated before generating preview. Unknown is not zero execution.';
+ $('bim-status').textContent=B.deviation_enabled?'Verified alignment and independent controls supplied.':'Overlay is illustrative/unregistered until survey controls establish metric scale and alignment. Deviation is disabled ('+B.deviation_reason+').';
+ $('camera-count').textContent=A.camera_poses.cameras.length;
+ $('cameras').innerHTML='';A.camera_poses.cameras.forEach(c=>{
+  const b=document.createElement('button');b.className='camera-btn';b.dataset.camera=c.camera_id;
+  const ico=document.createElement('span');ico.className='camera-icon';ico.textContent='◇';
+  const txt=document.createElement('span');const strong=document.createElement('b');strong.textContent=c.camera_id;const sub=document.createElement('small');sub.textContent=c.frame_id+' · '+c.width+'×'+c.height;txt.append(strong,sub);b.append(ico,txt);b.addEventListener('click',()=>selectCamera(c.camera_id));$('cameras').appendChild(b);
+ });
+ document.querySelectorAll('.mode').forEach(btn=>btn.addEventListener('click',()=>{state.mode=btn.dataset.mode;document.querySelectorAll('.mode').forEach(x=>x.classList.toggle('active',x===btn));render();}));
+ const corners=A.corners.corners||[],faces=A.mesh.faces||[],edges=A.edges.edges||[];
+ const rows=[['Surface facets',faces.length],['Plane patches',A.planes.planes.length],['Edge candidates',edges.length],['Corner candidates',corners.length],['Unknown features',corners.filter(c=>c.confidence===null).length+edges.filter(e=>e.state==='unknown').length]];
+ $('evidence').innerHTML='';rows.forEach(([label,value])=>{const el=document.createElement('div');el.className='ev-row';const t=document.createElement('span');t.textContent=label;const n=document.createElement('strong');n.textContent=value;el.append(t,n);$('evidence').appendChild(el);});
+ refreshLayers();render(false).then(()=>{selectCamera(A.camera_poses.cameras[0].camera_id);if(HAS_WEBGL)$('scene').on('plotly_click',event=>{const p=event?.points?.[0];const id=p?.customdata;if(typeof id==='string'&&A.camera_poses.cameras.some(c=>c.camera_id===id))selectCamera(id);});window.__VIEWER_READY__=true;}).catch(e=>{$('integrity-note').textContent='RENDER FAILURE: '+e.message;window.__VIEWER_ERROR__=e.message;});
+}
+window.MyCONViewer={selectCamera,setLayer,orbit,state,manifest:M,cameraMarkers:()=>fallback.coords.map(x=>({...x}))};
+window.__VIEWER_READY__=false;
+init();
 })();
