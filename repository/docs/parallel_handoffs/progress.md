@@ -289,3 +289,71 @@ A new failure emerged in the first PR CI run: `ScheduleProvenance.n_skipped` is 
 Owner B corrected only the new B CLI in SHA `f7e5b31505677ce5ca14c21c74447d428d935ecb`. **Re-run on exactly that source commit**: [GitHub Actions run 43491939417](https://github.com/sayyedalimrj/MyCon/actions/runs/43491939417), job 132115085728, Ubuntu GitHub runner, Python 3.11.18 / pytest 9.2.0; recorded **143 passed, 1 skipped, 0 failed in 2.65s**, exit code 0; compile stage, package source, official server handoff export and verifier passed. This is the repository's existing **cross-workstream selected CPU suite**, including B's new five-file CLI and Stage8 SHA-verified image evidence tests embedded in `tests/test_research_progress_scientific.py`. The CI checkout was authentic, unlike the earlier isolated mirror tests. The produced GitHub Actions release candidates are not evidence of a real site.
 
 **Still NOT EXECUTED:** `tests/test_research_progress_monitor.py` full dedicated test selection, all full Open3D/Stage9 legacy integration, real GPU/IFC/capture/BOQ and held-out site survey evaluation. These acceptance tests and G2–G4 remain outstanding. No Precision/Recall/F1/MAE from real GT is claimed. The status of additional tests must not be inferred from this CI pass.
+
+
+---
+
+# Owner B / Round 2 final scientific & engineering handoff — 2026-11-14
+
+Existing PR #47: https://github.com/sayyedalimrj/MyCon/pull/47 , DRAFT, base research/mycon-integration-20261112. Existing head research/mycon-progress-monitor-20261113; NO new PR, merge, main write, force, rebase or original data modification.
+
+## Provenance and commits
+
+Research evidence prerequisite completed in source commit 7d51fa7dfb404402971909318b90f7ca11451acc.
+Last code/test change commit: c073a7cc43c4b46ee3c845400372a7808d5c36f2. Subsequent changes only B-owned docs/handoff. Source archive of the genuine PR CI merge checkout had exact matching Git blob hashes against PR code/test files:
+- stage_09_progress/element_status_export.py: d4a60609814e60aaf37cdc7b2ad573821935ed0b
+- stage_09_progress/ifc_identity_adapter.py: a4d36d001988b7b5eefd68899ff5e6f78697253e
+- stage_11_schedule_variance/construction_audit.py: f349edc99eace4663385c44d875427b10beb0dc2
+- stage_11_schedule_variance/run_physical_monitor.py: 9a9f7eab42d570bd9b9325f4f2f4bdfd13ea19bf
+- tests/test_research_progress_monitor.py: 2f15a8a974357e05ce70f4499e8991e65bb00262
+- tests/test_research_progress_scientific.py: c66f62bdcaf83e48481da5398b0596208d5f5ffb
+
+Changed round2 files, all B-owned:
+- repository/docs/research_progress/evidence_review.md: 4 DOI peer-reviewed research papers, 2 pinned licensed source repos and official Open3D executable notebook assessed; notebook not executed for missing dependency/network.
+- repository/docs/research_progress/4d_bim_field_case_protocol.md: real 4D BIM IFC/camera/quantity/BOQ/WBS/GT and occlusion acceptance cases, not field results.
+- repository/docs/research_progress/physical_monitor_v1.md: updated versioned interface, manager audit and exact tests.
+- repository/pipeline/stage_09_progress/element_status_export.py: five construction/observation considerations, independent dated absence audit, unmapped IFC rejection.
+- repository/pipeline/stage_09_progress/ifc_identity_adapter.py: new optional read-only IFC source hash and IfcOpenShell entity/class/unit parser gate; absent/false IFC => no linked-identity assertion.
+- repository/pipeline/stage_11_schedule_variance/construction_audit.py: new engineering observability, approved quantities, BOQ/WBS and uncertain element/manager summaries.
+- repository/pipeline/stage_11_schedule_variance/run_physical_monitor.py: adds versioned manager reports and optional IFC model index; retains five output file names and old additive schema.
+- repository/tests/test_research_progress_monitor.py: dedicated negatives for nonmetric registration, occluded/out-of-FOV vs not built, fake IFC inventory and approval provenance.
+- repository/docs/parallel_handoffs/progress.md: this update.
+
+Unchanged from round1 and still in PR: B-owned geometry_evidence_adapter.py, scientific 4D source adapter/test changes. No Stage08, D, C, A, GUI, integration, Colab, default configs, original videos, COLMAP or checkpoints modified.
+
+## Output manifests and actual synthetic CPU run
+
+Local synthetic run ID progress-round2-synthetic-cpu-20261114. Five output artifacts (all generated together under an isolated /mnt/data working directory, NOT on real site/Drive):
+- element_status.csv — mycon.element_status.v1, SHA256 38360ccbf2390aebfdbf362a8b2711cffd0baefd0b975dc4b20307a24510fae0.
+- element_metrics.csv — additive Stage09 scientific provenance, SHA256 4c94dce0ba32f4bac761500efd9de1ca548381c6f30e358a90aac7b7792a7385.
+- activity_progress.csv — mycon.activity_progress.v1, SHA256 789bb770f5ff1b4985f9cce378b05689bff2cf57eff6d6e0863ca4d392390448.
+- schedule_variance.json — mycon.physical_monitor.schedule_variance.v1, SHA256 63ade462a77fd635cd703662e3ae5182358e5838275f8631050db9ecc488a0d4.
+- progress_dashboard.json — mycon.physical_monitor.dashboard.v1 + mycon.progress_engineering_audit.v1 and mycon.scientific_progress.v2, SHA256 4f9dae63787a168bdb0303e4acb9680e0d43e424a54eb6648b351559940cdbd3.
+
+Input fixture hashes (unchanged):
+- configs/research_progress/round2_contract_fixture/elements_stage9.csv: 223ba25fa0e17fa5347af3fad932b8b553c0c387b54b04c918ff1a41852c659e.
+- configs/research_progress/round2_contract_fixture/mapping.csv: e71c73da8ee02e3843b2a8306b47b9e7dfbfbb1131ef246a641d0dde3d9539b7.
+- configs/research_progress/round2_contract_fixture/schedule.csv and baseline: f69680206e91ba94beb23455e032dfbfcbd443d5a60a435dd8ed82479989edb3.
+- configs/research_progress/round2_contract_fixture/bim_geometry_evidence.v1.json: 80768472c67c45291318bcfe30faca00ca01951ef93f9d3e2851b168f2e7681a.
+
+Coordinate frame of synthetic Stage08 manifest: bim_world, units metres in fixture declaration; **not independently surveyed reality**. Camera images are SHA-only references, not copied. The alternative nonmetric geometry manifest test blocks visibility geometry; IFC source index not supplied so true IFC entity quality gate remains blocked. Synthetic output: n_elements=2, 1 in_progress and 1 unknown; 1 observed/1 not_observable; 1 signed synthetic 8/10 m2 quantity; approved weights 3:1; project physical point=null, partial identification bounds [60%,85] percent; approved planned=50 percent; variance bounds [+10,+35] percentage points; project schedule decision blocked. No measured real-world GT: Precision/Recall/F1 and quantity/expert MAE null.
+
+## Actual executed tests & reproducibility
+
+Executed locally on immutable GitHub CI source snapshot with Git-blob-identical B code (Python 3.13.5, pytest 9.0.2, CPU, no GPU or Open3D/IfcOpenShell, no random simulation training):
+- pytest -q tests/test_research_progress_monitor.py tests/test_research_progress_scientific.py => **36 passed**, exit 0, ~0.24 s.
+- pytest -q tests/test_round2_progress_contract.py tests/test_stage_11_schedule_variance.py tests/test_stage_09_progress_interpretation.py tests/test_research_progress_geometry.py => **68 passed**, exit 0, ~0.76 s.
+- python -m compileall -q pipeline/stage_09_progress pipeline/stage_11_schedule_variance => exit 0.
+- python -m pipeline.stage_11_schedule_variance.run_physical_monitor with source synthetic schedule/mapping/element/geometry fixture, independent expected synthetic hashes, project-root, unique run-id and dated as-of => exit 0, five actual outputs with independent SHA above.
+
+Official GitHub Actions (source commit c073a7cc; GitHub pull_request merge checkout, B blobs identical as verified):
+- Dedicated workstream [run 43507962773](https://github.com/sayyedalimrj/MyCon/actions/runs/43507962773): 24 passed, exit 0, Ubuntu Python 3.11.
+- Existing cross-workstream [run 43507962877](https://github.com/sayyedalimrj/MyCon/actions/runs/43507962877): 143 passed, 1 skipped, exit 0; includes B's Stage09/11 synthetic adapter and camera evidence smoke.
+- Official Open3D global registration Jupyter notebook: not_executed (open3d ModuleNotFoundError, GitHub DNS unavailable in local container); official example inspected and pinned in evidence_review.md.
+- Optional actual IfcOpenShell IFC identity parser: code present, real IFC parse not_executed (library and original model absent). Tests demand fake IFC inventory fail closed, not positive field certification.
+
+## Acceptance and owner-interface blockers
+
+G0 ownership and source preservation: no cross-owner path edits. Integration branch has advanced independently since PR fork; NO rebase/force by B; lead resolves merge conflicts. G1 synthetic CPU: passed on byte-matched source (above). G2: no original MyCon_R4 real camera/scan/IFC geometry smoke in this workstream. G3: no independent actual surveyed metric scale/registration/IFC GlobalId audit. G4: no real heldout building/site GT, expert comparison or publication Precision/Recall/F1/MAE. G5: no integrated civil Viewer/Colab from coordinator.
+
+A/D→B interface: optional mycon.bim_geometry_evidence.v1 with actual source image view, surface sample identity, independent metric scale/registration/IFC hashes; optional independently checked mycon.ifc_identity_index.v1 requires IfcOpenShell runtime. B→C: do not equate unknown with not_built; score categorical and numeric estimates separately against matched independent site as-of reference; respect nulls and weights. The final study must compare matched scanned real IFC walls/ceilings/MEP, independent approved quantities, photos/occlusions, BOQ/WBS and approved 4D schedule. No field-ready progress conclusion until review.
