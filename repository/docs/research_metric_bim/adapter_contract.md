@@ -1,61 +1,61 @@
 # MyCON Workstream D — civil metric-scale and BIM/IFC comparison adapter
 
-Status: **isolated implementation candidate; not field validated**. Coordinator ownership approval: [Issue #44](https://github.com/sayyedalimrj/MyCon/issues/44). No change to A-owned Stage 8, Stage 7, B/C, main or original Drive data. Entry point: \`civil_metric_bim.core\`. Optional NumPy-only adapter; no IFC file is read implicitly and no physical-progress inference is performed.
+Status: **isolated implementation candidate; not field validated**. Coordinator ownership approval: [Issue #44](https://github.com/sayyedalimrj/MyCon/issues/44). No change to A-owned Stage 8, Stage 7, B/C, main or original Drive data. Entry point: `civil_metric_bim.core`. Optional NumPy-only adapter; no IFC file is read implicitly and no physical-progress inference is performed.
 
 ## Two independent sources of scale
 
-1. **Length anchors:** supply a JSON document conforming to \`mycon.length_references.v1\`. Each record must declare \`source_kind\` = \`block\`, \`steel_section\` or \`field_measurement\`; two source-frame XYZ endpoints; \`physical_source_id\`; \`role\` = \`fit\` or \`control\`; nominal length (optional); **actual measured/verified** length, actual measurement uncertainty and scan-span uncertainty; qualitative \`confidence.grade\`, reviewer/evidence ID, source and method/provenance. Nominal/catalogue steel/block dimension is *never* automatically substituted for measured actual size. Proposed dimensions can be reviewed and manually accepted. At least **3 approved high-reviewed independent physical source groups** are needed for length-based fitting, with 3%/3-sigma robust consistency guard. Duplicate physical group across fit and control fails. Approximate propagated uncertainty and between-reference dispersion are separately disclosed, not falsely called a 95% confidence interval.
+1. **Length anchors:** supply a JSON document conforming to `mycon.length_references.v1`. Each record must declare `source_kind` = `block`, `steel_section` or `field_measurement`; two source-frame XYZ endpoints; `physical_source_id`; `role` = `fit` or `control`; nominal length (optional); **actual measured/verified** length, actual measurement uncertainty and scan-span uncertainty; qualitative `confidence.grade`, reviewer/evidence ID, source and method/provenance. Nominal/catalogue steel/block dimension is *never* automatically substituted for measured actual size. Proposed dimensions can be reviewed and manually accepted. At least **3 approved high-reviewed independent physical source groups** are needed for length-based fitting, with 3%/3-sigma robust consistency guard. Duplicate physical group across fit and control fails. Approximate propagated uncertainty and between-reference dispersion are separately disclosed, not falsely called a 95% confidence interval.
 
-2. **BIM/IFC feature alignment:** supply \`mycon.bim_feature_adapter.v1\`, a **manually reviewed** mapping of reconstructed supported corners and/or finite plane centres to matching reference BIM coordinates in metres. \`kind=corner|plane\`, explicit source and target XYZ, unique \`physical_feature_id\`, \`observation_state\`, role and approval are required. Approved fit matches produce rotation and translation via a proper (determinant +1) Umeyama similarity. If a surveyed length-based scale exists, it is held fixed; otherwise 4 or more noncoplanar reviewed BIM points yield an **unverified BIM-derived scale proposal**. Matching physical features cannot be reused as holdouts. Collinear/degenerate solutions fail closed. BIM planes are finite polygons with a reviewed normal; plane matches may additionally report signed point-to-plane and normal-angle residual. No extrapolated or unobserved corner may silently become a fit control.
+2. **BIM/IFC feature alignment:** supply `mycon.bim_feature_adapter.v1`, a **manually reviewed** mapping of reconstructed supported corners and/or finite plane centres to matching reference BIM coordinates in metres. `kind=corner|plane`, explicit source and target XYZ, unique `physical_feature_id`, `observation_state`, role and approval are required. Approved fit matches produce rotation and translation via a proper (determinant +1) Umeyama similarity. If a surveyed length-based scale exists, it is held fixed; otherwise 4 or more noncoplanar reviewed BIM points yield an **unverified BIM-derived scale proposal**. Matching physical features cannot be reused as holdouts. Collinear/degenerate solutions fail closed. BIM planes are finite polygons with a reviewed normal; plane matches may additionally report signed point-to-plane and normal-angle residual. No extrapolated or unobserved corner may silently become a fit control.
 
-**No special room, MAX geometry or project dimensions are embedded**; the numbers in the synthetic pytest cases are artificial algorithm fixtures only. This adapter accepts reference feature JSON, not a raw IFC geometry conversion. A future owner-approved IFC producer must extract finite plane/corner coordinates and IFC GlobalIds into this schema and supply an actual revision/hash. For non-synthetic model provenance, \`model_provenance.asset.path\` is a project-relative path whose SHA256 is checked before any output. This JSON adapter is not a replacement for actual IFC parsing or surveying.
+**No special room, MAX geometry or project dimensions are embedded**; the numbers in the synthetic pytest cases are artificial algorithm fixtures only. This adapter accepts reference feature JSON, not a raw IFC geometry conversion. A future owner-approved IFC producer must extract finite plane/corner coordinates and IFC GlobalIds into this schema and supply an actual revision/hash. For non-synthetic model provenance, `model_provenance.asset.path` is a project-relative path whose SHA256 is checked before any output. This JSON adapter is not a replacement for actual IFC parsing or surveying.
 
 ## Run contract
 
-Run inside the **repository/** directory of a complete checkout. Each input must live under \`--project-root\`; all generated paths in manifests are project-relative.
+Run inside the **repository/** directory of a complete checkout. Each input must live under `--project-root`; all generated paths in manifests are project-relative.
 
-\`\`\`bash
+```bash
 python -m civil_metric_bim.core \
   --project-root /workspace/MyCon_R4 \
   --run-id metric-bim-pilot-001 \
   --references-json /workspace/MyCon_R4/reviewed_lengths.v1.json \
   --bim-json /workspace/MyCon_R4/reviewed_bim_features.v1.json \
   --geometry-manifest-json /workspace/MyCon_R4/runs/geom-ready-.../geometry/comparison_ready.json
-\`\`\`
+```
 
-Omit either references or BIM JSON to exercise the **other path independently**. The optional geometry manifest must be \`mycon.comparison_ready_geometry.v1\` and agree on source coordinate frame; all listed upstream output SHA256 checks run before output creation. An absent original capture remains untouched; a present-but-modified original source fails SHA validation. No image/PLY/checkpoint is rewritten or read for registration. Output runs use unique \`metric-bim-*\` IDs and create-only staging. Reusing even a partial existing run is refused.
+Omit either references or BIM JSON to exercise the **other path independently**. The optional geometry manifest must be `mycon.comparison_ready_geometry.v1` and agree on source coordinate frame; all listed upstream output SHA256 checks run before output creation. An absent original capture remains untouched; a present-but-modified original source fails SHA validation. No image/PLY/checkpoint is rewritten or read for registration. Output runs use unique `metric-bim-*` IDs and create-only staging. Reusing even a partial existing run is refused.
 
-### Outputs under \`runs/<run-id>/metric_bim/\`
+### Outputs under `runs/<run-id>/metric_bim/`
 
 | Artifact | Interpretation |
 |---|---|
-| \`scale_estimate.json\` | Candidate scale m/reconstruction-unit, approximate 1-sigma uncertainty, accepted/rejected reference IDs, nominal-minus-actual difference, heldout IDs and fit diagnostics |
-| \`alignment_transform.json\` | Proper Sim(3): scale, 3×3 rotation, XYZ translation in metres, 4×4 matrix, fit/heldout feature IDs and explicit source/target frames |
-| \`alignment_report.csv\` | Per reviewed BIM match signed plane offset when defined, unsigned Euclidean point error, angle error when normals available; fit versus control disambiguated |
-| \`heldout_control_errors.csv\` | Independent BIM feature and measured-length control residuals; **never used to solve scale/rotation/translation** |
-| \`deviation_map.csv\` | Per-sample signed and unsigned point-to-finite-plane difference in metres, explicit \`valid_mask\`, source observation state and reason |
-| \`deviation_heatmap.json\` | Viewer-ready points with transformed BIM XYZ, signed/unsigned metres, alpha mask and explicit no-data reason; positive sign follows the reviewed BIM plane normal |
-| \`metric_bim_manifest.json\` | Schema version, source/file hashes, per-output hashes and project-relative paths, run ID, software, units/frames and unresolved gates |
+| `scale_estimate.json` | Candidate scale m/reconstruction-unit, approximate 1-sigma uncertainty, accepted/rejected reference IDs, nominal-minus-actual difference, heldout IDs and fit diagnostics |
+| `alignment_transform.json` | Proper Sim(3): scale, 3×3 rotation, XYZ translation in metres, 4×4 matrix, fit/heldout feature IDs and explicit source/target frames |
+| `alignment_report.csv` | Per reviewed BIM match signed plane offset when defined, unsigned Euclidean point error, angle error when normals available; fit versus control disambiguated |
+| `heldout_control_errors.csv` | Independent BIM feature and measured-length control residuals; **never used to solve scale/rotation/translation** |
+| `deviation_map.csv` | Per-sample signed and unsigned point-to-finite-plane difference in metres, explicit `valid_mask`, source observation state and reason |
+| `deviation_heatmap.json` | Viewer-ready points with transformed BIM XYZ, signed/unsigned metres, alpha mask and explicit no-data reason; positive sign follows the reviewed BIM plane normal |
+| `metric_bim_manifest.json` | Schema version, source/file hashes, per-output hashes and project-relative paths, run ID, software, units/frames and unresolved gates |
 
-A point receives a deviation only if it was observed, explicitly mapped to a **reviewed finite BIM plane**, falls within that plane's finite polygon, and a candidate transform exists. Missing, occluded, out-of-FOV, ambiguous or unreviewed geometry is \`valid_mask=false\` and its signed/unsigned distance is **null**, not zero. Even a finite convex hull may bridge unknown holes; an operator must review actual support and missing regions. The resulting candidate distance is **not** a certified field accuracy number.
+A point receives a deviation only if it was observed, explicitly mapped to a **reviewed finite BIM plane**, falls within that plane's finite polygon, and a candidate transform exists. Missing, occluded, out-of-FOV, ambiguous or unreviewed geometry is `valid_mask=false` and its signed/unsigned distance is **null**, not zero. Even a finite convex hull may bridge unknown holes; an operator must review actual support and missing regions. The resulting candidate distance is **not** a certified field accuracy number.
 
 ## Scientific gates (fail-closed)
 
-- All current outputs hard-code \`metric_validation="pending"\`, \`metric_scale_verified=false\`, \`registration_verified=false\`, \`can_feed_stage8=false\`, \`physical_progress_state="unknown"\`. This remains true for plausible synthetic registration. No downstream Stage 8/9 consumer is changed or allowed to auto-trust them.
+- All current outputs hard-code `metric_validation="pending"`, `metric_scale_verified=false`, `registration_verified=false`, `can_feed_stage8=false`, `physical_progress_state="unknown"`. This remains true for plausible synthetic registration. No downstream Stage 8/9 consumer is changed or allowed to auto-trust them.
 - External gate needed: independent field/survey controls, actual BIM/IFC revision and coordinates, trusted calibration/camera/scale, holdouts disjoint by site/capture/physical control, field-tolerance acceptance and **human review**. Real-case errors are not inferred from fitted residuals or nominal block sizes.
-- \`confidence.grade\` is **qualitative review state**, not a statistical probability; no calibrated confidence claim is made.
-- The method does not infer \`not_built\` from no observation; it does not create, guess or assign IFC \`GlobalId\` for unmatched geometric hypotheses.
+- `confidence.grade` is **qualitative review state**, not a statistical probability; no calibrated confidence claim is made.
+- The method does not infer `not_built` from no observation; it does not create, guess or assign IFC `GlobalId` for unmatched geometric hypotheses.
 - Tests are synthetic software correctness only. CPU/GPU field execution, independent metric survey and IFC extraction: **not_executed** until evidence is available.
 
 ## Integration proposal
 
-An A-owned Stage 8 opt-in reader may later read \`alignment_transform.json\` but **must refuse it** while \`can_feed_stage8=false\` or \`metric_validation!="approved"\`. Only a separate coordinator-reviewed evidence-verification gate may set positive status in a later **versioned, signed-off artifact**. Do not edit legacy \`registration_report.json\`, \`bim_elements.jsonl\`, or Stage 9 semantics from this workstream. A/B/C continue to consume their frozen interfaces. Reviewer-facing discrepancy overlays can use \`deviation_heatmap.json\` without claiming accepted scale.
+An A-owned Stage 8 opt-in reader may later read `alignment_transform.json` but **must refuse it** while `can_feed_stage8=false` or `metric_validation!="approved"`. Only a separate coordinator-reviewed evidence-verification gate may set positive status in a later **versioned, signed-off artifact**. Do not edit legacy `registration_report.json`, `bim_elements.jsonl`, or Stage 9 semantics from this workstream. A/B/C continue to consume their frozen interfaces. Reviewer-facing discrepancy overlays can use `deviation_heatmap.json` without claiming accepted scale.
 
 To run synthetic isolated tests in a full checkout:
 
-\`\`\`bash
+```bash
 cd repository
 PYTHONPATH=. pytest -q tests/test_civil_metric_bim_synthetic.py
-\`\`\`
+```
 
-This text specifies a command, **not evidence that it has been executed**. An exact-HEAD CI or local run log must be attached to handoff before marking \`unit_tested\`.
+This text specifies a command, **not evidence that it has been executed**. An exact-HEAD CI or local run log must be attached to handoff before marking `unit_tested`.
