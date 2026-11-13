@@ -27,7 +27,7 @@ SHA_PATTERN = re.compile(r"[0-9a-f]{64}$")
 ROLES = {"fit", "control"}
 FIT_STATES = {"observed_supported", "field_verified"}
 SOURCE_KINDS = {"block", "steel_section", "field_measurement"}
-CSV_FIELDS = ["record_id", "kind", "role", "state", "signed_error_m",
+CSV_FIELDS = ["schema_version", "run_id", "coordinate_frame", "units", "record_id", "kind", "role", "state", "signed_error_m",
               "unsigned_error_m", "normal_error_deg", "reason"]
 
 
@@ -431,11 +431,13 @@ def verify_geometry(manifest_file: Path, project_root: Path, frame: str) -> dict
             "original_source_available": source.is_file()}
 
 
-def _csv(path: Path, rows: list[dict]) -> None:
+def _csv(path: Path, rows: list[dict], run_id: str) -> None:
     with path.open("x", newline="", encoding="utf-8") as stream:
         wr = csv.DictWriter(stream, fieldnames=CSV_FIELDS, extrasaction="ignore")
         wr.writeheader()
-        wr.writerows(rows)
+        for row in rows:
+            wr.writerow({"schema_version": SCHEMA, "run_id": run_id,
+                         "coordinate_frame": "bim_world", "units": "m", **row})
 
 
 def _write(path: Path, value: Any) -> None:
@@ -475,7 +477,13 @@ def run(project_root: Path, run_id: str, *, references_json: Path | None = None,
     geometry = (verify_geometry(geometry_manifest_json, root, frame)
                 if geometry_manifest_json is not None else None)
     scale = length_scale(refs)
+    scale["run_id"] = run_id
+    scale["source_frame"] = frame
+    scale["coordinate_frame"] = frame
+    scale["source_units"] = "reconstruction_units"
+    scale["target_units"] = "m"
     alignment, tx = build_transform(bim, scale)
+    alignment["run_id"] = run_id
     alignment["source_frame"] = frame
     alignment["target_frame"] = "bim_world"
     alignment["source_units"] = "reconstruction_units"
@@ -495,16 +503,19 @@ def run(project_root: Path, run_id: str, *, references_json: Path | None = None,
         stage = Path(tempdir)
         _write(stage / "scale_estimate.json", scale)
         _write(stage / "alignment_transform.json", alignment)
-        _csv(stage / "alignment_report.csv", rows)
-        _csv(stage / "heldout_control_errors.csv", controls)
+        _csv(stage / "alignment_report.csv", rows, run_id)
+        _csv(stage / "heldout_control_errors.csv", controls, run_id)
         with (stage / "deviation_map.csv").open("x", newline="", encoding="utf-8") as stream:
-            fields = ["sample_id", "bim_plane_id", "ifc_global_id", "source_state",
+            fields = ["schema_version", "run_id", "coordinate_frame", "units",
+                      "sample_id", "bim_plane_id", "ifc_global_id", "source_state",
                       "xyz_bim_m", "valid_mask", "signed_distance_m",
                       "unsigned_distance_m", "reason"]
             writer = csv.DictWriter(stream, fieldnames=fields, extrasaction="ignore")
             writer.writeheader()
             for row in heat:
-                writer.writerow({**row, "xyz_bim_m": json.dumps(row["xyz_bim_m"])})
+                writer.writerow({"schema_version": "mycon.deviation_heatmap.v1",
+                                 "run_id": run_id, "coordinate_frame": "bim_world",
+                                 "units": "m", **row, "xyz_bim_m": json.dumps(row["xyz_bim_m"])})
         _write(stage / "deviation_heatmap.json", {
             "schema_version": "mycon.deviation_heatmap.v1", "run_id": run_id,
             "coordinate_frame": "bim_world", "units": "m",
