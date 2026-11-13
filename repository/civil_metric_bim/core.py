@@ -118,6 +118,8 @@ def validate_inputs(refs: dict | None, bim: dict | None) -> str:
     if bim is not None:
         if bim.get("target_frame") != "bim_world" or bim.get("target_units") != "m":
             raise ValueError("BIM feature adapter requires bim_world and metres")
+        if bim.get("source_units", "reconstruction_units") != "reconstruction_units":
+            raise ValueError("BIM source units must be reconstruction_units, not mm/cm/metres")
         if not isinstance(bim.get("matches"), list) or not isinstance(bim.get("planes"), list):
             raise ValueError("BIM adapter requires matches[] and planes[]")
         if not isinstance(bim.get("samples", []), list):
@@ -137,6 +139,9 @@ def validate_inputs(refs: dict | None, bim: dict | None) -> str:
             if m.get("kind") not in {"corner", "plane"}:
                 raise ValueError("Feature kind must be corner or plane")
             point(m["scan_xyz"], "match scan"), point(m["bim_xyz_m"], "match BIM")
+            if m.get("bim_normal_xyz") is not None and np.linalg.norm(
+                    point(m["bim_normal_xyz"], "BIM normal")) < 1e-9:
+                raise ValueError("Zero BIM feature normal")
             if m.get("kind") == "plane" and m.get("scan_normal_xyz") is not None:
                 normal = point(m["scan_normal_xyz"], "scan_normal_xyz")
                 refnormal = point(m["bim_normal_xyz"], "bim_normal_xyz")
@@ -151,6 +156,12 @@ def validate_inputs(refs: dict | None, bim: dict | None) -> str:
                 raise ValueError("BIM planes need finite polygons")
             if np.linalg.matrix_rank(poly - poly[0]) < 2:
                 raise ValueError("BIM plane finite polygon is degenerate")
+            n = point(p["normal_xyz"], "plane normal")
+            n /= np.linalg.norm(n)
+            anchor = point(p["point_xyz_m"], "BIM plane anchor")
+            plane_span = max(1.0, float(np.linalg.norm(np.ptp(poly, axis=0))))
+            if np.max(np.abs((poly - anchor) @ n)) > plane_span * 1.0e-6:
+                raise ValueError("Finite BIM polygon and its plane normal/point disagree")
         for sm in bim.get("samples", []):
             point(sm["scan_xyz"], "sample")
     if not frame or frame == "bim_world":
@@ -195,6 +206,10 @@ def length_scale(refs: dict | None) -> dict:
             used.append(r)
         decisions.append(item)
     status = "insufficient_independent_length_references"
+    approved_control_ids = [r["reference_id"] for r in records if
+                            r["role"] == "control" and approved(r) and
+                            r.get("confidence", {}).get("grade") == "high_reviewed" and
+                            r.get("actual_length_m") is not None]
     estimate, uncertainty, inliers = None, None, []
     if len(used) >= 3 and len({r["physical_source_id"] for r in used}) >= 3:
         a = np.asarray(ratios)
@@ -218,7 +233,11 @@ def length_scale(refs: dict | None) -> dict:
                     row["state"] = "rejected_inconsistent_span"
         else:
             status = "inconsistent_fit_references"
+    if status == "scale_candidate_review_required" and not approved_control_ids:
+        status = "scale_candidate_without_approved_independent_control"
     return {"schema_version": "mycon.scale_estimate.v1", "status": status,
+            "approved_heldout_reference_count": len(approved_control_ids),
+            "approved_heldout_reference_ids": approved_control_ids,
             "scale_m_per_reconstruction_unit": estimate,
             "uncertainty_1sigma_m_per_unit": uncertainty,
             "uncertainty_interpretation": "approximate propagated measurement uncertainty plus between-span dispersion; not calibrated CI",
@@ -290,6 +309,18 @@ def build_transform(bim: dict | None, scale: dict) -> tuple[dict, tuple | None]:
     except ValueError as exc:
         output.update(status="blocked_degenerate_correspondences", reason=str(exc))
         return output, None
+    fit_delta = (s * (x @ R.T) + t) - y
+    errors = np.linalg.norm(fit_delta, axis=1)
+    output["fit_residuals"] = {
+        "count": int(len(errors)),
+        "rmse_m": float(np.sqrt(np.mean(errors ** 2))),
+        "max_error_m": float(np.max(errors)),
+        "p95_error_m": float(np.quantile(errors, .95)),
+        "warning": "fit-only geometry residuals; NOT independently surveyed accuracy"
+    }
+    output["approved_heldout_match_count"] = len(hold)
+    if not hold:
+        output["reason"] = "No independent approved BIM feature holdout; status remains pending"
     matrix = np.eye(4)
     matrix[:3, :3] = s * R
     matrix[:3, 3] = t
@@ -497,6 +528,16 @@ def run(project_root: Path, run_id: str, *, references_json: Path | None = None,
     alignment["target_units"] = "m"
     rows, controls = evaluate_controls(refs, bim, tx,
                                       independent_scale=scale["scale_m_per_reconstruction_unit"])
+    heldout_valid = np.array([r["unsigned_error_m"] for r in controls
+                              if r.get("unsigned_error_m") is not None], dtype=float)
+    control_qa = {
+        "approved_control_count": int(len(heldout_valid)),
+        "total_control_count": len(controls),
+        "rmse_m": (float(np.sqrt(np.mean(heldout_valid ** 2))) if len(heldout_valid) else None),
+        "p95_m": (float(np.quantile(heldout_valid, .95)) if len(heldout_valid) else None),
+        "max_error_m": (float(np.max(heldout_valid)) if len(heldout_valid) else None),
+        "interpretation": "candidate independent control residual; requires field survey acceptance",
+    }
     heat = deviation(bim, tx)
     target = root / "runs" / run_id / "metric_bim"
     if target.exists() or target.parent.exists():
@@ -507,6 +548,7 @@ def run(project_root: Path, run_id: str, *, references_json: Path | None = None,
                              "sha256": digest(p)} for name, p in named_inputs.items()}
     for item in (scale, alignment):
         item["input_sha256"] = source_hashes
+        item["heldout_control_summary"] = control_qa
     with tempfile.TemporaryDirectory(prefix=".metric-bim-staging-", dir=root / "runs") as tempdir:
         stage = Path(tempdir)
         _write(stage / "scale_estimate.json", scale)
