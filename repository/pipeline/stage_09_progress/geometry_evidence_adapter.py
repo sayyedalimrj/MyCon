@@ -81,7 +81,8 @@ class GeometryEvidenceBundle:
                 'evidence_confidence': None, 'evidence_confidence_source': '',
                 'geometry_evidence_reason_codes': ';'.join(self.reason_codes),
                 'geometry_conformance_state': 'unknown',
-                'geometry_n_views': 0, 'geometry_quality_gate': 'blocked'}
+                'geometry_n_views': 0, 'geometry_quality_gate': 'blocked',
+                'image_evidence_refs_json': '[]', 'geometry_support_sample_ids_json': '[]'}
         if not self.valid:
             return base
         record = self.rows.get(global_id)
@@ -90,6 +91,8 @@ class GeometryEvidenceBundle:
         base.update({k:record[k] for k in ('geometry_evidence_state','observability_ratio',
                     'observability_source','geometry_evidence_reason_codes','geometry_conformance_state',
                     'geometry_n_views','geometry_quality_gate')})
+        base['image_evidence_refs_json'] = json.dumps(record.get('image_evidence_refs', []), sort_keys=True)
+        base['geometry_support_sample_ids_json'] = json.dumps(record.get('geometry_support_sample_ids', []))
         if record['geometry_evidence_state'] == 'observed_geometry_consistent' and physical_fraction is not None:
             if 0 < physical_fraction < 1:
                 base['geometry_evidence_state'] = 'partial_built_verified'
@@ -159,6 +162,7 @@ def load_geometry_evidence_manifest(
             if expected_global_ids is not None and gid not in expected_global_ids and gid not in IFC_UNKNOWN:
                 errors.append('unrecognized_global_id')
         camera_ids: set[str] = set()
+        cameras_by_view: dict[str, dict[str, Any]] = {}
         for rec in cameras:
             vid = rec.get('view_id')
             if not vid or vid in camera_ids or not rec.get('capture_session_id') or not _hash(rec.get('image_sha256')) or not isinstance(rec.get('image_width'), int) or rec['image_width'] <=0 or not isinstance(rec.get('image_height'),int) or rec['image_height']<=0 or not _matrix4(rec.get('world_to_camera_4x4')):
@@ -166,7 +170,9 @@ def load_geometry_evidence_manifest(
             intr = rec.get('intrinsics')
             if not isinstance(intr, dict) or not all(_number(intr.get(k)) and intr[k]>0 for k in ('fx','fy')) or not all(_number(intr.get(k)) for k in ('cx','cy')) or not rec.get('pose_quality_ref'):
                 errors.append('invalid_camera_calibration')
-            if vid: camera_ids.add(vid)
+            if vid:
+                camera_ids.add(vid)
+                cameras_by_view[vid] = rec
         by_id: dict[str, list[dict[str, Any]]] = {}
         visible_samples: dict[str,set[str]] = {}
         eligible_samples: dict[str,set[str]] = {}
@@ -233,6 +239,15 @@ def load_geometry_evidence_manifest(
                 'observability_source':'raycast_zbuffer' if ratio is not None else '',
                 'geometry_evidence_reason_codes':';'.join(reasons),
                 'geometry_conformance_state':conformance,
+                'geometry_support_sample_ids': sorted(eligible | visible),
+                'image_evidence_refs': [
+                    {'view_id': v, 'capture_session_id': cameras_by_view[v]['capture_session_id'],
+                     'image_sha256': cameras_by_view[v]['image_sha256'],
+                     'qa_provenance_ref': next((item.get('qa_provenance_ref') for item in records
+                        if item['view_id'] == v), None)}
+                    for v in sorted({item['view_id'] for item in records})
+                    if v in cameras_by_view
+                ],
             }
         return GeometryEvidenceBundle(True,(),manifest_sha,result)
     except (OSError,ValueError,KeyError,TypeError,UnicodeError,json.JSONDecodeError) as exc:
