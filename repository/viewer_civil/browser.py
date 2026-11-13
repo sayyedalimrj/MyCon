@@ -1,32 +1,32 @@
-"""Load an offline preview in browsers that cannot navigate file:// or localhost."""
-import base64
-import json
+"""Headless browser driver for restricted/offline environments (no localhost/file navigation)."""
 from pathlib import Path
+import base64, json
 
+def load_offline_page(page, preview:Path):
+    """Load the SAME shipped Plotly, styles and viewer scripts entirely from local bytes.
 
-def load_offline_page(page, html):
-    html = Path(html)
-    root = html.parent
-    markup = html.read_text(encoding="utf-8")
-    markup = markup.replace('<link rel="stylesheet" href="viewer.css">', "")
-    markup = markup.replace('<script src="plotly.min.js"></script>', "")
-    markup = markup.replace('<script src="viewer.js"></script>', "")
-    anchor = '<script id="mycon-payload" type="application/json">'
-    before, following = markup.split(anchor, 1)
-    payload, after = following.split("</script>", 1)
-    body = json.loads(payload)
-    for frame in body["assets"]["frame_manifest"]["frames"]:
-        preview = (root/frame["preview_path"]).resolve()
-        if not preview.is_relative_to(root.resolve()):
-            raise ValueError("frame outside preview")
-        mime = "image/png" if preview.suffix.lower()==".png" else "image/jpeg"
-        frame["preview_path"]="data:"+mime+";base64,"+base64.b64encode(preview.read_bytes()).decode("ascii")
-    payload=json.dumps(body,ensure_ascii=False).replace("<","\\u003c")
-    page.set_content(before+anchor+payload+"</script>"+after,wait_until="load")
-    page.add_style_tag(content=(root/"viewer.css").read_text(encoding="utf-8"))
-    page.add_script_tag(content=(root/"plotly.min.js").read_text(encoding="utf-8"))
-    page.add_script_tag(content=(root/"viewer.js").read_text(encoding="utf-8"))
-    page.wait_for_function("window.__VIEWER_READY__ || window.__VIEWER_ERROR__", timeout=60000)
-    error = page.evaluate("window.__VIEWER_ERROR__")
+    In constrained browser sandboxes file:// and localhost navigation may be disabled;
+    Playwright set_content and script injection make the actual app inspectable.
+    """
+    preview=Path(preview)
+    html=preview.read_text(encoding='utf-8')
+    html=html.replace('<link rel="stylesheet" href="viewer.css">','')
+    html=html.replace('<script src="plotly.min.js"></script>','').replace('<script src="viewer.js"></script>','')
+    start='<script type="application/json" id="mycon-payload">'
+    before, rest=html.split(start,1)
+    payload_text,after=rest.split('</script>',1)
+    payload=json.loads(payload_text)
+    for frame in payload['assets']['frame_manifest']['frames']:
+        file=preview.parent/frame['preview_path']
+        if not file.resolve().is_relative_to(preview.parent.resolve()):
+            raise ValueError('Preview image escaped output folder')
+        frame['preview_path']='data:image/png;base64,'+base64.b64encode(file.read_bytes()).decode('ascii')
+    html=before+start+json.dumps(payload,ensure_ascii=False).replace('<','\\u003c')+'</script>'+after
+    page.set_content(html,wait_until='load')
+    page.add_style_tag(content=(preview.parent/'viewer.css').read_text(encoding='utf-8'))
+    page.add_script_tag(content=(preview.parent/'plotly.min.js').read_text(encoding='utf-8'))
+    page.add_script_tag(content=(preview.parent/'viewer.js').read_text(encoding='utf-8'))
+    page.wait_for_function('window.__VIEWER_READY__ === true || Boolean(window.__VIEWER_ERROR__)',timeout=60000)
+    error=page.evaluate('window.__VIEWER_ERROR__')
     if error:
-        raise RuntimeError("Viewer failed: "+error)
+        raise RuntimeError(f'Viewer rendering error: {error}')
