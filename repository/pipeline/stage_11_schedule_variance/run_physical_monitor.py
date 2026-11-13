@@ -243,9 +243,21 @@ def main(argv: list[str] | None = None) -> int:
         _csv(out / FILENAMES[0], statuses)
         _csv(out / FILENAMES[1], elements)
         _csv(out / FILENAMES[2], activities)
+        input_files = {
+            "element_metrics": args.element_metrics_csv, "schedule": args.schedule_csv,
+            "mapping": args.mapping_csv, "baseline": baseline_path,
+        }
+        if args.geometry_manifest:
+            input_files["geometry_manifest"] = args.geometry_manifest
+        if args.ground_truth_csv:
+            input_files["ground_truth"] = args.ground_truth_csv
+        if args.expert_progress_csv:
+            input_files["expert_progress"] = args.expert_progress_csv
+        if any(not path.resolve().is_relative_to(args.project_root.resolve())
+               for path in input_files.values()):
+            raise ValueError("input_outside_project_root")
         inputs = {
-            name: {"relative_path": str(path.resolve().relative_to(args.project_root.resolve()))
-                    if path.resolve().is_relative_to(args.project_root.resolve()) else None,
+            name: {"relative_path": str(path.resolve().relative_to(args.project_root.resolve())),
                    "sha256": _sha(path)}
             for name, path in (
                 ("element_metrics", args.element_metrics_csv),
@@ -268,6 +280,14 @@ def main(argv: list[str] | None = None) -> int:
         variance["provenance"] = provenance
         dashboard["provenance"] = provenance
         _json(out / FILENAMES[3], variance)
+        provenance["outputs"] = {
+            name: {"relative_path": name, "sha256": _sha(out / name)}
+            for name in FILENAMES[:4]
+        }
+        provenance["outputs"]["progress_dashboard.json"] = {
+            "relative_path": "progress_dashboard.json", "sha256": None,
+            "reason": "self_digest_cannot_be_embedded_in_the_same_file"
+        }
         _json(out / FILENAMES[4], dashboard)
         print("PHYSICAL_MONITOR_OK run_id=" + run_id + " output=" + str(out)
               + " decision_gate=" + str(dashboard["quality_gates"]["schedule_decision"]))
