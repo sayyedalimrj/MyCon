@@ -27,6 +27,7 @@ from typing import Any
 from pipeline.common.bim_schedule_mapping import load_mapping_csv
 from pipeline.common.schedule_io import load_schedule_csv, parse_iso_datetime
 from pipeline.stage_09_progress.enrich_scientific_evidence import enrich_scientific_evidence_rows
+from pipeline.stage_09_progress.ifc_identity_adapter import IFCIndex, read_ifc_identity_index
 from pipeline.stage_09_progress.element_status_export import (
     evaluate_element_truth, evaluate_expert_progress, status_for_element,
 )
@@ -72,7 +73,8 @@ def _json(path: Path, value: dict[str, Any]) -> None:
 def build_monitor_outputs(
     *, element_rows: list[dict[str, Any]], schedule: Any, mapping: Any,
     baselines: list[dict[str, Any]], date: dt.datetime, run_id: str,
-    geometry_summary: dict[str, Any], ground_truth: list[dict[str, Any]] | None = None,
+    geometry_summary: dict[str, Any], ifc_index: IFCIndex | None = None,
+    ground_truth: list[dict[str, Any]] | None = None,
     expert_truth: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]],
            dict[str, Any], dict[str, Any]]:
@@ -94,6 +96,7 @@ def build_monitor_outputs(
     for entry in mapping.entries:
         id_to_aids.setdefault(entry.ifc_global_id, []).append(entry.activity_id)
         id_to_wbs.setdefault(entry.ifc_global_id, []).append(wbs_by_aid[entry.activity_id])
+    identity = ifc_index or read_ifc_identity_index(None, project_root=Path("."))
     status_rows = []
     enriched_rows = []
     for original in element_rows:
@@ -101,6 +104,14 @@ def build_monitor_outputs(
         gid = row["global_id"].strip()
         stat = status_for_element(row, data_date=date,
                                   mapped=gid in assigned, unique=counts[gid] == 1)
+        ifc_element = identity.elements.get(gid) if identity.valid else None
+        stat["ifc_identity_quality_gate"] = "pass" if ifc_element else "blocked"
+        stat["ifc_identity_reason_codes"] = (";".join(identity.reason_codes) if not identity.valid else
+                                            "ifc_globalid_missing_from_verified_inventory" if not ifc_element else "")
+        stat["ifc_index_sha256"] = identity.index_sha256
+        stat["ifc_source_sha256"] = identity.ifc_sha256
+        stat["ifc_class"] = ifc_element.get("ifc_class") if ifc_element else None
+        stat["ifc_linked_construction_status"] = stat["construction_status"] if ifc_element else "unknown"
         stat["activity_ids"] = ";".join(sorted(set(id_to_aids.get(gid, ()))))
         stat["wbs_codes"] = ";".join(sorted(set(id_to_wbs.get(gid, ()))))
         stat["run_id"] = run_id
@@ -108,6 +119,9 @@ def build_monitor_outputs(
         status_rows.append(stat)
         row["construction_status"] = stat["construction_status"]
         row["observation_status"] = stat["observation_status"]
+        row["ifc_identity_quality_gate"] = stat["ifc_identity_quality_gate"]
+        row["ifc_index_sha256"] = stat["ifc_index_sha256"]
+        row["ifc_linked_construction_status"] = stat["ifc_linked_construction_status"]
         row["construction_status_reason_codes"] = stat["reason_codes"]
         row["construction_status_schema"] = stat["schema_version"]
         row["activity_ids"] = stat["activity_ids"]
@@ -180,6 +194,16 @@ def build_monitor_outputs(
         "unknown_reason_counts": dict(Counter(
             code for row in status_rows for code in row["reason_codes"].split(";") if code)),
         "geometry_validation": geometry_summary,
+        "ifc_identity_validation": {
+            "schema_version": "mycon.ifc_identity_index.v1",
+            "valid": identity.valid,
+            "reason_codes": list(identity.reason_codes),
+            "ifc_source_sha256": identity.ifc_sha256,
+            "index_manifest_sha256": identity.index_sha256,
+            "n_known_global_ids": len(identity.elements),
+            "n_matched_elements": sum(r["ifc_identity_quality_gate"] == "pass" for r in status_rows),
+        },
+        "field_release_quality_gate": "blocked_without_independent_real_survey_review",
         "quality_gates": scientific["quality_gates"],
         "overall": scientific["overall"],
         "wbs": scientific["wbs"],
@@ -209,6 +233,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-root", required=True, type=Path)
     parser.add_argument("--research-run-id", required=True)
     parser.add_argument("--geometry-manifest", type=Path)
+    parser.add_argument("--ifc-index-manifest", type=Path,
+                        help="Optional approved, SHA-bound read-only IFC GlobalId inventory")
     parser.add_argument("--project-root", type=Path, default=Path("."))
     parser.add_argument("--expected-ifc-sha256")
     parser.add_argument("--expected-scan-sha256")
@@ -231,7 +257,7 @@ def main(argv: list[str] | None = None) -> int:
         expert = _read_csv(args.expert_progress_csv, ("activity_id", "split", "site_id", "capture_session_id", "reviewer", "verified_at_utc", "document_sha256")) if args.expert_progress_csv else None
         # Preflight source safety BEFORE creating any output files.
         selected_inputs = [args.element_metrics_csv, args.schedule_csv, args.mapping_csv, baseline_path]
-        selected_inputs += [path for path in (args.geometry_manifest, args.ground_truth_csv,
+        selected_inputs += [path for path in (args.geometry_manifest, args.ifc_index_manifest, args.ground_truth_csv,
                                              args.expert_progress_csv) if path is not None]
         if any(not path.resolve().is_relative_to(args.project_root.resolve())
                for path in selected_inputs):
@@ -243,10 +269,15 @@ def main(argv: list[str] | None = None) -> int:
             expected_registration_sha256=args.expected_registration_sha256,
             expected_project_id=args.expected_project_id, data_date=date,
         )
+        identity = read_ifc_identity_index(
+            args.ifc_index_manifest, project_root=args.project_root,
+            expected_ifc_sha256=args.expected_ifc_sha256,
+        )
         result = build_monitor_outputs(
             element_rows=stage9, schedule=schedule, mapping=mapping,
             baselines=baselines, date=date, run_id=run_id,
-            geometry_summary=geometry, ground_truth=ground, expert_truth=expert,
+            geometry_summary=geometry, ifc_index=identity,
+            ground_truth=ground, expert_truth=expert,
         )
         out = (args.output_root / run_id).resolve()
         if not out.is_relative_to(args.output_root.resolve()):
@@ -262,6 +293,8 @@ def main(argv: list[str] | None = None) -> int:
         }
         if args.geometry_manifest:
             input_files["geometry_manifest"] = args.geometry_manifest
+        if args.ifc_index_manifest:
+            input_files["ifc_index_manifest"] = args.ifc_index_manifest
         if args.ground_truth_csv:
             input_files["ground_truth"] = args.ground_truth_csv
         if args.expert_progress_csv:
@@ -277,6 +310,7 @@ def main(argv: list[str] | None = None) -> int:
                 ("schedule", args.schedule_csv), ("mapping", args.mapping_csv),
                 ("baseline", baseline_path),
                 *((("geometry_manifest", args.geometry_manifest),) if args.geometry_manifest else ()),
+                *((("ifc_index_manifest", args.ifc_index_manifest),) if args.ifc_index_manifest else ()),
                 *((("ground_truth", args.ground_truth_csv),) if args.ground_truth_csv else ()),
                 *((("expert_progress", args.expert_progress_csv),) if args.expert_progress_csv else ()),
             )
