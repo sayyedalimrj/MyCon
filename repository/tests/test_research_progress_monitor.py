@@ -63,7 +63,8 @@ def test_quantity_and_state_fail_closed(executed, expected):
 
 def test_verified_zero_needs_independent_absence_reference():
     row = approved(quantity="0", absence_verified="True", absence_evidence_ref="synthetic-site-audit-1",
-                   absence_document_sha256=HASH, absence_approved_by="independent-fixture-reviewer")
+                   absence_document_sha256=HASH, absence_approved_by="independent-fixture-reviewer",
+                   absence_approved_at_utc=DATE.isoformat())
     result = status_for_element(row, data_date=DATE, mapped=True, unique=True)
     assert result["construction_status"] == "not_built"
     assert result["physical_progress_estimate"] == 0.0
@@ -186,3 +187,93 @@ def test_bad_schema_fails_before_writing(tmp_path):
     ])
     assert code == 2
     assert not (tmp_path / "progress-bad").exists()
+
+
+def test_absence_audit_requires_as_of_authorization():
+    audit = dict(absence_verified="True", absence_evidence_ref="site-synthetic-absence",
+                 absence_document_sha256=HASH, absence_approved_by="independent-reviewer")
+    missing_date = status_for_element(approved(quantity="0", **audit), data_date=DATE, mapped=True, unique=True)
+    assert missing_date["construction_status"] == "unknown"
+    future_date = status_for_element(approved(
+        quantity="0", absence_approved_at_utc="2026-01-17T00:00:00Z", **audit
+    ), data_date=DATE, mapped=True, unique=True)
+    assert future_date["construction_status"] == "unknown"
+    assert future_date["physical_progress_estimate"] == 0.0
+
+
+def test_unmapped_ifc_quantity_remains_numeric_but_categorical_unknown():
+    output = status_for_element(approved(), data_date=DATE, mapped=False, unique=True)
+    assert output["construction_status"] == "unknown"
+    assert output["physical_progress_estimate"] == pytest.approx(0.4)
+    assert "ifc_id_not_in_approved_activity_mapping" in output["reason_codes"]
+
+
+def test_dashboard_contains_civil_qa_and_quantity_reports(tmp_path):
+    assert _run(tmp_path, "progress-civil-audit") == 0
+    report = json.loads((tmp_path / "progress-civil-audit" / "progress_dashboard.json").read_text(encoding="utf-8"))
+    assert report["approved_quantity_report"]["approved_count"] == 1
+    assert len(report["observability_report"]["elements"]) == 2
+    assert report["observability_report"]["metric_and_ifc_geometry_gate"] == "blocked"
+    assert report["uncertain_elements_report"]["count"] == 2
+    assert report["manager_summary"]["physical_progress_pct"] is None
+    assert report["manager_summary"]["progress_lower_bound_pct"] == pytest.approx(60)
+    assert report["manager_summary"]["progress_upper_bound_pct"] == pytest.approx(85)
+    assert report["wbs_boq_weight_report"]["activities"][0]["wbs_code"] == "1.1"
+    assert report["manager_summary"]["decision_quality_gate"] == "blocked"
+
+
+def test_verified_stage8_occlusion_is_nonobservable_not_unbuilt(tmp_path):
+    args = [
+        "--element-metrics-csv", str(FIXTURE / "elements_stage9.csv"),
+        "--schedule-csv", str(FIXTURE / "schedule.csv"),
+        "--mapping-csv", str(FIXTURE / "mapping.csv"),
+        "--project-root", str(FIXTURE.parents[2]),
+        "--data-date-utc", DATE.isoformat(),
+        "--output-root", str(tmp_path),
+        "--research-run-id", "progress-verified-geometry-synthetic",
+        "--geometry-manifest", str(FIXTURE / "bim_geometry_evidence.v1.json"),
+        "--expected-ifc-sha256", "1" * 64,
+        "--expected-scan-sha256", "2" * 64,
+        "--expected-registration-sha256", "3" * 64,
+        "--expected-project-id", "mycon-round2-synthetic",
+    ]
+    assert main(args) == 0
+    output = tmp_path / "progress-verified-geometry-synthetic"
+    with (output / "element_status.csv").open(newline="", encoding="utf-8") as fh:
+        states = {r["global_id"]: r for r in csv.DictReader(fh)}
+    e1 = states["0AbCdeFgHiJkLmNoPqRsTu"]
+    e2 = states["1BcDefGhIjKlMnOpQrStUv"]
+    assert e1["construction_status"] == "in_progress"
+    assert e1["observation_status"] == "observed"
+    assert len(json.loads(e1["image_evidence_refs_json"])) == 1
+    assert e2["construction_status"] == "unknown"
+    assert e2["observation_status"] == "not_observable"
+    assert e2["occlusion_state"] == "occluded"
+    dashboard = json.loads((output / "progress_dashboard.json").read_text(encoding="utf-8"))
+    assert dashboard["n_not_observable"] == 1
+    assert dashboard["observability_report"]["geometry_manifest_valid"] is True
+    assert dashboard["manager_summary"]["physical_progress_pct"] is None
+
+
+def test_unverified_nonmetric_stage8_manifest_fails_closed(tmp_path):
+    args = [
+        "--element-metrics-csv", str(FIXTURE / "elements_stage9.csv"),
+        "--schedule-csv", str(FIXTURE / "schedule.csv"),
+        "--mapping-csv", str(FIXTURE / "mapping.csv"),
+        "--project-root", str(FIXTURE.parents[2]),
+        "--data-date-utc", DATE.isoformat(),
+        "--output-root", str(tmp_path),
+        "--research-run-id", "progress-invalid-metric-fixture",
+        "--geometry-manifest", str(FIXTURE.parents[0] / "comparison_ready_fixture" / "comparison_ready.json"),
+        "--expected-ifc-sha256", "1" * 64,
+        "--expected-scan-sha256", "2" * 64,
+        "--expected-registration-sha256", "3" * 64,
+        "--expected-project-id", "mycon-round2-synthetic",
+    ]
+    assert main(args) == 0
+    dashboard = json.loads((tmp_path / "progress-invalid-metric-fixture" / "progress_dashboard.json").read_text(encoding="utf-8"))
+    assert dashboard["geometry_validation"]["geometry_adapter_valid"] is False
+    assert dashboard["observability_report"]["metric_and_ifc_geometry_gate"] == "blocked"
+    assert dashboard["manager_summary"]["physical_progress_pct"] is None
+    assert dashboard["manager_summary"]["progress_lower_bound_pct"] == pytest.approx(60)
+    assert dashboard["n_not_observable"] == 0
