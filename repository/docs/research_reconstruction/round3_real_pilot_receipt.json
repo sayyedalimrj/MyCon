@@ -1,0 +1,46 @@
+{
+  "schema_version": "mycon.reconstruction.round3_real_pilot_evidence.v1",
+  "created_at_utc": "2026-11-14",
+  "run_id": "recon-real-room-20261114T0020Z",
+  "new_source": {
+    "filename": "20260816_090005.mp4",
+    "bytes": 123427847,
+    "sha256": "b622c340cef772b5f14456889ca59ecbc5720652506e0ff70d0d98a714984424",
+    "frame_count": 2096,
+    "duration_seconds": 34.922422,
+    "width": 1920,
+    "height": 1080
+  },
+  "select": {
+    "sampled": 70,
+    "train": 42,
+    "test": 10,
+    "rejected": 18,
+    "split": "single_capture_temporal_block_exploratory",
+    "dataset_manifest_sha256": "b31e720a06d7234d2b416cba5181b069057b798440d10c590a03b4e15bbe9f54"
+  },
+  "fresh_colmap": {
+    "executed": false,
+    "attempted": true,
+    "exit_code": 2,
+    "reason": "colmap binary missing"
+  },
+  "gs": {
+    "training_executed": false,
+    "checkpoint_new": null,
+    "ply_new": null
+  },
+  "historic_96s": {
+    "derived_video_bytes": 651883372,
+    "derived_video_sha256_from_readonly_receipt": "2f58a3df2bfe955cb5935d748cf58b47cc1928fc12d6b0ea7bc5610aac5bff6a",
+    "full_video_download": "blocked_413_268435456_limit",
+    "old_colmap_images_txt_sha256_reverified": "b5b6d85cc739ec29a853e9fa593dcc5b3ef2058e9c50a29636ac6593fa37cb94",
+    "old_colmap_views": 192,
+    "old_frames_sha_verified_count": 5,
+    "median_nearest_view_direction_deg_corrected": 3.522,
+    "old_to_new_pose_mapping_allowed": false
+  },
+  "metric_scale_verified": false,
+  "field_validated": false,
+  "baseline_6999_comparable": false
+}
