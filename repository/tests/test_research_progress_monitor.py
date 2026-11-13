@@ -277,3 +277,49 @@ def test_unverified_nonmetric_stage8_manifest_fails_closed(tmp_path):
     assert dashboard["manager_summary"]["physical_progress_pct"] is None
     assert dashboard["manager_summary"]["progress_lower_bound_pct"] == pytest.approx(60)
     assert dashboard["n_not_observable"] == 0
+
+
+def test_no_ifc_index_is_not_certified_identity(tmp_path):
+    assert _run(tmp_path, "progress-unverified-ifc") == 0
+    root = tmp_path / "progress-unverified-ifc"
+    with (root / "element_status.csv").open(encoding="utf-8", newline="") as fh:
+        statuses = list(csv.DictReader(fh))
+    assert all(row["ifc_identity_quality_gate"] == "blocked" for row in statuses)
+    assert all(row["ifc_linked_construction_status"] == "unknown" for row in statuses)
+    report = json.loads((root / "progress_dashboard.json").read_text(encoding="utf-8"))
+    assert report["ifc_identity_validation"]["valid"] is False
+    assert report["field_release_quality_gate"] != "pass"
+
+
+def test_hashed_but_fake_ifc_inventory_never_certifies_globalid(tmp_path):
+    """Pure SHA matching is NOT an IFC-entity check; optional parser is mandatory."""
+    from pipeline.stage_09_progress.ifc_identity_adapter import read_ifc_identity_index
+    original = tmp_path / "model.ifc"
+    original.write_text("NOT AN IFC FILE: SYNTHETIC TEST ONLY", encoding="utf-8")
+    original_hash = hashlib.sha256(original.read_bytes()).hexdigest()
+    manifest = tmp_path / "index.json"
+    manifest.write_text(json.dumps({
+        "schema_version": "mycon.ifc_identity_index.v1",
+        "ifc_file": {"path": "model.ifc", "sha256": original_hash},
+        "coordinate_frame": "bim_world",
+        "units": "m",
+        "ifc_length_scale_to_m": 1.0,
+        "provenance": {"generator": "synthetic", "reviewer": "synthetic",
+                       "approval_document_sha256": HASH},
+        "elements": [{"global_id": "0AbCdeFgHiJkLmNoPqRsTu", "ifc_class": "IfcWall"}],
+    }), encoding="utf-8")
+    report = read_ifc_identity_index(
+        manifest, project_root=tmp_path, expected_ifc_sha256=original_hash)
+    assert report.valid is False
+    assert not report.elements
+    assert (any("parser" in x for x in report.reason_codes)
+            or "global_id_not_found_in_ifc" in report.reason_codes)
+
+
+def test_ifc_index_outside_project_is_blocked(tmp_path):
+    from pipeline.stage_09_progress.ifc_identity_adapter import read_ifc_identity_index
+    elsewhere = tmp_path.parent / "external_invalid_ifc_index_fixture.json"
+    # No need to create or touch anything outside the isolated fixture root.
+    result = read_ifc_identity_index(elsewhere, project_root=tmp_path)
+    assert result.valid is False
+    assert result.elements == {}
