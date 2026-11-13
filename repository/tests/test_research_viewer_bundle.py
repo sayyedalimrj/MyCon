@@ -167,3 +167,29 @@ def test_optional_point_cloud_nonfinite_coordinates_rejected(source):
     mpath.write_text(json.dumps(m))
     with pytest.raises(ViewerInputError,match="point_cloud points invalid"):
         load_bundle(source)
+
+
+def test_committed_synthetic_media_sha256_and_magic():
+    root=Path(__file__).resolve().parents[1]/"viewer_civil"/"media"
+    hashes={
+        "thesis_figure_01_civil_viewer.jpg":"03dc5e903a88e2b074c4f8f89d30af08f098df337898c5c56f7e858b06e75ec3",
+        "thesis_figure_02_coverage_and_shape4_overlay.jpg":"bf6201664a5795099912520a57b3413e685c2ad898f52840091b27c1cfa43759",
+        "thesis_preview_rotation.mp4":"b226934edb6a9ec6bd27ef87122fe1dc3e9f2fc5f485c732e23d0f5ffc0a18a7",
+    }
+    for name,expected in hashes.items():
+        p=root/name
+        assert p.is_file(),name
+        assert hashlib.sha256(p.read_bytes()).hexdigest()==expected
+        sig=p.read_bytes()[:16]
+        if name.endswith(".jpg"): assert sig.startswith(b"\xff\xd8\xff")
+        else: assert sig[4:8]==b"ftyp"
+
+
+def test_source_browser_js_syntax_when_node_available():
+    import subprocess
+    executable=shutil.which("node")
+    if not executable:
+        pytest.skip("NodeJS not installed; static UI script syntax not checked")
+    viewer_js=Path(__file__).resolve().parents[1]/"viewer_civil"/"static"/"viewer.js"
+    r=subprocess.run([executable,"--check",str(viewer_js)],capture_output=True,text=True,check=False)
+    assert r.returncode==0,r.stderr
