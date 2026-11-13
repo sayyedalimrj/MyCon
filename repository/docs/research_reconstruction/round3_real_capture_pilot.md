@@ -37,3 +37,9 @@
 
 ## Frozen R4 folder protection
 The Colab notebook uses **MyCon_R4 only as a READ-ONLY source**. Outputs go to a separate MyDrive root `MyCON_Reconstruction_R3_Runs/<new_run_id>`; the notebook never creates a new directory under `MyCon_R4` and refuses an existing destination.
+
+## Follow-on real TRAIN image-connectivity check (no COLMAP)
+- On the **actual 42 training frames** from `recon-real-room-20261114T0020Z`, executed `python -m reconstruction.real_overlap_diagnostics --run-dir ...` (**exit 0**). Protected 10 TEST images were not opened.
+- 41 consecutive training-image pairs: median 263 SIFT ratio-test matches; median 217 RANSAC fundamental inliers; **1 weak pair** with only 9 F-inliers (`room20260816_00001350` → `room20260816_00001860`, 8.497348 seconds apart). This break crosses a temporal held-out block, not proven deficient physical video coverage. Other low pair `00000930` → `00000960`: 27 F-inliers.
+- Actual detailed report `train_pairwise_overlap_diagnostic.json` locally emitted **create-only** (18890 bytes, SHA256 `7fbbcc2eced26f6ad284c428ca34a4e412ebac5d54c377a68aa9a266797406e6`). Commit contains a compact summary and fully reproducible **R-owned executable**, NOT the 42 real JPEGs or protected TEST. The full local JSON is available as a supplemental user artifact.
+- This diagnostics result is a real frame-feature observation **only**: it does not supply new COLMAP calibrated poses, a reconstruction, structural surfaces, an accepted wall/ceiling corner, NVS scores or metric scale. Not a new test/GT.
