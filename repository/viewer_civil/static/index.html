@@ -1,18 +1,10 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MyCON | Civil 3D inspection</title><link rel="stylesheet" href="viewer.css"></head>
-<body>
-<header><div><span class="mark">M</span><strong>MyCON <span class="quiet">CIVIL VIEWER</span></strong><small>Read-only geometry inspection</small></div><div id="run-name"></div><b id="source-status">Unverified input</b></header>
-<div class="layout">
-<aside class="sidebar">
-<section><small class="eyebrow">VIEW MODE</small><div class="modes"><button data-mode="confidence" class="active">Confidence</button><button data-mode="coverage">Coverage</button><button data-mode="neutral">Neutral</button></div></section>
-<section><small class="eyebrow">REVIEW LAYERS</small><div id="layers"></div></section>
-<section><small class="eyebrow">CAMERAS / CAPTURED FRAMES</small><div id="camera-list"></div></section>
-</aside>
-<main><div class="panel-header"><strong>3D construction evidence</strong><small>Drag to rotate · Wheel to zoom · Shift+drag to pan (Canvas)</small></div><div id="scene" role="img" aria-label="Interactive read-only 3D geometry scene"></div><footer><span id="frame-coordinates"></span><span>No survey claims from appearance</span></footer></main>
-<aside class="inspector"><small class="eyebrow">SOURCE CAMERA INSPECTOR</small><h2 id="selected-camera">Select camera</h2><p id="camera-position"></p><div class="frame-wrap"><img id="selected-frame" alt="Source frame"></div><p id="frame-meta"></p>
-<section><small class="eyebrow">STRUCTURAL EVIDENCE</small><p id="evidence"></p><p id="uncertainty"></p></section>
-<div class="warning"><strong>METRIC / BIM SAFETY</strong><p id="metric-status"></p></div><small>mycon.viewer_bundle.v1 · Verified source hashes</small></aside>
-</div>
-<script id="mycon-payload" type="application/json">__MYCON_PAYLOAD__</script>
-<script src="plotly.min.js"></script><script src="viewer.js"></script>
-</body></html>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MyCON • Civil Geometry Viewer</title><link rel="stylesheet" href="viewer.css"></head><body>
+<header><div class="brand"><span class="logo">M</span><div><strong>MyCON <span>VIEWER</span></strong><small>Civil geometry • evidence explorer</small></div></div><div class="head-middle"><span class="dot"></span><span id="run-name"></span><span class="separator">/</span><span>RESEARCH PREVIEW</span></div><div id="badge" class="badge">DEMO / UNVERIFIED</div></header>
+<div class="layout"><aside class="left"><section class="navhead"><span class="eyebrow">SCENE EXPLORER</span><h2>Room geometry</h2><p>Traceable inspection of observations and uncertainty.</p></section>
+<div class="section-label">VISUALIZATION MODE</div><div class="mode-opts"><button class="mode active" data-mode="confidence">Confidence</button><button class="mode" data-mode="coverage">Coverage</button><button class="mode" data-mode="neutral">Neutral</button></div>
+<div class="section-label">VISIBLE LAYERS</div><div class="layers" id="layers"></div>
+<div class="section-label">CAMERA VIEWS <span id="camera-count"></span></div><div id="cameras" class="cameras"></div>
+<div class="notice"><b>Research integrity</b><span id="integrity-note"></span></div></aside>
+<main><div class="viewport-toolbar"><span><span class="green-point"></span> INTERACTIVE 3D VIEWPORT</span><span class="toolbar-right">DRAG Rotate &nbsp; · &nbsp; SCROLL Zoom &nbsp; · &nbsp; CLICK Camera</span></div><div id="scene"></div><div class="viewport-foot"><span id="frame-coordinates"></span><span id="metric-state"></span></div></main>
+<aside class="right"><div class="righttop"><span class="eyebrow">CAMERA INSPECTOR</span><h2 id="selected-camera">Select a camera</h2><p id="camera-position">Select a camera marker or a view from the left.</p></div><div class="frame-box"><img id="selected-frame" alt="Selected camera source frame"><div id="frame-stamp">SOURCE FRAME PREVIEW</div></div><div class="frame-meta" id="frame-meta"></div><div class="section-label">GEOMETRY EVIDENCE</div><div id="evidence" class="evidence"></div><div class="critical"><b>METRIC / BIM STATUS</b><div id="bim-status"></div></div><div class="rightfoot"><span>mycon.viewer_bundle.v1</span><span>Read-only inspection</span></div></aside></div>
+<script type="application/json" id="mycon-payload">__MYCON_PAYLOAD__</script><script src="plotly.min.js"></script><script src="viewer.js"></script></body></html>
