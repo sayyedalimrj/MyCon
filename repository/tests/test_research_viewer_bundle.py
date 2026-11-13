@@ -1,0 +1,195 @@
+"""Dedicated Civil Viewer CPU tests. No real source/checkpoint imports or writes."""
+import hashlib
+import json
+from pathlib import Path
+import shutil
+import pytest
+
+from viewer_civil import ViewerInputError, build_preview, load_bundle, make_demo
+
+
+@pytest.fixture()
+def source(tmp_path):
+    return make_demo(tmp_path/"capture", "viewer-synthetic-unit-1")
+
+
+def _retarget(source, role, change):
+    path=source/(role+".json")
+    data=json.loads(path.read_text(encoding="utf-8"))
+    change(data)
+    path.write_text(json.dumps(data),encoding="utf-8")
+    manifest_path=source/"viewer_manifest.json"
+    manifest=json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["files"][role]["sha256"]=hashlib.sha256(path.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest),encoding="utf-8")
+
+
+def test_read_only_bundle_and_camera_source_links(source):
+    b=load_bundle(source)
+    assert b["manifest"]["schema_version"]=="mycon.viewer_bundle.v1"
+    assert len(b["assets"]["camera_poses"]["cameras"])==6
+    assert len(b["assets"]["frame_manifest"]["frames"])==6
+    assert b["deviation_enabled"] is False
+    assert b["deviation_reason"]=="synthetic_or_unspecified_source"
+
+
+def test_sha256_tampering_rejected(source):
+    path=source/"corners.json"
+    path.write_text(path.read_text(encoding="utf-8")+" ")
+    with pytest.raises(ViewerInputError,match="SHA256 mismatch"):
+        load_bundle(source)
+
+
+def test_path_traversal_rejected(source):
+    path=source/"viewer_manifest.json"
+    m=json.loads(path.read_text(encoding="utf-8"))
+    m["files"]["mesh"]["path"]="../secret.json"
+    path.write_text(json.dumps(m))
+    with pytest.raises(ViewerInputError,match="unsafe relative path"):
+        load_bundle(source)
+
+
+def test_symlink_escape_rejected(source,tmp_path):
+    external=tmp_path/"private.json"
+    external.write_text("{}")
+    (source/"out.json").symlink_to(external)
+    path=source/"viewer_manifest.json"
+    m=json.loads(path.read_text(encoding="utf-8"))
+    m["files"]["mesh"]["path"]="out.json"
+    path.write_text(json.dumps(m))
+    with pytest.raises(ViewerInputError,match="path missing or escapes"):
+        load_bundle(source)
+
+
+def test_unit_conflict_rejected(source):
+    path=source/"viewer_manifest.json"
+    m=json.loads(path.read_text(encoding="utf-8"))
+    m["files"]["edges"]["units"]="m"
+    path.write_text(json.dumps(m))
+    with pytest.raises(ViewerInputError,match="frame/units mismatch"):
+        load_bundle(source)
+
+
+def test_camera_frame_id_conflict_rejected(source):
+    _retarget(source,"camera_poses",lambda d: d["cameras"][0].update(frame_id="WRONG"))
+    with pytest.raises(ViewerInputError,match="camera/frame identifier"):
+        load_bundle(source)
+
+
+def test_non_rigid_camera_rejected(source):
+    def alter(d):
+        d["cameras"][0]["camera_to_world"][0][0]*=2
+    _retarget(source,"camera_poses",alter)
+    with pytest.raises(ViewerInputError,match="rigid 4x4"):
+        load_bundle(source)
+
+
+def test_missing_frame_or_corrupted_pixels_rejected(source):
+    frame=source/"frames/frame_001.png"
+    frame.write_bytes(frame.read_bytes()+b"x")
+    with pytest.raises(ViewerInputError,match="source image SHA256 mismatch"):
+        load_bundle(source)
+
+
+def test_unknown_is_not_zero_or_progress(source):
+    b=load_bundle(source)
+    assert any(p["state"]=="unknown" and p["confidence"] is None for p in b["assets"]["planes"]["planes"])
+    assert not b["deviation_enabled"]
+    assert "physical_progress" not in b["manifest"]
+
+
+def test_no_unintentional_overwrite(source,tmp_path):
+    with pytest.raises(FileExistsError):
+        make_demo(source)
+    pytest.importorskip("plotly")
+    out=tmp_path/"preview"
+    page=build_preview(source,out)
+    assert page.is_file()
+    assert (out/"plotly.min.js").stat().st_size>1_000_000
+    assert (out/"viewer_build.json").is_file()
+    with pytest.raises(FileExistsError):
+        build_preview(source,out)
+
+
+def test_browser_frame_selection_toggles_and_canvas_fallback(source,tmp_path):
+    pytest.importorskip("plotly")
+    pytest.importorskip("playwright.sync_api")
+    if not (shutil.which("chromium") or shutil.which("chromium-browser")):
+        pytest.skip("Chromium binary not available; still run dedicated CPU validation")
+    from playwright.sync_api import sync_playwright
+    from viewer_civil.browser import load_offline_page
+    html=build_preview(source,tmp_path/"preview")
+    with sync_playwright() as p:
+        browser=p.chromium.launch(headless=True,executable_path=shutil.which("chromium") or shutil.which("chromium-browser"),
+                                  args=["--use-angle=swiftshader","--enable-webgl"])
+        page=browser.new_page(viewport={"width":1440,"height":900})
+        load_offline_page(page,html)
+        assert page.locator("#selected-camera").inner_text()=="CAM-001"
+        page.locator('button[data-camera="CAM-004"]').click()
+        assert page.locator("#selected-camera").inner_text()=="CAM-004"
+        assert "FRAME-004" in page.locator("#frame-meta").inner_text()
+        page.locator('input[data-layer="corners"]').uncheck()
+        assert page.evaluate("window.MyCONViewer.state.layers.corners") is False
+        assert page.locator('input[data-layer="deviation"]').is_disabled()
+        assert page.evaluate('window.MyCONViewer.setLayer("deviation",true)') is False
+        page.locator('button[data-mode="coverage"]').click()
+        assert page.evaluate("window.MyCONViewer.state.mode")=="coverage"
+        page.locator('input[data-layer="bim"]').check()
+        assert page.evaluate("window.MyCONViewer.state.layers.bim") is True
+        page.screenshot(path=str(tmp_path/"synthetic_browser_capture.png"))
+        browser.close()
+
+
+def test_metric_claim_flags_without_survey_receipts_remain_disabled(source):
+    """Fabricated flags cannot unlock any metric deviation without independent evidence files."""
+    from viewer_civil.core import _deviation_gate
+    b=load_bundle(source)
+    manifest=dict(b["manifest"],synthetic=False,metric_scale_verified=True,
+                  registration_verified=True,units="m")
+    assets=dict(b["assets"])
+    assets["alignment_result"]=dict(assets["alignment_result"],units="m",
+        metric_scale_verified=True,registration_verified=True,
+        independent_control_verified=True,reviewer_id="synthetic-reviewer")
+    allowed,reason=_deviation_gate(manifest,assets,source)
+    assert not allowed and reason=="independent_evidence_receipts_missing"
+
+
+def test_optional_point_cloud_nonfinite_coordinates_rejected(source):
+    src=source/"point_cloud.json"
+    mpath=source/"viewer_manifest.json"
+    m=json.loads(mpath.read_text())
+    common={key:m[key] for key in ("units","coordinate_frame","quality","provenance")}
+    content={**common,"schema_version":"mycon.viewer.point_cloud.v1",
+             "points":[[0.,0.,0.],[float("nan"),0.,0.]]}
+    src.write_text(json.dumps(content))
+    m["files"]["point_cloud"]={**common,"schema_version":content["schema_version"],
+                               "path":src.name,"sha256":hashlib.sha256(src.read_bytes()).hexdigest()}
+    mpath.write_text(json.dumps(m))
+    with pytest.raises(ViewerInputError,match="point_cloud points invalid"):
+        load_bundle(source)
+
+
+def test_committed_synthetic_media_sha256_and_magic():
+    root=Path(__file__).resolve().parents[1]/"viewer_civil"/"media"
+    hashes={
+        "thesis_figure_01_civil_viewer.jpg":"03dc5e903a88e2b074c4f8f89d30af08f098df337898c5c56f7e858b06e75ec3",
+        "thesis_figure_02_coverage_and_shape4_overlay.jpg":"bf6201664a5795099912520a57b3413e685c2ad898f52840091b27c1cfa43759",
+        "thesis_preview_rotation.mp4":"b226934edb6a9ec6bd27ef87122fe1dc3e9f2fc5f485c732e23d0f5ffc0a18a7",
+    }
+    for name,expected in hashes.items():
+        p=root/name
+        assert p.is_file(),name
+        assert hashlib.sha256(p.read_bytes()).hexdigest()==expected
+        sig=p.read_bytes()[:16]
+        if name.endswith(".jpg"): assert sig.startswith(b"\xff\xd8\xff")
+        else: assert sig[4:8]==b"ftyp"
+
+
+def test_source_browser_js_syntax_when_node_available():
+    import subprocess
+    executable=shutil.which("node")
+    if not executable:
+        pytest.skip("NodeJS not installed; static UI script syntax not checked")
+    viewer_js=Path(__file__).resolve().parents[1]/"viewer_civil"/"static"/"viewer.js"
+    r=subprocess.run([executable,"--check",str(viewer_js)],capture_output=True,text=True,check=False)
+    assert r.returncode==0,r.stderr
