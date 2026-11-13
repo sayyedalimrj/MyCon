@@ -185,3 +185,32 @@ def test_cli_output_versioned_and_legacy_keys_preserved(tmp_path: Path):
     assert v2["overall"]["physical_progress_estimate"] == 60
     assert v2["provenance"]["inputs"]["mapping_csv"]["sha256"]
     assert main(args) == 1  # Must not overwrite same research-run ID.
+
+
+def test_stage9_to_stage11_physical_monitor_five_file_smoke(tmp_path: Path):
+    """Included in the existing integration workflow's explicit B test selection."""
+    import csv
+    from pipeline.stage_11_schedule_variance.run_physical_monitor import main as monitor_main
+    fixture = Path(__file__).resolve().parents[1] / "configs/research_progress/round2_contract_fixture"
+    arguments = [
+        "--element-metrics-csv", str(fixture / "elements_stage9.csv"),
+        "--schedule-csv", str(fixture / "schedule.csv"),
+        "--mapping-csv", str(fixture / "mapping.csv"),
+        "--project-root", str(fixture.parents[2]),
+        "--data-date-utc", "2026-01-16T00:00:00Z",
+        "--output-root", str(tmp_path),
+        "--research-run-id", "progress-monitor-ci-synthetic",
+    ]
+    assert monitor_main(arguments) == 0
+    root = tmp_path / "progress-monitor-ci-synthetic"
+    assert {p.name for p in root.iterdir()} == {
+        "element_status.csv", "element_metrics.csv", "activity_progress.csv",
+        "schedule_variance.json", "progress_dashboard.json"}
+    with (root / "element_status.csv").open(encoding="utf-8", newline="") as handle:
+        statuses = list(csv.DictReader(handle))
+    assert {row["construction_status"] for row in statuses} == {"in_progress", "unknown"}
+    dashboard = json.loads((root / "progress_dashboard.json").read_text(encoding="utf-8"))
+    assert dashboard["ground_truth_metrics"]["fraction_mae"] is None
+    assert dashboard["overall"]["physical_progress_estimate"] is None
+    assert dashboard["overall"]["physical_progress_lower_bound_pct"] == pytest.approx(60)
+    assert dashboard["overall"]["physical_progress_upper_bound_pct"] == pytest.approx(85)
