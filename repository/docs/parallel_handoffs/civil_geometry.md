@@ -31,3 +31,28 @@ Additive, versioned, read-only `mycon.civil_geometry_review.v1`; no existing Sta
 - `structural_review.py` Git blob SHA: `0c445bb64d349ffc7cd321ddef5b71201921c721` (retrieved from the new branch, 23620 Unicode characters).
 - `test_research_geometry_structural_review.py` Git blob SHA: `8b2805909c99aa956fdd82afd065c646dcdce838` (6999 Unicode characters).
 - Last handoff-only commit occurs after this entry; record the PR head SHA from GitHub when reviewing. No claim that the local isolated tests are GitHub Actions runs.
+
+---
+## Round 2 handoff — 2026-11-13 (PR #42; do not merge)
+
+Governing Integration contract: `repository/docs/integration/parallel_6_streams_approval_20261113.md` at read-only Integration ref. Coordinator comment PR #42 and Issue #48 followed. New research review **already committed** `repository/docs/research_geometry/evidence_review.md`, commit `6aecc7f32cd9d7594665d2d06768a8f84e3dc20a`.
+
+**Code/test exact Git blob SHA verified against local tested source**:
+- `repository/pipeline/stage_07_cleanup/research_dense_candidates.py`: `6e7c41a0752fc57b1cbbcd49fecb554fce7bce7a` (content commit `7e34c35746b8dbb12d75dc42db3057158a6d89ba`)
+- `repository/pipeline/stage_07_cleanup/structural_review.py`: `766046accfb73b8846d963e5dc055a3fe7f8eb0b` (commit `a9d0cf46c5bedbdeb5989abe6a68583a972d9578`)
+- `repository/tests/test_research_geometry_structural_review.py`: `88350fc348c145b2383169bd7fe292a9c2ca72fd` (commit `62d825daf23d63c3670b19325640d24adcbe2d80`)
+- Additive docs: `repository/docs/research_geometry/structural_review.md`, `repository/docs/research_geometry/real_depth_execution_evidence_20261113.json`, this `repository/docs/parallel_handoffs/civil_geometry.md`. Original Stage7 code and all R/V/D/C/B files unchanged.
+
+**Local CPU execution (2026-11-13, Linux, Python 3.13.5, original A-owned code matched final Git blob SHA)**: `cd repository && PYTHONPATH=. pytest -q tests/test_research_geometry_structural_review.py` → **14 passed, 0 failed, exit 0**; same source-tested tree imported `research_dense_candidates` & `structural_review`. Existing 7 tests preserved and 7 new cases added (noise, density, tilted wall, artificial occlusion, distant false intersections, camera index SHA validation, synthetic fake-real gate). This is **not** a full cloned repository checkout. Upstream Open3D/2DGS notebook not executed (Open3D not installed, no network/CUDA/training permission).
+
+**Read-only real-derived experiment**: Drive ID `1qQLBz4MKud_BCUfMKfeT568ihPmv96Tk`, source `depth_fused_candidate_nonmetric.ply`, 104161 points, bytes 1562666, SHA256 `c1f706ec951a1120eb748122e54dd75cee5b3fac80135efcb5cdee844e1ef3ee`; receipt SHA `7e47dffb9fafb0ae1076f45549693a50373db11a1f414d879c175f3ce5840ee1`. Units `arbitrary_reconstruction_units`; frame `colmap_world_unverified`; `metric_scale_verified=false`, `registration_verified=false`, `field_validated=false`.
+
+- Output run IDs: `geom-ready-real-depth-20261113-002` and `geom-civil-real-depth-20261113-final1` in isolated workdir; create-only.
+- Producer CLI executed exit 0 with `--threshold .09 --max-planes 9 --trials 100 --max-sample 14000 --min-points 220`; review CLI `--input-kind real_reconstruction` exit 0. Source PLY and original Drive unchanged.
+- Candidate counts: 15 finite planes, 49 local edges, 7 extrapolated corner candidates, **0 surveyed/confirmed or observed-supported corners**, 57,850 unassigned points. 0 matched source-image calibrated poses/projections; no field floor/wall/ceiling or metric room dimensions.
+- `comparison_ready.json` SHA256 `1d736aac85f1c327c6d775b38c329401aae2dab026fc5622cf74d005f83a9d67`; `civil_geometry_manifest.json` SHA256 `d9f5cc124a0b176b11473dd59407a44ac1cae862d2af1db252a003ccffc719b0`. Source and output hashes for each JSON/PLY/PNG/HTML/CSV in `repository/docs/research_geometry/real_depth_execution_evidence_20261113.json`; machine-readable source manifest also includes full output paths and SHA256.
+- Engineering visual QA: detected features are visibly fragmented; **not accepted** as real as-built walls/room layout. Requires higher-quality dense reconstruction, calibrated frame-indexed source imagery, and engineer-approved feature matches before field certification. No synthetic results used as field accuracy.
+
+**New interface**: unchanged old comparison-ready v1; opt-in add-on `mycon.civil_geometry_review.v1` with `planes/edges/corners.json`, `components.csv`, `stability_report.csv`, `geometry_qa.json`, `planes_colored.ply`, three camera-angle plots, SHA-provenant `viewer_overlay.json` and clickable HTML. Optional `mycon.camera_evidence_index.v1` input is strict SHA/frame/units/K-intrinsics/world-to-camera gated; no consumer modifications; request coordinator to align owner V's `mycon.viewer_bundle.v1` adapter. Human review template remains pending/unknown. No physical quantities inferred.
+
+**Unrun / blockers**: full repository CI on exact latest GitHub PR head (check workflow independently), GPU model validation, true production COLMAP dense/Mesh QA, source-camera photographic comparison on this real cloud, independent survey/metric GT, held-out session split, independent benchmark C, false-positive rate/error in metres, reviewer decisions. Keep PR **DRAFT and unmerged**. No force-push/rebase/main edits.
