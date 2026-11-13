@@ -10,7 +10,16 @@ const labels={point_cloud:'Point samples (optional)',mesh:'Reconstructed surface
 const traces=[], groupIndices={};
 let HAS_WEBGL=(()=>{try{const c=document.createElement('canvas');return !!(c.getContext('webgl')||c.getContext('experimental-webgl'));}catch(e){return false}})();
 const fallback={yaw:.74,pitch:.42,zoom:1,canvas:null,coords:[]};
-const extent=[[ -5,5],[-4,4],[-1,4]];
+// World bounds are data-driven: real COLMAP scenes are not fixed-size synthetic rooms.
+const scenePoints=[...(A.mesh?.vertices||[]),...(A.point_cloud?.points||[]),
+  ...(A.planes?.planes||[]).flatMap(p=>p.vertices||[]),
+  ...(A.corners?.corners||[]).map(p=>p.xyz),
+  ...(A.camera_poses?.cameras||[]).map(c=>[c.camera_to_world[0][3],c.camera_to_world[1][3],c.camera_to_world[2][3]])]
+  .filter(p=>Array.isArray(p)&&p.length===3&&p.every(Number.isFinite));
+const bounds=[0,1,2].map(i=>[Math.min(...scenePoints.map(p=>p[i])),Math.max(...scenePoints.map(p=>p[i]))]);
+const sceneCenter=bounds.map(b=>(Number.isFinite(b[0])&&Number.isFinite(b[1]))?(b[0]+b[1])/2:0);
+const sceneRadius=Math.max(1,...bounds.map(b=>Number.isFinite(b[1]-b[0])?(b[1]-b[0])/2:1));
+const extent=bounds.map((b,i)=>[sceneCenter[i]-sceneRadius*1.4,sceneCenter[i]+sceneRadius*1.4]);
 function add(group, trace) { trace.visible=state.layers[group] ? true : false; trace.showlegend=false; trace.hoverinfo=trace.hoverinfo||'skip'; traces.push(trace); (groupIndices[group]??=[]).push(traces.length-1); }
 function scalarColor(value,mode){
  if(value===null||value===undefined||!Number.isFinite(Number(value)))return '#b176a8';
@@ -32,10 +41,10 @@ function buildTraces(){
  }
  const xs=mesh.vertices.map(v=>v[0]),ys=mesh.vertices.map(v=>v[1]),zs=mesh.vertices.map(v=>v[2]);
  const perFace=mesh.faces.map((f,i)=>scalarColor(attrs[i]?.[state.mode==='coverage'?'coverage':'confidence'],state.mode));
- add('mesh',{type:'mesh3d',x:xs,y:ys,z:zs,i:mesh.faces.map(f=>f[0]),j:mesh.faces.map(f=>f[1]),k:mesh.faces.map(f=>f[2]),facecolor:perFace,opacity:.29,flatshading:true,lighting:{ambient:0.9,diffuse:0.4},hovertemplate:'Geometry candidate<extra></extra>'});
+ if(mesh.faces.length) add('mesh',{type:'mesh3d',x:xs,y:ys,z:zs,i:mesh.faces.map(f=>f[0]),j:mesh.faces.map(f=>f[1]),k:mesh.faces.map(f=>f[2]),facecolor:perFace,opacity:.29,flatshading:true,lighting:{ambient:0.9,diffuse:0.4},hovertemplate:'Geometry candidate<extra></extra>'});
  (A.planes.planes||[]).forEach(plane=>{
   const v=plane.vertices;if(!v||v.length<3)return;
-  add(plane.state==='unknown'?'unknown':'planes',{type:'mesh3d',x:v.map(t=>t[0]),y:v.map(t=>t[1]),z:v.map(t=>t[2]),i:[0,0],j:[1,2],k:[2,3],color:scalarColor(plane[state.mode==='coverage'?'coverage':'confidence'],state.mode),opacity:.18,hovertemplate:'Plane '+plane.id+'<extra></extra>'});
+  add(plane.state==='unknown'?'unknown':'planes',line([...v,v[0]],scalarColor(plane[state.mode==='coverage'?'coverage':'confidence'],state.mode),4,{hoverinfo:'text',text:[plane.id]}));
  });
  (A.edges.edges||[]).forEach(edge=>{
   const unknown=edge.state==='unknown'||edge.state==='candidate_extrapolated';
@@ -49,8 +58,8 @@ function buildTraces(){
  const cameras=A.camera_poses.cameras;
  add('cameras',{type:'scatter3d',mode:'markers+text',x:cameras.map(c=>c.camera_to_world[0][3]),y:cameras.map(c=>c.camera_to_world[1][3]),z:cameras.map(c=>c.camera_to_world[2][3]),marker:{size:7,color:'#83e7d1',symbol:'diamond',line:{color:'#e9fff5',width:1}},text:cameras.map(c=>c.camera_id.replace('CAM-','C')),textposition:'top center',textfont:{size:10,color:'#bde8e3'},customdata:cameras.map(c=>c.camera_id),hovertemplate:'Camera %{customdata}<extra></extra>'});
  cameras.forEach(c=>{
-  const m=c.camera_to_world, center=world(m,[0,0,0]),z=.45,dx=z*(c.width/2)/c.fx,dy=z*(c.height/2)/c.fy;
-  const fl=[world(m,[-dx,-dy,z]),world(m,[dx,-dy,z]),world(m,[dx,dy,z]),world(m,[-dx,dy,z])];
+  const m=c.camera_to_world, center=world(m,[0,0,0]),z=.45;
+  const fl=[world(m,[-z*c.cx/c.fx,-z*c.cy/c.fy,z]),world(m,[z*(c.width-c.cx)/c.fx,-z*c.cy/c.fy,z]),world(m,[z*(c.width-c.cx)/c.fx,z*(c.height-c.cy)/c.fy,z]),world(m,[-z*c.cx/c.fx,z*(c.height-c.cy)/c.fy,z])];
   const pts=[];for(const f of fl){pts.push(center,f,[NaN,NaN,NaN]);}
   pts.push(fl[0],fl[1],fl[2],fl[3],fl[0]);
   add('cameras',line(pts,'#70cbb8',3));
@@ -98,7 +107,7 @@ function selectCamera(id){
  const f=A.frame_manifest.frames.find(f=>f.frame_id===c.frame_id);if(!f)throw new Error('Missing linked frame '+c.frame_id);
  state.selectedCamera=id;$('selected-camera').textContent=id;$('camera-position').textContent='Pose in '+M.coordinate_frame+' · units: '+M.units;
  $('selected-frame').src=f.preview_path;$('selected-frame').alt='Source frame for '+id;
- $('frame-meta').textContent=f.frame_id+' · '+c.width+' × '+c.height+' px · '+f.quality?.state+' provenance';
+ $('frame-meta').textContent=f.frame_id+' · '+c.width+' × '+c.height+' px · view '+(f.source_view_id||'unknown')+' · '+(f.split||'unknown split')+' · '+(c.calibration_model||'calibration unspecified')+(c.frustum_projection==='approximate_ignore_distortion'?' · APPROXIMATE FRUSTUM (distortion)':'');
  document.querySelectorAll('.camera-btn').forEach(el=>el.classList.toggle('active',el.dataset.camera===id));
  if(!HAS_WEBGL && fallback.canvas)renderCanvas();
  return c.frame_id;
@@ -109,10 +118,10 @@ function orbit(t){if(!HAS_WEBGL){fallback.yaw=t*.4;renderCanvas();return Promise
 // with disabled WebGL (for example restricted CI/remote Chromium). Geometry is
 // projected from actual XYZ and is still rotatable/zoomable and layer selectable.
 function canvasProject(p,W,H){
- const x=p[0],y=p[1],z=p[2]-1.5,ca=Math.cos(fallback.yaw),sa=Math.sin(fallback.yaw),cp=Math.cos(fallback.pitch),sp=Math.sin(fallback.pitch);
+ const x=p[0]-sceneCenter[0],y=p[1]-sceneCenter[1],z=p[2]-sceneCenter[2],ca=Math.cos(fallback.yaw),sa=Math.sin(fallback.yaw),cp=Math.cos(fallback.pitch),sp=Math.sin(fallback.pitch);
  const a=ca*x-sa*y,b=sa*x+ca*y;
- const perspective=1 + .018*(b*cp+z*sp);
- const scale=Math.min(W/10,H/7.5)*fallback.zoom;
+ const perspective=Math.max(.15,1 + .08*(b*cp+z*sp)/sceneRadius);
+ const scale=Math.min(W,H)/(sceneRadius*3.1)*fallback.zoom;
  return [W/2+a*scale/perspective,H/2+(b*sp-z*cp)*scale/perspective,b*cp+z*sp];
 }
 function renderCanvas(){
@@ -134,8 +143,8 @@ function renderCanvas(){
  function stroke(points,color,width=2,dash=[]){const good=points.filter(p=>p&&p.every(Number.isFinite));if(good.length<2)return;ctx.strokeStyle=color;ctx.lineWidth=width;ctx.setLineDash(dash);ctx.beginPath();let penDown=false;for(const p of points){if(!p||p.some(x=>!Number.isFinite(x))){penDown=false;continue}const t=proj(p);if(penDown)ctx.lineTo(t[0],t[1]);else{ctx.moveTo(t[0],t[1]);penDown=true}}ctx.stroke();ctx.setLineDash([])}
  function point(p,color,size=4,caption=''){const q=proj(p);ctx.fillStyle=color;ctx.beginPath();ctx.arc(q[0],q[1],size,0,Math.PI*2);ctx.fill();if(caption){ctx.fillStyle='#b8d5e4';ctx.font='10px Segoe UI, sans-serif';ctx.fillText(caption,q[0]+9,q[1]-9)}return q}
  // Reference grid in nonmetric/local coordinates, no scale claim.
- for(let x=-4;x<=4;x+=1){stroke([[x,-3,0],[x,3,0]],'#2b4557',.65)}
- for(let y=-3;y<=3;y+=1){stroke([[-4,y,0],[4,y,0]],'#2b4557',.65)}
+ if(M.synthetic===true){for(let x=-4;x<=4;x+=1){stroke([[x,-3,0],[x,3,0]],'#2b4557',.65)}
+ for(let y=-3;y<=3;y+=1){stroke([[-4,y,0],[4,y,0]],'#2b4557',.65)}}
  const mesh=A.mesh;
  if(state.layers.point_cloud){for(const p of (A.point_cloud?.points||[]))point(p,'#caa9df',1.5)}
  if(state.layers.mesh||state.layers.unknown){let f=mesh.faces.map((face,i)=>({pts:face.map(idx=>mesh.vertices[idx]),attr:mesh.face_attributes?.[i]||{},id:i}));
@@ -151,14 +160,14 @@ function renderCanvas(){
  if(state.layers.path)stroke(cams.map(c=>c.camera_to_world.map(r=>r[3]).slice(0,3)),'#7fa6fa',2.8,[6,5]);
  fallback.coords=[];
  if(state.layers.cameras){for(const c of cams){const m=c.camera_to_world,cen=world(m,[0,0,0]),z=.55,dx=z*c.width/2/c.fx,dy=z*c.height/2/c.fy;
-  const far=[world(m,[-dx,-dy,z]),world(m,[dx,-dy,z]),world(m,[dx,dy,z]),world(m,[-dx,dy,z])];
+  const far=[world(m,[-z*c.cx/c.fx,-z*c.cy/c.fy,z]),world(m,[z*(c.width-c.cx)/c.fx,-z*c.cy/c.fy,z]),world(m,[z*(c.width-c.cx)/c.fx,z*(c.height-c.cy)/c.fy,z]),world(m,[-z*c.cx/c.fx,z*(c.height-c.cy)/c.fy,z])];
   for(const corner of far)stroke([cen,corner],'#81ddca',1.1);
   stroke([...far,far[0]],'#81ddca',1.3);
   const q=point(cen,c.camera_id===state.selectedCamera?'#fbd08d':'#7de3d0',5,c.camera_id.replace('CAM-','C'));
   fallback.coords.push({id:c.camera_id,x:q[0],y:q[1]});
  }}
  ctx.font='11px Segoe UI, sans-serif';ctx.fillStyle='#7fa2b4';ctx.fillText('CANVAS 3D · WEBGL UNAVAILABLE IN THIS ENVIRONMENT',19,H-20);
- ctx.fillStyle='#608fa4';ctx.fillText('X / Y / Z = RECONSTRUCTION FRAME • NONMETRIC',19,26);
+ ctx.fillStyle='#608fa4';ctx.fillText('X / Y / Z = '+M.coordinate_frame+' • '+M.units+' • NONMETRIC',19,26);
 }
 
 function init(){
@@ -166,7 +175,7 @@ function init(){
  $('badge').textContent=M.synthetic?'SYNTHETIC • NO FIELD METRICS':B.deviation_enabled?'VERIFIED METRIC INPUT':'METRIC UNVERIFIED';
  $('frame-coordinates').textContent='FRAME  '+M.coordinate_frame+'  /  '+M.units;
  $('metric-state').textContent=B.deviation_enabled?'METRIC DEVIATION AVAILABLE':'METRIC SCALE NOT VERIFIED · NO DEVIATION VALUES';
- $('integrity-note').textContent=M.synthetic?'All geometry, frames, coverage and confidence are illustrative. No progress or as-built accuracy conclusions.':'Source SHA256 validated before generating preview. Unknown is not zero execution.';
+ $('integrity-note').textContent=(M.synthetic?'SYNTHETIC: coverage/confidence are illustrative; no physical claim. ':'Source image SHA256 verified. Unknown is not zero execution. ')+(M.geometry_alignment_status?('Geometry / camera: '+M.geometry_alignment_status+'. '):'')+(A.camera_poses.quality?.frustum_distortion_approximation?'Distorted camera frusta are approximate; source images remain unchanged.':'');
  $('bim-status').textContent=B.deviation_enabled?'Verified alignment and independent controls supplied.':'Overlay is illustrative/unregistered until survey controls establish metric scale and alignment. Deviation is disabled ('+B.deviation_reason+').';
  $('camera-count').textContent=A.camera_poses.cameras.length;
  $('cameras').innerHTML='';A.camera_poses.cameras.forEach(c=>{
