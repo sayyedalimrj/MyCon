@@ -450,7 +450,11 @@ def run(project_root: Path, run_id: str, *, references_json: Path | None = None,
     if references_json is None and bim_json is None:
         raise ValueError("At least one of references_json or bim_json required")
     root = project_root.resolve()
-    inputs = [p.resolve() for p in (references_json, bim_json, geometry_manifest_json) if p is not None]
+    named_inputs = {name: p.resolve() for name, p in
+                    (("length_references", references_json),
+                     ("bim_features", bim_json),
+                     ("geometry_manifest", geometry_manifest_json)) if p is not None}
+    inputs = list(named_inputs.values())
     if any(not p.is_relative_to(root) for p in inputs):
         raise ValueError("Input paths must be relative to project root for provenance")
     for p in inputs:
@@ -483,8 +487,8 @@ def run(project_root: Path, run_id: str, *, references_json: Path | None = None,
         # A prior partial run ID must never be re-used, even if its leaf is absent.
         raise FileExistsError("Refusing to replace/reuse run: " + str(target.parent))
     target.parent.parent.mkdir(parents=True, exist_ok=True)
-    source_hashes = {p.name: {"path": p.relative_to(root).as_posix(),
-                               "sha256": digest(p)} for p in inputs}
+    source_hashes = {name: {"path": p.relative_to(root).as_posix(),
+                             "sha256": digest(p)} for name, p in named_inputs.items()}
     for item in (scale, alignment):
         item["input_sha256"] = source_hashes
     with tempfile.TemporaryDirectory(prefix=".metric-bim-staging-", dir=root / "runs") as tempdir:
