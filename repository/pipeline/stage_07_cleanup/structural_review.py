@@ -181,7 +181,7 @@ def _html(overlay: dict) -> str:
 <label><input id="planes" type="checkbox" checked>Planes</label><label><input id="edges" type="checkbox" checked>Edges</label>
 <label><input id="corners" type="checkbox" checked>Corners</label><label><input id="points" type="checkbox" checked>Points</label>
 Rotate: drag · Zoom: mouse wheel · Click a feature for ID; no BIM/progress certification</header>
-<canvas id="view"></canvas><aside id="detail">Select a feature. Human approval must be recorded externally.</aside>
+<canvas id="view"></canvas><aside><pre id="detail">Select a feature. Human approval must be recorded externally.</pre><div id="photos"></div></aside>
 <script id="data" type="application/json">''' + embedded + '''</script><script>
 const data=JSON.parse(document.getElementById('data').textContent), cv=document.getElementById('view'), cx=cv.getContext('2d');
 let a=.45,b=.25,zoom=1,down=false,px=0,py=0,hit=[];
@@ -200,13 +200,88 @@ if(document.getElementById('corners').checked)data.corners.forEach(c=>{let q=pro
 cv.addEventListener('pointerdown',e=>{down=true;px=e.clientX;py=e.clientY});window.addEventListener('pointerup',()=>down=false);
 cv.addEventListener('pointermove',e=>{if(!down)return;a+=(e.clientX-px)/160;b=Math.max(-1.5,Math.min(1.5,b+(e.clientY-py)/160));px=e.clientX;py=e.clientY;draw()});
 cv.addEventListener('wheel',e=>{e.preventDefault();zoom*=e.deltaY>0?.9:1.1;draw()},{passive:false});
-cv.addEventListener('click',e=>{let x=e.offsetX*devicePixelRatio,y=e.offsetY*devicePixelRatio;let arr=hit.map(h=>[Math.hypot(h[0][0]-x,h[0][1]-y),h]).sort((p,q)=>p[0]-q[0]);if(arr.length&&arr[0][0]<40)document.getElementById('detail').textContent=JSON.stringify({kind:arr[0][1][2],feature:arr[0][1][1]},null,2)});
+cv.addEventListener('click',e=>{let x=e.offsetX*devicePixelRatio,y=e.offsetY*devicePixelRatio;let arr=hit.map(h=>[Math.hypot(h[0][0]-x,h[0][1]-y),h]).sort((p,q)=>p[0]-q[0]);if(arr.length&&arr[0][0]<40){const feature=arr[0][1][1];document.getElementById('detail').textContent=JSON.stringify({kind:arr[0][1][2],feature:feature},null,2);
+const photos=document.getElementById('photos');photos.replaceChildren();(feature.supporting_images||[]).slice(0,6).forEach(rec=>{
+const figure=document.createElement('figure');figure.style.cssText='display:inline-block;position:relative;width:340px;max-width:85vw;margin:8px;border:1px solid #64748b';
+const pic=document.createElement('img');pic.src=rec.image_relative_to_review;pic.alt='Source capture '+rec.view_id;pic.style.cssText='width:100%;height:auto;display:block';figure.appendChild(pic);
+const dot=document.createElement('span');dot.textContent='+';dot.style.cssText='position:absolute;color:#ff3344;font-weight:900;font-size:28px;text-shadow:0 0 2px white';
+dot.style.left=(100*rec.pixel_xy[0]/rec.image_width)+'%';dot.style.top=(100*rec.pixel_xy[1]/rec.image_height)+'%';figure.appendChild(dot);
+const cap=document.createElement('figcaption');cap.textContent=rec.view_id+' · FOV ONLY / OCCLUSION UNKNOWN · NOT APPROVED';cap.style.padding='4px';figure.appendChild(cap);photos.appendChild(figure)})}});
 ['points','planes','edges','corners'].forEach(id=>document.getElementById(id).addEventListener('change',draw));addEventListener('resize',size);size();
 </script></body></html>'''
 
 
+def _camera_evidence(root: Path, index_path: Path, *, frame: str, units: str) -> tuple[list[dict], str]:
+    """Validate source image hashes and calibrated camera conventions before projection.
+
+    Camera FOV is only a location hypothesis: it DOES NOT establish occlusion
+    clearance, visible material, floor/ceiling, or independent field truth.
+    """
+    ix = safe_input(root, str(index_path.resolve().relative_to(root.resolve())))
+    data = json.loads(ix.read_text(encoding="utf-8"))
+    if (data.get("schema_version") != "mycon.camera_evidence_index.v1" or
+            data.get("coordinate_frame") != frame or data.get("units") != units):
+        raise ValueError("Camera evidence schema/frame/units mismatch")
+    cams = data.get("cameras")
+    if not isinstance(cams, list) or not cams:
+        raise ValueError("No source cameras in camera evidence index")
+    verified = []
+    for cam in cams:
+        if (cam.get("frame_convention") != "colmap_opencv_world_to_camera" or
+                cam.get("calibration_verified") is not True):
+            raise ValueError("Uncalibrated source camera is not usable evidence")
+        image = safe_input(root, cam["image_path"])
+        if sha(image) != cam.get("image_sha256"):
+            raise ValueError("Source image SHA-256 mismatch")
+        # Reject arbitrary files masquerading as photographs. An image hash alone
+        # does not prove actual scene correspondence, but image decoding is a gate.
+        from PIL import Image
+        with Image.open(image) as picture:
+            if picture.format not in ("JPEG", "PNG", "WEBP"):
+                raise ValueError("Unsupported source image format")
+            dims = picture.size
+            picture.verify()
+        if dims != (int(cam["width"]), int(cam["height"])):
+            raise ValueError("Camera metadata/image dimensions mismatch")
+        extrinsic = np.asarray(cam.get("world_to_camera_4x4"), float)
+        if (extrinsic.shape != (4,4) or not np.isfinite(extrinsic).all() or
+                not np.allclose(extrinsic[3], [0,0,0,1]) or
+                not np.allclose(extrinsic[:3,:3].T @ extrinsic[:3,:3], np.eye(3), atol=.01) or
+                np.linalg.det(extrinsic[:3,:3]) < .99):
+            raise ValueError("Invalid/nonrigid source camera extrinsics")
+        f = [float(cam[k]) for k in ("fx","fy","cx","cy")]
+        w,h = int(cam["width"]),int(cam["height"])
+        if not np.isfinite(f).all() or min(f[:2]) <= 0 or min(w,h) <= 0:
+            raise ValueError("Invalid image intrinsics/dimensions")
+        verified.append({"view_id": str(cam["view_id"]), "image_sha256":sha(image),
+                         "image_path":cam["image_path"], "world_to_camera_4x4":extrinsic,
+                         "fx":f[0],"fy":f[1],"cx":f[2],"cy":f[3],"width":w,"height":h})
+    return verified,sha(ix)
+
+
+def _project_evidence(feature: dict, kind: str, cameras: list[dict], *, root: Path, target: Path) -> list[dict]:
+    xyz = (feature["xyz"] if kind == "corner" else feature["centroid"] if kind == "plane"
+           else np.mean(np.asarray(feature["endpoints_xyz"],float),axis=0))
+    xyz=np.asarray(xyz,dtype=float)
+    out=[]
+    for cam in cameras:
+        q=cam["world_to_camera_4x4"] @ np.r_[xyz,1.0]
+        if q[2] <= 0: continue
+        u=cam["fx"]*q[0]/q[2]+cam["cx"]
+        v=cam["fy"]*q[1]/q[2]+cam["cy"]
+        if not 0 <= u < cam["width"] or not 0 <= v < cam["height"]: continue
+        photo=safe_input(root,cam["image_path"])
+        out.append({"view_id":cam["view_id"],"image_sha256":cam["image_sha256"],
+                    "pixel_xy":[float(u),float(v)],"image_width":cam["width"],"image_height":cam["height"],"image_path":cam["image_path"],
+                    "image_relative_to_review":os.path.relpath(photo,target).replace(os.sep,"/"),
+                    "status":"projected_in_fov_occlusion_unverified",
+                    "human_pixel_verification":False,"image_support_confirmed":False})
+    return out
+
+
 def generate(root: Path, base_manifest: Path, run_id: str, *, seed: int = 17,
-             noise_sigma: float | None = None, input_kind: str = "unknown") -> dict:
+             noise_sigma: float | None = None, input_kind: str = "unknown",
+             camera_index: Path | None = None) -> dict:
     if not run_id.startswith("geom-civil-") or not run_id[11:].replace("-", "").replace("_", "").isalnum():
         raise ValueError("Run ID must use geom-civil-* with alphanumeric suffix")
     root = root.resolve(); base_manifest = base_manifest.resolve()
@@ -214,6 +289,9 @@ def generate(root: Path, base_manifest: Path, run_id: str, *, seed: int = 17,
         raise ValueError("Base manifest must be an existing project-relative file")
     base = json.loads(base_manifest.read_text())
     original = validated_outputs(root, base)  # hash gate BEFORE any output creation
+    if input_kind == "real_reconstruction" and base.get("source_kind") not in (
+            "colmap_dense", "depth_fused_candidate_nonmetric", "observed_mesh_sample"):
+        raise ValueError("Cannot mark unknown/synthetic source as real reconstruction")
     xyz = np.load(original["clean_cloud.npy"], allow_pickle=False)
     if xyz.ndim != 2 or xyz.shape[1] != 3 or not len(xyz) or not np.isfinite(xyz).all():
         raise ValueError("Invalid clean cloud array")
@@ -228,6 +306,9 @@ def generate(root: Path, base_manifest: Path, run_id: str, *, seed: int = 17,
     sigma = float(noise_sigma) if noise_sigma is not None else threshold*.5
     if not np.isfinite(sigma) or sigma < 0: raise ValueError("Invalid perturbation sigma")
     target = root/"runs"/run_id/"geometry"
+    frame=str(base.get("coordinate_frame", "unknown")); units=str(base.get("units", "unknown_reconstruction_units"))
+    cameras, camera_index_sha = (_camera_evidence(root,camera_index,frame=frame,units=units)
+                                 if camera_index is not None else ([],None))
     if target.parent.exists():
         raise FileExistsError("Refuse existing output Run ID: "+str(target.parent))
     plane_ids = set()
@@ -253,10 +334,17 @@ def generate(root: Path, base_manifest: Path, run_id: str, *, seed: int = 17,
                            "uncalibrated_fit_quality_score": quality,
                            "occupancy_fraction_observed_grid": coverage}
         p["physical_surface_confirmed"] = False
+        p["normal_sign_verified"] = False
+        p["detection_reason"] = "bounded observed 3D samples and local plane residual; semantic class unverified"
+        p["supporting_images"] = _project_evidence(p,"plane",cameras,root=root,target=target)
+        p["image_evidence_state"] = "in_fov_only_unverified_occlusion" if p["supporting_images"] else "unknown_missing_calibrated_image"
         stress[pid] = _stability(xyz, idx, p, sigma, seed+i)
     for e in edges:
         if not set(e.get("plane_ids", [])).issubset(plane_ids): raise ValueError("Edge has nonexistent plane")
         e["physical_edge_confirmed"] = False; e["human_review_state"] = "pending"
+        e["supporting_images"] = _project_evidence(e,"edge",cameras,root=root,target=target)
+        e["image_evidence_state"] = "in_fov_only_unverified_occlusion" if e["supporting_images"] else "unknown_missing_calibrated_image"
+        e["detection_reason"] = "finite local support from both parent planes; not independently photographed"
         e["confidence"] = {"calibrated_probability": None, "status": "not_calibrated",
                            "uncalibrated_support_score": float(np.clip(min(e.get("support_count_per_plane",[0]))/20,0,1))}
     edge_ids={e["edge_id"] for e in edges}
@@ -271,6 +359,9 @@ def generate(root: Path, base_manifest: Path, run_id: str, *, seed: int = 17,
         if c.get("state")=="observed_supported" and not supported:
             c["state"]="unknown"; c["review_reason"]="support_or_multiscale_gate_failed"
         c["field_confirmed"] = False; c["human_review_state"] = "pending"
+        c["supporting_images"] = _project_evidence(c,"corner",cameras,root=root,target=target)
+        c["image_evidence_state"] = "in_fov_only_unverified_occlusion" if c["supporting_images"] else "unknown_missing_calibrated_image"
+        c["detection_reason"] = "trihedral mathematical hypothesis; field/image verification absent"
         c["confidence"] = {"calibrated_probability": None, "status": "not_calibrated",
                            "uncalibrated_local_support_score": float(np.clip(min(c.get("support_near_corner_per_plane",[0]))/10,0,1))}
     target.mkdir(parents=True, exist_ok=False)
@@ -280,15 +371,22 @@ def generate(root: Path, base_manifest: Path, run_id: str, *, seed: int = 17,
     colors=np.tile(np.array([112,119,130],dtype=np.uint8),(len(xyz),1))
     for i,p in enumerate(planes): colors[np.asarray(p["support_indices"],int)] = PALETTE[i%len(PALETTE)]
     _write_ply(target/"planes_colored.ply",xyz,colors)
-    frame=str(base.get("coordinate_frame", "unknown")); units=str(base.get("units", "unknown_reconstruction_units"))
     for name,features in (("planes",planes),("edges",edges),("corners",corners)):
         data={"schema_version":SCHEMA, "run_id":run_id, "coordinate_frame":frame, "units":units,
               "source_sha256":sha(original[name+".json"]),"provenance":{"source_run_id":base.get("run_id"),
               "source_manifest_sha256":sha(base_manifest)}, name:features}
         (target/(name+".json")).write_text(json.dumps(data,indent=2),encoding="utf-8")
     qa={"schema_version":SCHEMA,"run_id":run_id,"input_kind":input_kind,
+        "source_kind":base.get("source_kind", "unknown"),
+        "engineering_acceptance":"NOT_FIELD_VALIDATED",
+        "independent_surveys_available":False,
+        "human_visual_review_completed":False,
         "coordinate_frame":frame,"units":units,"metric_scale_verified":False,"registration_verified":False,
         "confidence_calibrated":False,"camera_visibility_verified":False,
+        "source_camera_index_sha256":camera_index_sha,
+        "calibrated_source_camera_count":len(cameras),
+        "feature_image_support_confirmed_count":0,
+        "image_support_policy":"in-FOV projection is not reviewed image support or occlusion proof",
         "original_source_sha256":base.get("source_sha256"), "base_manifest_sha256":sha(base_manifest),
         "quality_assessment":"synthetic_algorithm_diagnostic_only" if input_kind=="synthetic" else "not_determined_without_independent_ground_truth",
         "counts":{**counts,"observed_supported_corner_candidates":sum(c.get("state")=="observed_supported" for c in corners),
@@ -302,12 +400,21 @@ def generate(root: Path, base_manifest: Path, run_id: str, *, seed: int = 17,
                        "Sensitivity diagnostics are not independent accuracy estimates"],
         "software":{"python":platform.python_version(),"numpy":np.__version__,"platform":platform.platform()}}
     (target/"geometry_qa.json").write_text(json.dumps(qa,indent=2),encoding="utf-8")
+    with (target/"stability_report.csv").open("w",encoding="utf-8",newline="") as f:
+        writer=csv.writer(f)
+        writer.writerow(["plane_id","test_variant","status","sample_count","normal_angle_delta_degrees",
+                         "residual_p95_source_units","coordinate_frame","units","interpretation"])
+        for plane_id,variants in stress.items():
+            for variant,report in variants.items():
+                writer.writerow([plane_id,variant,report.get("status"),report.get("sample_count"),
+                    report.get("normal_angle_delta_degrees"),report.get("residual_p95_source_units"),frame,units,
+                    "same-feature refit only, not independent re-detection or field accuracy"])
     with (target/"components.csv").open("w",encoding="utf-8",newline="") as f:
         w=csv.writer(f);w.writerow(["type","feature_id","state","support_count","residual_p95_source_units",
-                                  "confidence_calibrated","manual_review","units","frame"])
-        for p in planes:w.writerow(["plane",p["plane_id"],p.get("fit_state"),p.get("point_count"),p.get("residual_p95_units"),"no","pending",units,frame])
-        for e in edges:w.writerow(["edge",e["edge_id"],e.get("fit_state"),sum(e.get("support_count_per_plane",[])),"","no","pending",units,frame])
-        for c in corners:w.writerow(["corner",c["corner_id"],c.get("state"),min(c.get("support_near_corner_per_plane",[0])),"","no","pending",units,frame])
+                                  "confidence_calibrated","manual_review","units","frame","image_evidence_state","supporting_image_count","detection_reason"])
+        for p in planes:w.writerow(["plane",p["plane_id"],p.get("fit_state"),p.get("point_count"),p.get("residual_p95_units"),"no","pending",units,frame,p["image_evidence_state"],len(p["supporting_images"]),p["detection_reason"]])
+        for e in edges:w.writerow(["edge",e["edge_id"],e.get("fit_state"),sum(e.get("support_count_per_plane",[])),"","no","pending",units,frame,e["image_evidence_state"],len(e["supporting_images"]),e["detection_reason"]])
+        for c in corners:w.writerow(["corner",c["corner_id"],c.get("state"),min(c.get("support_near_corner_per_plane",[0])),"","no","pending",units,frame,c["image_evidence_state"],len(c["supporting_images"]),c["detection_reason"]])
     with (target/"manual_review_template.csv").open("w",encoding="utf-8",newline="") as f:
         w=csv.writer(f);w.writerow(["feature_id","reviewer","review_date_utc","decision:accept/reject/unknown","reason","photo_or_survey_sha256"])
         for item in planes+edges+corners:w.writerow([item.get("plane_id",item.get("edge_id",item.get("corner_id"))),"","","unknown","",""])
@@ -332,7 +439,7 @@ def generate(root: Path, base_manifest: Path, run_id: str, *, seed: int = 17,
               "coordinate_frame":frame,"units":units,"metric_scale_verified":False,"registration_verified":False,
               "source_manifest_relative_path":base_manifest.relative_to(root).as_posix(),
               "source_manifest_sha256":sha(base_manifest),"source_run_id":base.get("run_id"),
-              "source_camera_sha256":base.get("source_camera_sha256"),
+              "source_camera_sha256":camera_index_sha or base.get("source_camera_sha256"),
               "source_stage7_planes_sha256":base.get("source_stage7_planes_sha256"),
               "input_kind":input_kind,"software":qa["software"],"seed":seed,"outputs":outputs,
               "provenance":{"method":"read_only_feature_review; reuse_existing_stage7_cloud_and_features",
@@ -349,9 +456,10 @@ def main(argv=None):
     parser.add_argument("--seed",type=int,default=17)
     parser.add_argument("--input-kind",choices=("unknown","synthetic","real_reconstruction"),default="unknown")
     parser.add_argument("--noise-sigma",type=float)
+    parser.add_argument("--camera-index",type=Path,help="Optional SHA-verified calibrated source photo index in same frame")
     a=parser.parse_args(argv)
     try: result=generate(a.project_root,a.base_manifest,a.run_id,seed=a.seed,
-                         input_kind=a.input_kind,noise_sigma=a.noise_sigma)
+                         input_kind=a.input_kind,noise_sigma=a.noise_sigma,camera_index=a.camera_index)
     except (OSError,ValueError,KeyError,TypeError,ImportError) as ex:
         print(json.dumps({"status":"blocked","reason":str(ex)}));return 2
     print(json.dumps({"status":"generated","run_id":result["run_id"],"metric_scale_verified":False}));return 0
