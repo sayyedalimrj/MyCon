@@ -227,3 +227,56 @@ All paths above are prefixed with \`repository/\` in GitHub.
 **Coordinator:** G0 ownership check, original-repo compile+pytest and Stage9/11 CLI, real A source artefact with independent camera QA and later surveyed scale/BIM links. Only **independently signed quantity, approved BOQ weights, dated baseline and evidence trace** can enable scientific physical progress or schedule decisions. Full G1–G5 research/real-site gates remain blocked until verified inputs. Review PR #37 before any merge.
 
 **Status:** implemented=true; local synthetic adapter unit_tested=true (21); standalone diagnostic CLI_executed=true; original_repo_full_tested=false; real_geometry_validated=false; verified_metric_bim_mapping=false; publication_ready=false.
+
+
+---
+
+# B Addendum — Physical monitoring five-file handoff, 2026-11-13
+
+**New independent branch:** research/mycon-progress-monitor-20261113  
+**PR base:** research/mycon-integration-20261112. Do not merge (only coordinator may merge).  
+**Starting integration SHA:** dceaf49114a11d79e17dd12495d4ab99cb901c38.  
+**Exact latest B code/test SHA before handoff:** 335a80fb3961f49b32706a3a9a95a75276fe37a9.  
+**Independent workstream Run ID for example:** progress-monitor-synthetic-01.  
+**Output directory (when executed):** repository/runs/b-progress-monitor/progress-monitor-synthetic-01/; never overwrite originals.
+
+## Committed changes, B ownership only
+
+- repository/pipeline/stage_09_progress/element_status_export.py — quantity-backed IFC categorical status with independent absence-document gate; per-class held-out GT precision/recall/F1 and separate numerical MAE, site-disjoint split checks.
+- repository/pipeline/stage_09_progress/geometry_evidence_adapter.py — additive, manifest-audited image SHA/view/capture references and geometry support sample IDs; no copied images or A file edits.
+- repository/pipeline/stage_11_schedule_variance/run_physical_monitor.py — standalone Stage9→Stage11 CLI; verifies project-relative input paths, reuses approved geometry adapter and scientific_progress.v2, produces exactly five named outputs with run isolation.
+- repository/tests/test_research_progress_monitor.py — new synthetic unit/scheme/GT tests.
+- repository/tests/test_research_progress_scientific.py — B-owned existing CI-selected test augmented with synthetic five-output integration and camera provenance checks.
+- repository/docs/research_progress/physical_monitor_v1.md — versioned status semantics, CLI, scientific caveats and GT contract.
+- repository/docs/parallel_handoffs/progress.md — this addendum.
+
+**New outputs:** element_status.csv, element_metrics.csv, activity_progress.csv, schedule_variance.json, progress_dashboard.json. JSON versions mycon.physical_monitor.schedule_variance.v1 / mycon.physical_monitor.dashboard.v1; per-element state mycon.element_status.v1. Stage11 embedded scientific source remains mycon.scientific_progress.v2. Old contracts/columns unchanged.
+
+## Exact prior synthetic fixture inputs and SHA-256 (checked in earlier Round2 local mirror log)
+
+- configs/research_progress/round2_contract_fixture/elements_stage9.csv — 223ba25fa0e17fa5347af3fad932b8b553c0c387b54b04c918ff1a41852c659e
+- configs/research_progress/round2_contract_fixture/mapping.csv — e71c73da8ee02e3843b2a8306b47b9e7dfbfbb1131ef246a641d0dde3d9539b7
+- configs/research_progress/round2_contract_fixture/schedule.csv — f69680206e91ba94beb23455e032dfbfcbd443d5a60a435dd8ed82479989edb3
+- Optional geometry manifest SHA-256 — 80768472c67c45291318bcfe30faca00ca01951ef93f9d3e2851b168f2e7681a
+
+These are historical documented fixture hashes, not newly revalidated on this branch. New CLI calculates file hashes during execution. Synthetic sample expected: two elements with labels in_progress and unknown, numeric 0.8 for signed element, unknown second; weight ratio 3:1; project point=null, progress bounds [60,85]%, approved plan 50%, variance bounds [+10,+35] percentage points, blocked schedule-decision. These are **expected test assertions, not a new observed run or field data**.
+
+## Tests and execution evidence
+
+**New B test suite and full source CLI:** NOT EXECUTED in this session at the time of this handoff; connector allows GitHub source writes/reads but cannot execute Python. Container network/DNS cannot retrieve github.com for a complete checkout. The historical Round2 local 28 tests and geometry local 21 tests belong to earlier commits and do not validate this new code.
+
+**Authored checks:** syntax via CI compile (pending), full five-file CLI fixture, source SHA conservation, exclusive-create idempotence, invalid schema pre-write failure, grounded/not-grounded negative status, calibrated geometry provenance, null GT metrics, numeric-vs-categorical scoring, site-level train/test leakage, approved weighted bounds.
+
+**Suggested exact commands (not yet asserted executed):**
+    cd repository
+    python -m compileall -q pipeline/stage_09_progress pipeline/stage_11_schedule_variance
+    python -m pytest -q tests/test_research_progress_monitor.py tests/test_research_progress_scientific.py tests/test_round2_progress_contract.py tests/test_stage_11_schedule_variance.py
+    python -m pipeline.stage_11_schedule_variance.run_physical_monitor --element-metrics-csv configs/research_progress/round2_contract_fixture/elements_stage9.csv --mapping-csv configs/research_progress/round2_contract_fixture/mapping.csv --schedule-csv configs/research_progress/round2_contract_fixture/schedule.csv --project-root . --data-date-utc 2026-01-16T00:00:00Z --output-root runs/b-progress-monitor --research-run-id progress-monitor-synthetic-01
+
+**Known integration blockers and unknowns:**
+1. No independent as-planned IFC, scanned building/validated Stage8 metric registration, approved dated quantities/BOQ/activity weights and real held-out expert GT. G2–G4 blocked_missing_input.
+2. No empirical multi-site precision, recall, F1, progress MAE or real image coverage can be claimed from the synthetic-only fixture.
+3. CI execution on actual integrated checkout remains a G1 gate; new monitor tests need explicit execution by coordinator even if older research workflow runs.
+4. B→A interface requirement remains a matching project-relative, SHA-verified optional mycon.bim_geometry_evidence.v1 manifest and source image QA; B modified no Stage08 path. C should consume independently audited ground truth and avoid computing numeric MAE from categorical unknowns.
+
+**Merge safety:** No merge, no rebase, no Force, no main edits; all changed files confined to B ownership.
