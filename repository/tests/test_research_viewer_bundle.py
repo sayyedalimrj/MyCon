@@ -30,7 +30,7 @@ def test_read_only_bundle_and_camera_source_links(source):
     assert len(b["assets"]["camera_poses"]["cameras"])==6
     assert len(b["assets"]["frame_manifest"]["frames"])==6
     assert b["deviation_enabled"] is False
-    assert b["deviation_reason"]=="synthetic_dataset"
+    assert b["deviation_reason"]=="synthetic_or_unspecified_source"
 
 
 def test_sha256_tampering_rejected(source):
@@ -138,3 +138,32 @@ def test_browser_frame_selection_toggles_and_canvas_fallback(source,tmp_path):
         assert page.evaluate("window.MyCONViewer.state.layers.bim") is True
         page.screenshot(path=str(tmp_path/"synthetic_browser_capture.png"))
         browser.close()
+
+
+def test_metric_claim_flags_without_survey_receipts_remain_disabled(source):
+    """Fabricated flags cannot unlock any metric deviation without independent evidence files."""
+    from viewer_civil.core import _deviation_gate
+    b=load_bundle(source)
+    manifest=dict(b["manifest"],synthetic=False,metric_scale_verified=True,
+                  registration_verified=True,units="m")
+    assets=dict(b["assets"])
+    assets["alignment_result"]=dict(assets["alignment_result"],units="m",
+        metric_scale_verified=True,registration_verified=True,
+        independent_control_verified=True,reviewer_id="synthetic-reviewer")
+    allowed,reason=_deviation_gate(manifest,assets,source)
+    assert not allowed and reason=="independent_evidence_receipts_missing"
+
+
+def test_optional_point_cloud_nonfinite_coordinates_rejected(source):
+    src=source/"point_cloud.json"
+    mpath=source/"viewer_manifest.json"
+    m=json.loads(mpath.read_text())
+    common={key:m[key] for key in ("units","coordinate_frame","quality","provenance")}
+    content={**common,"schema_version":"mycon.viewer.point_cloud.v1",
+             "points":[[0.,0.,0.],[float("nan"),0.,0.]]}
+    src.write_text(json.dumps(content))
+    m["files"]["point_cloud"]={**common,"schema_version":content["schema_version"],
+                               "path":src.name,"sha256":hashlib.sha256(src.read_bytes()).hexdigest()}
+    mpath.write_text(json.dumps(m))
+    with pytest.raises(ViewerInputError,match="point_cloud points invalid"):
+        load_bundle(source)
