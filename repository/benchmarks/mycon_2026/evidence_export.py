@@ -18,6 +18,7 @@ import statistics
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
+from .paired_views import evaluate_paired_views
 
 SCHEMA = 'mycon.thesis_evidence.v1'
 COLS = {
@@ -349,7 +350,7 @@ def export(manifest_path,output_root):
         methods=defaultdict(list)
         for e in group:methods[(e['method'],e['variant'])].append(e['value'])
         combos=sorted(methods)
-        if not capture or not gt: continue
+        if not capture or not gt or metric in ('psnr_db','ssim','lpips'): continue
         for i,a in enumerate(combos):
             for b in combos[i+1:]:
                 aa,bb=statistics.mean(methods[a]),statistics.mean(methods[b]); example=group[0]
@@ -365,8 +366,9 @@ def export(manifest_path,output_root):
         idx=max(0,math.ceil(len(values)*.1)-1)
         rows['view_tail_summary.csv'].append(dict(schema_version=SCHEMA,run_id=run_id,method=method,variant=variant,metric=metric,percentile='P10',worst_decile_mean=statistics.mean(values[:dec]),n_views=len(values),n_sites=len({x['site_id'] for x in rr}),unit=unit,status='evaluated',reason='descriptive_lower_tail_heldout_views',provenance='real_reviewed_test_only'))
     for name in COLS:_write_csv(out/name,COLS[name],rows[name])
+    pairing = evaluate_paired_views(cases,registry,rows['per_view_metrics.csv'],run_id,out)
     # Declared experiment grid and not-evaluated science remain inspectable.
-    _json(out/'experiment_registry.json',{'schema_version':SCHEMA,'run_id':run_id,'manifest_sha256':mh,'experiments':registry,'scientific_evaluated_experiments':sum(x['status']=='evaluated' for x in registry),'required_ablation_axes':['old_new','frame_count','resolution','cleaning','algorithm','seed'],'untested_axes_status':'not_evaluated'})
+    _json(out/'experiment_registry.json',{'schema_version':SCHEMA,'run_id':run_id,'manifest_sha256':mh,'experiments':registry,'scientific_evaluated_experiments':sum(x['status']=='evaluated' for x in registry),'required_ablation_axes':['old_new','frame_count','resolution','cleaning','algorithm','seed'],'untested_axes_status':'not_evaluated','paired_view_audit':pairing})
     _json(out/'figure_status.json',render_figures(out,eligible,run_id))
     methods=(Path(__file__).resolve().parents[2]/'docs/research_validation/methods_and_parameters.md')
     if methods.is_file(): (out/'methods_and_parameters.md').write_text(methods.read_text(encoding='utf-8'),encoding='utf-8')

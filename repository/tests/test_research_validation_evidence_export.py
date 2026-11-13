@@ -167,3 +167,93 @@ def test_metric_geometry_requires_independent_control_split(tmp_path):
     out=export(root/'manifest.json',tmp_path/'output')
     assert 'invalid_or_leaking_metric_scale_controls' in (out/'failure_cases.csv').read_text()
     assert len((out/'geometry_metrics.csv').read_text().splitlines())==1
+
+# Round 2: per-view pairing rather than case-only averaging.
+from benchmarks.mycon_2026.paired_views import evaluate_paired_views
+
+
+def _pair_fixture():
+    hash_a='a'*64; hash_b='b'*64; hash_c='c'*64
+    def method(name, variant):
+        return {'case_id':'room-001','site_id':'site-1','building_id':'room-1',
+            'session_id':'session-1','method':name,'variant':variant,'paired_reference':name=='old',
+            'capture_sha256':hash_a,'independent_gt_source':{'sha256':hash_b},
+            'paired_test_view_ids':['v0','v1'],
+            'views':[{'view_id':v,'reference_rgb':{'sha256':hash_c},
+                      'camera_receipt_sha256':hash_b,'mask_sha256':hash_a,
+                      'color_space':'sRGB'} for v in ('v0','v1')]}
+    cases=[method('old','192'),method('new','more')]
+    registry=[dict(case_id=c['case_id'],method=c['method'],variant=c['variant'],
+              scientific_eligible=True,status='evaluated',split='test',data_kind='real') for c in cases]
+    rows=[]
+    for c in cases:
+        for j,v in enumerate(('v0','v1')):
+            rows.append(dict(case_id='room-001',method=c['method'],variant=c['variant'],
+              view_id=v,metric='ssim',value=.5+(.1 if c['method']=='new' else 0)+j*.01,
+              reference_sha256=hash_c,prediction_sha256=(hash_a if c['method']=='old' else hash_b),
+              status='evaluated'))
+    return cases,registry,rows
+
+
+def test_paired_view_exact_roster_and_gt(tmp_path):
+    cases,reg,rows=_pair_fixture()
+    summary=evaluate_paired_views(cases,reg,rows,'validation-c-test',tmp_path)
+    assert summary['complete_case_metric_pairs']==1
+    assert summary['independent_site_cluster_intervals']==0
+    with (tmp_path/'paired_view_ablations.csv').open() as f:
+        rec=[r for r in csv.DictReader(f) if r['metric']=='ssim'][0]
+    assert rec['n_expected_views']=='2' and rec['n_matched_views']=='2'
+    assert float(rec['mean_candidate_minus_reference'])==pytest.approx(.1)
+    assert rec['status']=='evaluated'
+
+
+def test_paired_view_rejects_missing_prediction(tmp_path):
+    cases,reg,rows=_pair_fixture()
+    rows=[r for r in rows if not (r['method']=='new' and r['view_id']=='v1')]
+    summary=evaluate_paired_views(cases,reg,rows,'validation-c-test',tmp_path)
+    assert summary['complete_case_metric_pairs']==0
+    assert 'missing_or_unmeasured_metric' in (tmp_path/'paired_view_audit.csv').read_text()
+    with (tmp_path/'paired_view_ablations.csv').open() as f:
+        rec=[r for r in csv.DictReader(f) if r['metric']=='ssim'][0]
+    assert rec['n_expected_views']=='2' and rec['n_matched_views']=='1'
+    assert rec['status']=='not_evaluated' and not rec['mean_candidate_minus_reference']
+
+
+def test_paired_view_rejects_camera_receipt_mismatch(tmp_path):
+    cases,reg,rows=_pair_fixture()
+    cases[1]['views'][0]['camera_receipt_sha256']='d'*64
+    result=evaluate_paired_views(cases,reg,rows,'validation-c-test',tmp_path)
+    assert result['complete_case_metric_pairs']==0
+    assert 'camera_receipt_sha256_missing_or_mismatch' in (tmp_path/'paired_view_audit.csv').read_text()
+
+
+def test_paired_view_requires_preregistered_test_roster(tmp_path):
+    cases,reg,rows=_pair_fixture()
+    del cases[0]['paired_test_view_ids']
+    result=evaluate_paired_views(cases,reg,rows,'validation-c-test',tmp_path)
+    assert result['complete_case_metric_pairs']==0
+    assert 'missing_or_inconsistent_frozen_test_roster' in (tmp_path/'paired_view_audit.csv').read_text()
+
+
+def test_synthetic_case_not_sneaking_into_pairing(tmp_path):
+    cases,reg,rows=_pair_fixture()
+    reg[0]['data_kind']='synthetic'
+    result=evaluate_paired_views(cases,reg,rows,'validation-c-test',tmp_path)
+    assert result['audit_rows']==0 and result['complete_case_metric_pairs']==0
+
+
+def test_paired_site_cluster_bootstrap_two_sites_exploratory(tmp_path):
+    cases,reg,rows=_pair_fixture()
+    c2=[];r2=[];data2=[]
+    for c in cases:
+        copy=dict(c,case_id='room-002',site_id='site-2',building_id='room-2',session_id='session-2')
+        c2.append(copy)
+    for r in reg:r2.append(dict(r,case_id='room-002'))
+    for r in rows:data2.append(dict(r,case_id='room-002'))
+    result=evaluate_paired_views(cases+c2,reg+r2,rows+data2,'validation-c-test',tmp_path,draws=100)
+    assert result['complete_case_metric_pairs']==2
+    assert result['independent_site_cluster_intervals']==1
+    with (tmp_path/'paired_site_confidence_intervals.csv').open() as f:
+        ci=[x for x in csv.DictReader(f) if x['metric']=='ssim'][0]
+    assert ci['cluster_unit']=='site' and ci['reason']=='exploratory_small_site_count'
+    assert float(ci['ci95_lower'])<=float(ci['ci95_upper'])
