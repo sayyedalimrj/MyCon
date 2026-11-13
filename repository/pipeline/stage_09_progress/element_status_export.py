@@ -19,7 +19,7 @@ CLASSES = ("built", "not_built", "in_progress")
 def status_for_element(row: Mapping[str, Any], *, data_date: dt.datetime,
                        mapped: bool, unique: bool) -> dict[str, Any]:
     scientific = element_scientific_fields(row, data_date=data_date, require_audit=True)
-    fraction = scientific["physical_progress_estimate"] if mapped and unique else None
+    fraction = scientific["physical_progress_estimate"] if unique else None
     reason = []
     if not mapped:
         reason.append("ifc_id_not_in_approved_activity_mapping")
@@ -37,7 +37,9 @@ def status_for_element(row: Mapping[str, Any], *, data_date: dt.datetime,
         # audited absence is required before asserting the site is unbuilt.
         absence = str(row.get("absence_verified") or "").lower() in {"true", "yes", "1"}
         absence_ref = str(row.get("absence_evidence_ref") or "").strip()
-        state = "not_built" if absence and absence_ref else "unknown"
+        absence_hash = row.get("absence_document_sha256")
+        absence_reviewer = str(row.get("absence_approved_by") or "").strip()
+        state = "not_built" if absence and absence_ref and valid_sha256(absence_hash) and absence_reviewer else "unknown"
         if state == "unknown":
             reason.append("zero_quantity_without_independent_absence_audit")
     geometry_valid = str(row.get("geometry_adapter_valid") or "").lower() in {"true", "yes", "1"}
@@ -71,7 +73,7 @@ def _validate_truth_rows(rows: Iterable[Mapping[str, Any]], *,
                          id_field: str, value_field: str,
                          data_date: dt.datetime) -> list[dict[str, Any]]:
     found: set[str] = set()
-    groups: dict[tuple[str, str], set[str]] = {}
+    groups: dict[str, set[str]] = {}
     result = []
     for original in rows:
         row = dict(original)
@@ -87,7 +89,7 @@ def _validate_truth_rows(rows: Iterable[Mapping[str, Any]], *,
                 or stamp > data_date):
             raise ValueError("invalid_or_non_independent_ground_truth_record:" + key)
         found.add(key)
-        groups.setdefault((site, session), set()).add(split)
+        groups.setdefault(site, set()).add(split)
         if str(row.get(value_field) or "").strip():
             value = finite_number(row[value_field])
             limit = 100 if value_field == "expert_progress_pct" else 1
@@ -95,7 +97,7 @@ def _validate_truth_rows(rows: Iterable[Mapping[str, Any]], *,
                 raise ValueError("invalid_ground_truth_fraction:" + key)
         result.append(row)
     if any(len(splits) > 1 for splits in groups.values()):
-        raise ValueError("train_test_capture_session_leakage")
+        raise ValueError("train_test_site_leakage")
     return [row for row in result if str(row.get("split")).lower() == "test"]
 
 
