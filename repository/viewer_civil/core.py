@@ -71,22 +71,38 @@ def _matrix(m):
     return determinant > .95
 
 
-def _deviation_gate(m, assets):
+def _deviation_gate(m, assets, root):
+    """Fail closed: flags alone are not independent survey evidence."""
     a = assets["alignment_result"]
-    if m.get("synthetic") is True:
-        return False, "synthetic_dataset"
+    if m.get("synthetic") is not False:
+        return False, "synthetic_or_unspecified_source"
     if not (m.get("metric_scale_verified") is True and a.get("metric_scale_verified") is True):
         return False, "metric_scale_not_verified"
     if not (m.get("registration_verified") is True and a.get("registration_verified") is True):
         return False, "registration_not_verified"
-    if a.get("independent_control_verified") is not True:
+    if a.get("independent_control_verified") is not True or not a.get("reviewer_id"):
         return False, "independent_control_not_verified"
     if m["units"] != "m" or a["units"] != "m" or a["coordinate_frame"] != m["coordinate_frame"]:
         return False, "metric_coordinate_mismatch"
+    # Verified evidence must be *present and hashed*, not just asserted in two booleans.
+    receipts = a.get("validation_receipts")
+    if not isinstance(receipts, dict):
+        return False, "independent_evidence_receipts_missing"
+    for role in ("scale_controls", "registration_report", "independent_holdout"):
+        receipt = receipts.get(role)
+        if not isinstance(receipt, dict) or not receipt.get("path") or not HASH.fullmatch(str(receipt.get("sha256", ""))):
+            return False, role + "_receipt_missing"
+        evidence = read_path(root, receipt["path"])
+        if sha256(evidence) != receipt["sha256"]:
+            raise ViewerInputError(role + " evidence SHA256 mismatch")
+    if not isinstance(a.get("heldout_control_count"), int) or a["heldout_control_count"] < 1:
+        return False, "independent_holdout_missing"
     d = assets["mesh"].get("deviations")
     faces = assets["mesh"].get("faces", [])
-    if not isinstance(d, dict) or not d.get("provenance") or d.get("independently_verified") is not True:
+    if not isinstance(d, dict) or d.get("independently_verified") is not True:
         return False, "no_independent_deviation_evidence"
+    if not isinstance(d.get("provenance"), dict) or not d["provenance"].get("reviewer_id"):
+        return False, "deviation_review_provenance_missing"
     vals = d.get("per_face_m")
     if d.get("units") != "m" or not isinstance(vals, list) or len(vals) != len(faces):
         return False, "deviation_schema_mismatch"
@@ -172,6 +188,13 @@ def load_bundle(folder):
         ) for f in faces
     ):
         raise ViewerInputError("mesh faces invalid")
+    if "point_cloud" in assets:
+        points = assets["point_cloud"].get("points")
+        if not isinstance(points, list) or len(points) > 250_000 or not all(_vector(p) for p in points):
+            raise ViewerInputError("point_cloud points invalid or excessive")
+    face_attributes = mesh.get("face_attributes")
+    if face_attributes is not None and (not isinstance(face_attributes, list) or len(face_attributes) != len(faces)):
+        raise ViewerInputError("face_attributes must map exactly to mesh faces")
     for p in assets["planes"].get("planes", []):
         if not isinstance(p.get("id"), str) or not all(_vector(v) for v in p.get("vertices", [])):
             raise ViewerInputError("plane invalid")
@@ -181,7 +204,7 @@ def load_bundle(folder):
     for c in assets["corners"].get("corners", []):
         if not _vector(c.get("xyz")):
             raise ViewerInputError("corner invalid")
-    allowed, reason = _deviation_gate(manifest, assets)
+    allowed, reason = _deviation_gate(manifest, assets, root)
     return {"manifest": manifest, "assets": assets, "deviation_enabled": allowed,
             "deviation_reason": reason, "root": root}
 
