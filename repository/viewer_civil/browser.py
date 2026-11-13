@@ -20,7 +20,10 @@ def load_offline_page(page, preview:Path):
         file=preview.parent/frame['preview_path']
         if not file.resolve().is_relative_to(preview.parent.resolve()):
             raise ValueError('Preview image escaped output folder')
-        frame['preview_path']='data:image/png;base64,'+base64.b64encode(file.read_bytes()).decode('ascii')
+        mime={'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp'}.get(file.suffix.lower())
+        if mime is None:
+            raise ValueError('Unsupported preview raster MIME type')
+        frame['preview_path']='data:'+mime+';base64,'+base64.b64encode(file.read_bytes()).decode('ascii')
     html=before+start+json.dumps(payload,ensure_ascii=False).replace('<','\\u003c')+'</script>'+after
     page.set_content(html,wait_until='load')
     page.add_style_tag(content=(preview.parent/'viewer.css').read_text(encoding='utf-8'))
