@@ -380,7 +380,10 @@ def build_transform(bim: dict | None, scale: dict) -> tuple[dict, tuple | None]:
         else:
             raise ValueError("Unsupported registration.method")
     except (ValueError, np.linalg.LinAlgError) as exc:
-        output.update(status="blocked_registration_failure", reason=str(exc))
+        # Preserve existing Stage-D diagnostic value for ordinary degeneracy.
+        state = ("blocked_degenerate_correspondences" if method == "umeyama"
+                 else "blocked_robust_registration")
+        output.update(status=state, reason=str(exc))
         return output, None
     output["registration_method"] = method
     output["fit_inlier_match_ids"] = [matches[i]["match_id"] for i in chosen_ids]
