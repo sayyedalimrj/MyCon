@@ -223,6 +223,13 @@ def main(argv: list[str] | None = None) -> int:
         baselines = _read_csv(baseline_path, ("activity_id",))
         ground = _read_csv(args.ground_truth_csv, ("global_id", "split", "site_id", "capture_session_id", "reviewer", "verified_at_utc", "document_sha256")) if args.ground_truth_csv else None
         expert = _read_csv(args.expert_progress_csv, ("activity_id", "split", "site_id", "capture_session_id", "reviewer", "verified_at_utc", "document_sha256")) if args.expert_progress_csv else None
+        # Preflight source safety BEFORE creating any output files.
+        selected_inputs = [args.element_metrics_csv, args.schedule_csv, args.mapping_csv, baseline_path]
+        selected_inputs += [path for path in (args.geometry_manifest, args.ground_truth_csv,
+                                             args.expert_progress_csv) if path is not None]
+        if any(not path.resolve().is_relative_to(args.project_root.resolve())
+               for path in selected_inputs):
+            raise ValueError("input_outside_project_root")
         stage9, geometry = enrich_scientific_evidence_rows(
             raw, manifest_path=args.geometry_manifest, project_root=args.project_root,
             expected_ifc_sha256=args.expected_ifc_sha256,
