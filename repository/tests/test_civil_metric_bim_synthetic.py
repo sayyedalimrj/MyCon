@@ -26,6 +26,7 @@ def span(name, length, role="fit", source=None, actual=True, kind="field_measure
         "actual_uncertainty_m": 0.002,
         "scan_distance_uncertainty_units": 0.0001,
         "approval": approval(),
+        "confidence": {"grade": "high_reviewed", "calibrated_probability": None},
     }
 
 
@@ -106,6 +107,12 @@ def test_nominal_only_never_accepted_for_scale():
     s = length_scale(r)
     assert s["scale_m_per_reconstruction_unit"] is None
     assert s["references"][0]["state"] == "nominal_only_not_accepted"
+
+
+def test_low_confidence_review_rejected():
+    r = references()
+    r["references"][0]["confidence"]["grade"] = "medium_provisional"
+    assert length_scale(r)["scale_m_per_reconstruction_unit"] is None
 
 
 def test_unapproved_references_rejected():
