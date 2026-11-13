@@ -28,6 +28,11 @@ def status_for_element(row: Mapping[str, Any], *, data_date: dt.datetime,
     if fraction is None:
         reason.extend(filter(None, scientific["physical_progress_reason_codes"].split(";")))
         state = "unknown"
+    elif not mapped:
+        # A verified quantity can remain numeric, but an unmapped IFC element
+        # cannot acquire a project/activity construction decision.
+        state = "unknown"
+        reason.append("verified_quantity_without_approved_ifc_activity_link")
     elif math.isclose(fraction, 1.0, abs_tol=1e-12):
         state = "built"  # verified full measured quantity, not quality acceptance
     elif fraction > 0:
@@ -39,14 +44,24 @@ def status_for_element(row: Mapping[str, Any], *, data_date: dt.datetime,
         absence_ref = str(row.get("absence_evidence_ref") or "").strip()
         absence_hash = row.get("absence_document_sha256")
         absence_reviewer = str(row.get("absence_approved_by") or "").strip()
-        state = "not_built" if absence and absence_ref and valid_sha256(absence_hash) and absence_reviewer else "unknown"
+        absence_date = as_utc(row.get("absence_approved_at_utc"))
+        credible_absence = (absence and absence_ref and valid_sha256(absence_hash)
+                            and absence_reviewer and absence_date is not None
+                            and absence_date <= as_utc(data_date))
+        state = "not_built" if credible_absence else "unknown"
         if state == "unknown":
             reason.append("zero_quantity_without_independent_absence_audit")
-    geometry_valid = str(row.get("geometry_adapter_valid") or "").lower() in {"true", "yes", "1"}
+    adapter_valid = str(row.get("geometry_adapter_valid") or "").lower() in {"true", "yes", "1"}
+    geometry_valid = adapter_valid and scientific["geometry_evidence_state"] not in (
+        "uncertain_registration", "unknown_geometry_identity")
     geometry_state = scientific["geometry_evidence_state"] if geometry_valid else "unknown_unverified_geometry"
     occlusion = ("occluded" if geometry_state == "occluded" else
                  "out_of_fov" if geometry_state == "out_of_fov" else
                  "unknown")
+    observability = scientific["observability_ratio"] if geometry_valid else None
+    observation_status = ("not_observable" if occlusion in ("occluded", "out_of_fov")
+                          else "observed" if observability is not None and observability > 0
+                          else "unknown")
     audit = scientific["quantity_audit"]
     return {
         "schema_version": SCHEMA,
@@ -62,7 +77,10 @@ def status_for_element(row: Mapping[str, Any], *, data_date: dt.datetime,
         "image_evidence_refs_json": row.get("image_evidence_refs_json", "[]") if geometry_valid else "[]",
         "geometry_support_sample_ids_json": row.get("geometry_support_sample_ids_json", "[]") if geometry_valid else "[]",
         "occlusion_state": occlusion,
-        "observability_ratio": scientific["observability_ratio"] if geometry_valid else None,
+        "observation_status": observation_status,
+        "observation_reason": occlusion if observation_status == "not_observable" else (
+            "independently_audited_visible_surface" if observation_status == "observed" else "insufficient_visibility_qa"),
+        "observability_ratio": observability,
         "evidence_confidence": scientific["evidence_confidence"] if geometry_valid else None,
         "coordinate_frame": "bim_world" if geometry_valid else "unknown",
         "coordinate_units": "m" if geometry_valid else "unknown",
