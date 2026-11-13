@@ -38,3 +38,46 @@ The fixed-support stress checks quantify *fit sensitivity* (absolute normal angl
 ## Current evidence
 
 Local isolated prototype, Linux CPU/Python 3.11, `PYTHONPATH=. pytest -q tests/test_research_geometry_structural_review.py`: 7 synthetic tests passed, 0 failed, exit 0. The tests instantiate hashed synthetic source files, validate review outputs / SHA, unknown state, source tampering, unique run guard, gravity gate and sensitivity denominators. This is **not a full GitHub checkout/CI or real-site test**. GPU, CUDA/gsplat, large COLMAP dense site files, independently surveyed scale/camera/GT, and published accuracy remain `not_executed` / blocked.
+
+
+## Round 2 — 2026-11-13 | real-source nonmetric geometry candidates
+
+### Research obligation
+See [evidence_review.md](evidence_review.md): five peer-reviewed DOI-verified methods, pinned official Open3D/2DGS revisions and license boundaries, official runnable examples, explicit no-GPU/not-executed blockers, engineering claim-to-evidence table.
+
+### Safe direct input when Stage7 clean cloud is unavailable
+New **opt-in candidate adapter**, `pipeline.stage_07_cleanup.research_dense_candidates`, uses only a **non-Gaussian PLY** obtained from actual dense COLMAP or depth-fused camera reconstruction (or independently sampled mesh), preserving XYZ+RGB, its SHA-256, arbitrary source units and unknown frame. Research RANSAC is not a substitute for verified segmentation. It breaks disconnected planar occupancy regions; candidate intersections require finite nearby points on *both* patches. Trihedral corners require local three-plane/edge evidence and remain `candidate_extrapolated` without verified image observations and surveyed independent controls. No semantic floor/wall/ceiling or metric dimensions are invented.
+
+Run locally from `repository/`:
+
+```bash
+python -m pipeline.stage_07_cleanup.research_dense_candidates \
+  --input-ply /drive/read_only/depth_fused_candidate_nonmetric.ply \
+  --source-receipt /drive/read_only/depth_fusion.json \
+  --source-kind depth_fused_candidate_nonmetric \
+  --project-root /separate/mycon_civil_workstream \
+  --run-id geom-ready-real-depth-local-unique \
+  --threshold 0.09 --min-points 220 --max-planes 9 --trials 100 --max-sample 14000
+
+python -m pipeline.stage_07_cleanup.structural_review \
+  --project-root /separate/mycon_civil_workstream \
+  --base-manifest /separate/mycon_civil_workstream/runs/geom-ready-real-depth-local-unique/geometry/comparison_ready.json \
+  --run-id geom-civil-real-depth-local-unique --input-kind real_reconstruction
+```
+
+These numeric thresholds are a **site-specific exploratory example in source reconstruction units**; they must not be interpreted as 9 cm. Existing runs are never overwritten; changing parameters requires another Run ID. `research_dense_candidates` explicitly refuses `gaussian_centers` and unsupported source kinds. A caller cannot force `real_reconstruction` on a synthetic or unknown `comparison_ready` manifest.
+
+### Optional source-image evidence (not available for the current real run)
+`--camera-index /project/path/camera_index.json` may be added to `structural_review`. Input schema `mycon.camera_evidence_index.v1` requires a JSON object with `coordinate_frame`, `units` **identical to the base**, and `cameras[]` entries each containing: `view_id`, `image_path` (inside project root), `image_sha256`, `width`, `height`, `frame_convention='colmap_opencv_world_to_camera'`, `calibration_verified=true`, `world_to_camera_4x4` rigid pose, and calibrated intrinsics `fx,fy,cx,cy`. The image must decode correctly as PNG/JPEG/WEBP and match declared width/height. Any file SHA, path or pose mismatch blocks **before** an output folder is created. Feature-centroid/edge-midpoint/corner projections can then include `supporting_images` and click-through localized source photographs, but status stays `projected_in_fov_occlusion_unverified` until audited visibility/human review. The offline HTML viewer marks projections with a red cross; no calibration/camera/image exists for the actual Nov 6 depth fusion trace, so current real overlays remain empty/unknown.
+
+### Actual real-derived source result and caveat
+Read-only Google Drive `depth_fused_candidate_nonmetric.ply` was obtained from earlier `10_confidence_depth_fusion` processing. SHA256 `f86c1f706ec951a1120eb748122e54dd75cee5b3fac80135efcb5cdee844e1ef3ee`; 104,161 point vertices. Its receipt explicitly says `colmap_nonmetric=true`, `false_positive_geometry_possible=true`, and the narrow-baseline/unobserved-view certification is false. This **does not** qualify as surveyed dense GT or a faithful scan of complete room structure.
+
+Real-derived exploratory run identified **15** finite plane hypotheses, **49** locally supported candidate edge segments, **7** trihedral extrapolation candidates, **0** verified/observed-supported corners, and **57,850** unassigned points. Three Shape3 viewpoints, colored PLY, clickable Canvas viewer, `components.csv`, `stability_report.csv`, `manual_review_template.csv` and a SHA-verified `civil_geometry_manifest.json` were produced. Their source is real-derived but their **physical interpretations have not passed engineer review**; the preview is visibly fragmented and cannot be interpreted as a trustworthy floor/wall layout. All semantics unknown, field confidence uncalibrated, scale false. For exact SHA ledger and test/CLI receipts see [real_depth_execution_evidence_20261113.json](real_depth_execution_evidence_20261113.json).
+
+### Independent limitations and correct next action
+1. Missing true production-quality dense/mesh with calibrated time-matched camera image indices and intrinsics; do **not** upgrade visual plausibility to evidence.
+2. Same-feature refit stability (density/noise/occlusion) is a *sensitivity proxy*; not an independent re-detection sensitivity or calibrated confidence interval. Side-to-side camera-angle repeatability on actual data is **not_executed**.
+3. Region occupancy grid/convex hull can still bridge unobserved internal gaps; the colored Shape3 is a diagnostic overlay only; unknowns remain unknown.
+4. Require signed human acceptance/rejection with original image crop hashes and independent surveyed controls before making construction geometry and quantity/progress claims.
+5. Consumer team V owns WebGL; A owns only the additive `viewer_overlay.json`/HTML sample and proposed `mycon.civil_geometry_review.v1` source schema; no V/Integration code edited.
