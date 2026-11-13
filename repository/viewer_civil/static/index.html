@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MyCON | Civil 3D inspection</title><link rel="stylesheet" href="viewer.css"></head>
+<body>
+<header><div><span class="mark">M</span><strong>MyCON <span class="quiet">CIVIL VIEWER</span></strong><small>Read-only geometry inspection</small></div><div id="run-name"></div><b id="source-status">Unverified input</b></header>
+<div class="layout">
+<aside class="sidebar">
+<section><small class="eyebrow">VIEW MODE</small><div class="modes"><button data-mode="confidence" class="active">Confidence</button><button data-mode="coverage">Coverage</button><button data-mode="neutral">Neutral</button></div></section>
+<section><small class="eyebrow">REVIEW LAYERS</small><div id="layers"></div></section>
+<section><small class="eyebrow">CAMERAS / CAPTURED FRAMES</small><div id="camera-list"></div></section>
+</aside>
+<main><div class="panel-header"><strong>3D construction evidence</strong><small>Drag to rotate · Wheel to zoom · Shift+drag to pan (Canvas)</small></div><div id="scene" role="img" aria-label="Interactive read-only 3D geometry scene"></div><footer><span id="frame-coordinates"></span><span>No survey claims from appearance</span></footer></main>
+<aside class="inspector"><small class="eyebrow">SOURCE CAMERA INSPECTOR</small><h2 id="selected-camera">Select camera</h2><p id="camera-position"></p><div class="frame-wrap"><img id="selected-frame" alt="Source frame"></div><p id="frame-meta"></p>
+<section><small class="eyebrow">STRUCTURAL EVIDENCE</small><p id="evidence"></p><p id="uncertainty"></p></section>
+<div class="warning"><strong>METRIC / BIM SAFETY</strong><p id="metric-status"></p></div><small>mycon.viewer_bundle.v1 · Verified source hashes</small></aside>
+</div>
+<script id="mycon-payload" type="application/json">__MYCON_PAYLOAD__</script>
+<script src="plotly.min.js"></script><script src="viewer.js"></script>
+</body></html>
