@@ -3,9 +3,9 @@
 Date: 2026-11-13. Branch: `research/mycon-metric-bim-20261113`. PR destination: `research/mycon-integration-20261112`, never `main`. **Draft / coordinator approval required**. Integration baseline SHA: `dceaf49114a11d79e17dd12495d4ab99cb901c38`.
 
 ## Commit and custody
-- Last implementation/packaging commit **before this handoff**: `4a0b8588bbd2f107ab835d13d838f83e27e80077` (exact repository commit).
+- Last pre-handoff package commit: `4a0b8588bbd2f107ab835d13d838f83e27e80077`. Follow-up implementation commit (BIM-only candidate scale disclosed): `b66396539ee16c9f2d1c5b0cbcdea785cf8285dd` (exact SHA).
 - Primary source hardening SHA: `6f1210828534e0ef53801192e949b7c0ea8de159`.
-- Tests latest SHA: `280cc44c968be1b5d131e1cd8a03e9c79cfd5e1e`.
+- Tests latest SHA: `640b8231b9978c89642fa13fce1a710471745cb3`.
 - New ownership request: https://github.com/sayyedalimrj/MyCon/issues/44 (**not yet coordinator-approved**).
 - Original capture/videos, `MyCon_R4`, `ckpt_6999_rank0.pt`, `resume_step_006999.pt`, historic COLMAP and all A/B/C files remain untouched. No force/merge/rebase or training.
 
@@ -14,7 +14,7 @@ Date: 2026-11-13. Branch: `research/mycon-metric-bim-20261113`. PR destination: 
 - `repository/civil_metric_bim/core.py` — optional stand-alone NumPy producer, candidate metre-scale inference from independently reviewed manual actual lengths; separate noncoplanar BIM-feature Sim3, fit/holdout partition, strict no-data masking, SHA256 and create-only output.
 - `repository/civil_metric_bim/schemas/length_references.v1.schema.json`
 - `repository/civil_metric_bim/schemas/bim_feature_adapter.v1.schema.json`
-- `repository/tests/test_civil_metric_bim_synthetic.py` — **18 synthetic pytest functions defined**, including disjoint heldout controls, nominal-vs-measured references, insufficient data, Sim3, degenerate frames, masked heatmap, immutable output and tamper guard.
+- `repository/tests/test_civil_metric_bim_synthetic.py` — **19 synthetic pytest functions defined**, including disjoint heldout controls, nominal-vs-measured references, insufficient data, Sim3, degenerate frames, masked heatmap, immutable output and tamper guard.
 - `repository/docs/research_metric_bim/adapter_contract.md` — CLI, schemas, uncertainties and limitations.
 - This handoff.
 
@@ -27,7 +27,7 @@ Date: 2026-11-13. Branch: `research/mycon-metric-bim-20261113`. PR destination: 
 
 ## Tests — honest provenance
 - **Executed here on exact checked-out MyCON:** none. The connected GitHub writer can commit the source, but the local CPU runtime has no DNS access to GitHub and this branch does not own shared CI workflow files.
-- **Defined but not executed in this session:** `cd repository && PYTHONPATH=. pytest -q tests/test_civil_metric_bim_synthetic.py` (18 functions). No claim of passing, CPU code timing, external ground truth, numerical benchmark, real site, IFC producer or GPU result.
+- **Defined but not executed in this session:** `cd repository && PYTHONPATH=. pytest -q tests/test_civil_metric_bim_synthetic.py` (19 functions). No claim of passing, CPU code timing, external ground truth, numerical benchmark, real site, IFC producer or GPU result.
 - **Synthetic test fixture definitions** make an artificial scale 2, arbitrary translation [1,2,3], orthogonal points, a finite BIM polygon and occluded/no-map examples; **these are not project dimensions** and no result/error statistic has been observed in this handoff.
 - **Not executed:** GitHub Actions exact-HEAD checks, full integration regression, complete BIM/IFC conversion, real field measured control set, geometry heatmap review, real PLY/cloud processing, peer review, GPU.
 
@@ -38,3 +38,6 @@ Date: 2026-11-13. Branch: `research/mycon-metric-bim-20261113`. PR destination: 
 4. Run exact-head synthetic/negative tests and integration CI. Run real source-side read-only pilot with independent surveyed test controls, camera/scale QA and visually inspect heatmaps; record genuine residuals and uncertainty before any `metric_validation` approval. No construction percent or `not_built` can be inferred from missing observation.
 
 **Release status:** implemented as isolated candidate; `unit_tested=not_executed`; `real_case_validated=not_executed`; `gpu_validated=not_executed`; `publication_ready=false`.
+
+## Current PR
+- Draft [PR #45](https://github.com/sayyedalimrj/MyCon/pull/45) targets Integration; merge is explicitly forbidden until coordinator review. No new test was executed as part of this handoff revision.
