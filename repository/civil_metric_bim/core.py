@@ -485,6 +485,11 @@ def run(project_root: Path, run_id: str, *, references_json: Path | None = None,
     scale["source_units"] = "reconstruction_units"
     scale["target_units"] = "m"
     alignment, tx = build_transform(bim, scale)
+    if tx is not None and scale["scale_m_per_reconstruction_unit"] is None:
+        scale["bim_correspondence_scale_candidate_m_per_unit"] = float(tx[0])
+        scale["bim_correspondence_uncertainty_1sigma_m_per_unit"] = None
+        scale["bim_candidate_status"] = "requires_reviewed_model_revision_and_independent_survey"
+        scale["status"] = "bim_only_scale_proposal_not_independent_field_scale"
     alignment["run_id"] = run_id
     alignment["source_frame"] = frame
     alignment["target_frame"] = "bim_world"
