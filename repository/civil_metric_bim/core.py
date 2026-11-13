@@ -305,7 +305,8 @@ def transformed(p: np.ndarray, transform: tuple) -> np.ndarray:
     return s * (p @ R.T) + t
 
 
-def evaluate_controls(refs: dict | None, bim: dict | None, transform: tuple | None) -> tuple[list[dict], list[dict]]:
+def evaluate_controls(refs: dict | None, bim: dict | None, transform: tuple | None,
+                      independent_scale: float | None = None) -> tuple[list[dict], list[dict]]:
     alignment = []
     controls = []
     if bim is not None:
@@ -340,9 +341,10 @@ def evaluate_controls(refs: dict | None, bim: dict | None, transform: tuple | No
                    "role": "control", "state": "no_scale_or_unapproved",
                    "signed_error_m": None, "unsigned_error_m": None,
                    "normal_error_deg": None, "reason": "no_approved_holdout_or_scale"}
-            if transform is not None and approved(r) and r.get("actual_length_m") is not None:
+            scale_for_length = independent_scale if independent_scale is not None else (transform[0] if transform is not None else None)
+            if scale_for_length is not None and approved(r) and r.get("actual_length_m") is not None:
                 distance = np.linalg.norm(point(r["scan_endpoints_xyz"][0], "span") -
-                                          point(r["scan_endpoints_xyz"][1], "span")) * transform[0]
+                                          point(r["scan_endpoints_xyz"][1], "span")) * scale_for_length
                 diff = float(distance - float(r["actual_length_m"]))
                 row.update(state="measured_candidate", signed_error_m=diff,
                            unsigned_error_m=abs(diff), reason="independent_length_holdout")
@@ -488,7 +490,8 @@ def run(project_root: Path, run_id: str, *, references_json: Path | None = None,
     alignment["target_frame"] = "bim_world"
     alignment["source_units"] = "reconstruction_units"
     alignment["target_units"] = "m"
-    rows, controls = evaluate_controls(refs, bim, tx)
+    rows, controls = evaluate_controls(refs, bim, tx,
+                                      independent_scale=scale["scale_m_per_reconstruction_unit"])
     heat = deviation(bim, tx)
     target = root / "runs" / run_id / "metric_bim"
     if target.exists() or target.parent.exists():
