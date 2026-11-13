@@ -25,3 +25,9 @@ Inputs: artificial trihedral planes used solely in an isolated offline fixture (
 ## Downstream interface to coordinator
 
 Additive, versioned, read-only `mycon.civil_geometry_review.v1`; no existing Stage 8/9/11 fields changed. Consumers must validate SHA256, schema version, path, input-kind, units, coordinate frame, and explicitly false `metric_scale_verified` before use. They must not translate `observed_supported` into construction completion or into field-certified dimensions. Cross-team consumer changes require coordinator interface PR; none were attempted here.
+## Exact implementation revisions and final-source verification
+
+- Implementation + test + documentation commit before handoff: `3b6b65224088a28466a8f1324001ec65d37a5b5a`.
+- `structural_review.py` Git blob SHA: `0c445bb64d349ffc7cd321ddef5b71201921c721` (retrieved from the new branch, 23620 Unicode characters).
+- `test_research_geometry_structural_review.py` Git blob SHA: `8b2805909c99aa956fdd82afd065c646dcdce838` (6999 Unicode characters).
+- Last handoff-only commit occurs after this entry; record the PR head SHA from GitHub when reviewing. No claim that the local isolated tests are GitHub Actions runs.
