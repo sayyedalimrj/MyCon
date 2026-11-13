@@ -92,12 +92,21 @@ def validate_inputs(refs: dict | None, bim: dict | None) -> str:
         check_unique(refs["references"], "reference_id")
         for r in refs["references"]:
             role(r)
+            conf = r.get("confidence")
+            if not isinstance(conf, dict) or conf.get("grade") not in {
+                "high_reviewed", "medium_provisional", "low_unverified"}:
+                raise ValueError("Each length reference requires a qualitative confidence.grade")
+            if conf.get("calibrated_probability") is not None:
+                raise ValueError("Calibration of confidence probabilities not supported")
             if r.get("source_kind") not in SOURCE_KINDS:
                 raise ValueError("Invalid source_kind")
             if not str(r.get("physical_source_id", "")).strip():
                 raise ValueError("physical_source_id required to prevent pseudo-replication")
-            a, b = point(r["scan_endpoints_xyz"][0], "span A"), point(r["scan_endpoints_xyz"][1], "span B")
-            if len(r["scan_endpoints_xyz"]) != 2 or np.linalg.norm(a - b) < 1e-9:
+            endpoints = r.get("scan_endpoints_xyz")
+            if not isinstance(endpoints, list) or len(endpoints) != 2:
+                raise ValueError("Length span requires exactly two endpoints")
+            a, b = point(endpoints[0], "span A"), point(endpoints[1], "span B")
+            if np.linalg.norm(a - b) < 1e-9:
                 raise ValueError("Length endpoints degenerate")
             if "nominal_length_m" in r:
                 positive(r["nominal_length_m"], "nominal_length_m")
@@ -126,8 +135,10 @@ def validate_inputs(refs: dict | None, bim: dict | None) -> str:
                 raise ValueError("Feature kind must be corner or plane")
             point(m["scan_xyz"], "match scan"), point(m["bim_xyz_m"], "match BIM")
             if m.get("kind") == "plane" and m.get("scan_normal_xyz") is not None:
-                point(m["scan_normal_xyz"], "scan_normal_xyz")
-                point(m["bim_normal_xyz"], "bim_normal_xyz")
+                normal = point(m["scan_normal_xyz"], "scan_normal_xyz")
+                refnormal = point(m["bim_normal_xyz"], "bim_normal_xyz")
+                if min(np.linalg.norm(normal), np.linalg.norm(refnormal)) < 1e-9:
+                    raise ValueError("Zero feature normal")
         for p in bim["planes"]:
             point(p["point_xyz_m"], "BIM plane point")
             if np.linalg.norm(point(p["normal_xyz"], "plane normal")) < 1e-9:
@@ -135,6 +146,8 @@ def validate_inputs(refs: dict | None, bim: dict | None) -> str:
             poly = np.asarray(p["finite_vertices_xyz_m"], dtype=float)
             if poly.ndim != 2 or poly.shape[1] != 3 or len(poly) < 3 or not np.isfinite(poly).all():
                 raise ValueError("BIM planes need finite polygons")
+            if np.linalg.matrix_rank(poly - poly[0]) < 2:
+                raise ValueError("BIM plane finite polygon is degenerate")
         for sm in bim.get("samples", []):
             point(sm["scan_xyz"], "sample")
     if not frame or frame == "bim_world":
@@ -158,8 +171,9 @@ def length_scale(refs: dict | None) -> dict:
         item["nominal_minus_actual_m"] = (
             float(r["nominal_length_m"]) - float(r["actual_length_m"])
             if r.get("nominal_length_m") is not None and r.get("actual_length_m") is not None else None)
-        if not approved(r):
-            item["state"] = "unreviewed_proposal"
+        item["confidence"] = r.get("confidence")
+        if not approved(r) or r.get("confidence", {}).get("grade") != "high_reviewed":
+            item["state"] = "unreviewed_or_low_confidence"
         elif r.get("actual_length_m") is None:
             item["state"] = "nominal_only_not_accepted"
         elif r["role"] == "control":
