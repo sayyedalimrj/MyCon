@@ -82,3 +82,13 @@ Governing Integration contract: `repository/docs/integration/parallel_6_streams_
 **Research**, dated DOI sources, Git revisions/licenses and notebook execution status: `evidence_review.md` including existing 5 papers/2 repositories and added 2016 COLMAP SfM/MVS + pinned official COLMAP 4.2.1 at `bd1fcf654d2dd8fefa1466999c190a246f83f4b9`, BSD 3-Clause. Official 2DGS rasterization Colab **not executed**; current original COLMAP producer version unknown and no rerun from scratch.
 
 **Outstanding:** exact Depth Fusion source frame/pixel↔COLMAP image/pose and SHA ledger, provable cross-modal transform and independently held-out inlier/reprojection residual, source gravity and survey metric scale, actual three-dimensional occlusion/visibility evidence, operator-accepted feature↔image identities, independent validation C, and actual Viewer V browser/WebGL acceptance. Do not promote any physical room wall/corner from these diagnostics yet.
+
+### Addendum: specialized workflow really exercised the new camera tests
+
+On A code/test commit **`b8813db108e3e8090a1b682f0683066e70e2b0a9`**, only A-owned `tests/test_research_geometry_structural_review.py` was additionally modified to re-export the 8 new camera-gate test functions, preserving all 14 existing tests. This is necessary because coordinator-owned workflow intentionally selects that established A test file and did not auto-discover the standalone `test_research_geometry_camera_bridge.py`. New selected-entrypoint Git blob **`056ec9bed188bbd9ddde909c94c1d011d914090a`**, byte-exact with locally run 22 tests; no coordinator/workflow or other-workstream paths edited. Independent standalone camera module remains executable.
+
+Actual GitHub Actions on exactly **`b8813db108e3e8090a1b682f0683066e70e2b0a9`** (PR merge checkout with this exact branch head):
+- [Dedicated workstream CPU run #43517839744](https://github.com/sayyedalimrj/MyCon/actions/runs/43517839744), log job `132204245990`: `RUN: tests/test_research_geometry_structural_review.py` → **22 passed in 7.18s, exit 0**.
+- [Integration CPU contracts #43517839866](https://github.com/sayyedalimrj/MyCon/actions/runs/43517839866), job `132204246022`: **141 passed, 1 skipped in 3.93s, exit 0**.
+
+The subsequent **Handoff-only** commit changes no Python/tests. Re-check GitHub Actions against the final PR head; do not describe this nonmetric camera-geometry diagnosis as proof of physical room registration or field accuracy.
