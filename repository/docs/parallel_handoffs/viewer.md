@@ -4,8 +4,8 @@
 - Repo: https://github.com/sayyedalimrj/MyCon
 - Approved governance: `repository/docs/integration/parallel_6_streams_approval_20261113.md`; issue #48.
 - Branch: `research/mycon-viewer-20261113`, based on Integration head `c81962332cb4220f52eeb95acfcda61e48d39d24`; Draft PR target `research/mycon-integration-20261112`.
-- Last full-source/docs commit before this handoff: `ceb8d11d5b0a4ace379d108f94756e348172f8be`. The PR head SHA after the handoff is recorded in GitHub metadata; this file cannot self-reference its own Git SHA.
-- Additions only: `repository/viewer_civil/{core.py,demo.py,__init__.py,__main__.py,browser.py,static/index.html,static/viewer.css,static/viewer.js,README.md}`, `repository/requirements-research-viewer.txt`, `repository/tests/test_research_viewer_bundle.py`, `repository/docs/research_viewer/{evidence_review.md,thesis_media_manifest.md}`, and this handoff.
+- Latest tested source/test commit: `f55305a9e66d9ec167468a343f4803eb3162826d`. Browser frontend promoted at `9178ea905635b8c7c2fa243bc38bb746980c904d`; media committed at `1d957be650e4c8410005a17541f40844604b35c0`. See Draft PR #50 for current head commit.
+- Additions only: `repository/viewer_civil/{core.py,demo.py,__init__.py,__main__.py,browser.py,static/index.html,static/viewer.css,static/viewer.js,legacy_snapshot/**,media/*.jpg,media/*.mp4,README.md}`, `repository/requirements-research-viewer.txt`, `repository/tests/test_research_viewer_bundle.py`, `repository/docs/research_viewer/{evidence_review.md,thesis_media_manifest.md}`, and this handoff.
 - No writes to `pipeline/**`, `colab/**`, `gui/**`, original MyCon_R4/video/GS pt checkpoints/COLMAP or shared defaults. No force, merge or train.
 
 ## Interface and contract
@@ -18,13 +18,13 @@
 
 ## Test proof and limits
 - **Prior standalone baseline, actually executed in this session**: `cd /mnt/data/viewer_work && PYTHONPATH=. pytest tests/test_viewer.py -q --disable-warnings --maxfail=1` -> **7 passed, exit 0** in 3.80 s, including restricted Chromium/Canvas selection and layers. This test is of the preserved original ZIP, **not** of the newly committed GitHub source.
-- **Current GitHub branch dedicated tests:** `cd repository && python -m pytest -q tests/test_research_viewer_bundle.py`; code written but **NOT_EXECUTED on checked-out Git branch in the local sandbox** because `git ls-remote ...` returns `Could not resolve host: github.com`. Await a real GitHub Actions branch-head specialized run; green generic workflow does not qualify. Report exact result when available.
+- **Actual GitHub branch dedicated CPU CI**: [run #43506450772](https://github.com/sayyedalimrj/MyCon/actions/runs/43506450772) on SHA `f55305a9e66d9ec167468a343f4803eb3162826d`. `cd repository && python -m pytest -q tests/test_research_viewer_bundle.py` via workstream driver: **11 passed, 2 skipped, 0 failed, exit 0 (1.72 s)**. The optional Plotly/Playwright browser cases were skipped because runner lacks those dependencies. The prior separate standalone browser test executed 7/7 locally; current branch browser code not tested on GPU/WebGL.
 - **Upstream nerfview official 00_dummy_rendering.py** inspected at `bd802d765fe3ccef6c66538927bf3ce69dd69632`, license Apache-2.0; **not executed** due network/torch dependency blocker.
 - **No** GPU 3DGS rendering test, Google Drive/Colab runtime test, real MyCON room source frame, ground-truth survey, verified BIM match, or paper-ready numeric evaluation.
 
 ## Evidence links / hashes
 - Verified papers and reproducible source comparison: `repository/docs/research_viewer/evidence_review.md` (3 SIGGRAPH DOI papers + ISARC civil study, 2 pinned upstream repos).
-- Previous standalone media exact SHA256 and regeneration steps: `repository/docs/research_viewer/thesis_media_manifest.md`. Media preserved in user conversation archive, **not uploaded to GitHub**; avoid suggesting otherwise.
+- Previous standalone media exact SHA256 and regeneration steps: `repository/docs/research_viewer/thesis_media_manifest.md`. Original high-quality files preserved in user ZIP; two real synthetic-session browser JPEGs and one MP4 derivative **are uploaded to GitHub** under `repository/viewer_civil/media/` with verified sizes and SHA256 in media manifest.
 - Input source SHA256 of immutable original MyCon_R4 / checkpoint is **not read/available**; do not invent. Synthetic created source has a new hash per run; validate local `viewer_manifest.json` and every receipt before displaying.
 - Real site cameras, reconstructed GS outputs, mesh and independent scale controls: **blocked_missing_input**. CUDA/WebGL-on-GPU: **not_executed**.
 
@@ -34,3 +34,9 @@
 3. Produce real verified camera poses/frames and structural primitives via read-only conversion into `mycon.viewer_bundle.v1`; do not patch A/R/D producer files in this PR.
 4. Run real same-camera Shape3 review with human audit of Unknown/occlusion; only publish metric Shape4 after survey/registration/held-out evidence.
 5. No unapproved merge to Integration/main and no source-data overwrite.
+
+## Round-2 revision receipt
+- PR: https://github.com/sayyedalimrj/MyCon/pull/50 — Draft, Integration target, unmerged.
+- Original standalone source copied exactly into `repository/viewer_civil/legacy_snapshot/`; new primary frontend adopts the proven original browser UI with optional point-cloud display. Synthetic source frames are not field photographs.
+- `viewer_civil/media/` contains two 1440×900 browser-capture JPEG images and compressed 960px H.264 rotation video from the original synthetic run; provenance and SHA256 recorded.
+- New deviation gate requires independent held-out scale/registration/survey receipts with SHA256 plus reviewer and per-face evidence. Flags alone are insufficient. No real site or GPU data has been tested.
