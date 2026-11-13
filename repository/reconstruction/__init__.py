@@ -1,1 +1,1 @@
-"""MyCON independent reconstruction research and fail-closed contracts."""
+"""Isolated, non-destructive, model-agnostic multiview reconstruction research tooling."""
