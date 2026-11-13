@@ -124,6 +124,9 @@ def validate_inputs(refs: dict | None, bim: dict | None) -> str:
             raise ValueError("BIM samples must be a list")
         check_unique(bim["matches"], "match_id")
         check_unique(bim["planes"], "plane_id")
+        provenance = bim.get("model_provenance")
+        if not isinstance(provenance, dict) or not provenance.get("kind"):
+            raise ValueError("Model provenance.kind is mandatory")
         check_unique(bim.get("samples", []), "sample_id")
         f2 = str(bim.get("source_frame") or "").strip()
         if frame is not None and frame != f2:
@@ -264,6 +267,8 @@ def build_transform(bim: dict | None, scale: dict) -> tuple[dict, tuple | None]:
     hold = match_filter(bim, False)
     fit_sources = {str(m.get("physical_feature_id") or m["match_id"]) for m in matches}
     hold_sources = {str(m.get("physical_feature_id") or m["match_id"]) for m in hold}
+    if len(fit_sources) != len(matches):
+        raise ValueError("Multiple BIM fit observations of the same physical feature are not independent")
     if fit_sources & hold_sources:
         raise ValueError("BIM fit/control source leakage")
     output = {"schema_version": "mycon.alignment_transform.v1",
@@ -372,7 +377,9 @@ def deviation(bim: dict | None, transform: tuple | None) -> list[dict]:
                   "bim_plane_id": sample.get("bim_plane_id"), "ifc_global_id": None,
                   "valid_mask": False, "signed_distance_m": None,
                   "unsigned_distance_m": None, "reason": "no_data",
-                  "source_state": sample.get("observation_state", "unknown")}
+                  "source_state": sample.get("observation_state", "unknown"),
+                  "xyz_bim_m": (transformed(point(sample["scan_xyz"], "sample"), transform).tolist()
+                                if transform is not None else None)}
         pid = sample.get("bim_plane_id")
         p = planes.get(pid)
         if transform is None:
@@ -417,7 +424,8 @@ def verify_geometry(manifest_file: Path, project_root: Path, frame: str) -> dict
     source = Path(str(manifest.get("source_path", "")))
     if source.is_file() and digest(source) != manifest.get("source_sha256"):
         raise ValueError("Original source hash mismatch")
-    return {"path": manifest_file.as_posix(), "sha256": digest(manifest_file),
+    return {"path": manifest_file.resolve().relative_to(project_root.resolve()).as_posix(),
+            "sha256": digest(manifest_file),
             "schema_version": manifest["schema_version"],
             "source_sha256": manifest.get("source_sha256"),
             "original_source_available": source.is_file()}
@@ -443,12 +451,23 @@ def run(project_root: Path, run_id: str, *, references_json: Path | None = None,
         raise ValueError("At least one of references_json or bim_json required")
     root = project_root.resolve()
     inputs = [p.resolve() for p in (references_json, bim_json, geometry_manifest_json) if p is not None]
+    if any(not p.is_relative_to(root) for p in inputs):
+        raise ValueError("Input paths must be relative to project root for provenance")
     for p in inputs:
         if not p.is_file() or p.stat().st_size == 0:
             raise ValueError("Input absent: " + str(p))
     refs = read_json(references_json, "mycon.length_references.v1") if references_json else None
     bim = read_json(bim_json, "mycon.bim_feature_adapter.v1") if bim_json else None
     frame = validate_inputs(refs, bim)
+    if bim is not None and bim["model_provenance"]["kind"] != "synthetic_fixture_only":
+        model = bim["model_provenance"]
+        if not isinstance(model.get("asset"), dict):
+            raise ValueError("Real BIM model requires asset path and SHA256")
+        asset = model["asset"]
+        a = (root / str(asset.get("path", ""))).resolve()
+        if not a.is_relative_to(root) or not a.is_file() or not SHA_PATTERN.fullmatch(
+                str(asset.get("sha256", ""))) or digest(a) != asset["sha256"]:
+            raise ValueError("Real BIM source asset missing/outside root or SHA256 mismatch")
     geometry = (verify_geometry(geometry_manifest_json, root, frame)
                 if geometry_manifest_json is not None else None)
     scale = length_scale(refs)
@@ -464,7 +483,8 @@ def run(project_root: Path, run_id: str, *, references_json: Path | None = None,
         # A prior partial run ID must never be re-used, even if its leaf is absent.
         raise FileExistsError("Refusing to replace/reuse run: " + str(target.parent))
     target.parent.parent.mkdir(parents=True, exist_ok=True)
-    source_hashes = {p.name: {"path": str(p), "sha256": digest(p)} for p in inputs}
+    source_hashes = {p.name: {"path": p.relative_to(root).as_posix(),
+                               "sha256": digest(p)} for p in inputs}
     for item in (scale, alignment):
         item["input_sha256"] = source_hashes
     with tempfile.TemporaryDirectory(prefix=".metric-bim-staging-", dir=root / "runs") as tempdir:
@@ -473,16 +493,21 @@ def run(project_root: Path, run_id: str, *, references_json: Path | None = None,
         _write(stage / "alignment_transform.json", alignment)
         _csv(stage / "alignment_report.csv", rows)
         _csv(stage / "heldout_control_errors.csv", controls)
-        _csv(stage / "deviation_map.csv", [
-            {"record_id": r["sample_id"], "kind": "sample", "role": "evaluation",
-             "state": "observed" if r["valid_mask"] else "no_data",
-             "signed_error_m": r["signed_distance_m"],
-             "unsigned_error_m": r["unsigned_distance_m"],
-             "reason": r["reason"]} for r in heat])
+        with (stage / "deviation_map.csv").open("x", newline="", encoding="utf-8") as stream:
+            fields = ["sample_id", "bim_plane_id", "ifc_global_id", "source_state",
+                      "xyz_bim_m", "valid_mask", "signed_distance_m",
+                      "unsigned_distance_m", "reason"]
+            writer = csv.DictWriter(stream, fieldnames=fields, extrasaction="ignore")
+            writer.writeheader()
+            for row in heat:
+                writer.writerow({**row, "xyz_bim_m": json.dumps(row["xyz_bim_m"])})
         _write(stage / "deviation_heatmap.json", {
             "schema_version": "mycon.deviation_heatmap.v1", "run_id": run_id,
             "coordinate_frame": "bim_world", "units": "m",
             "mask_policy": "no-data is null and never a zero-distance or not-built label",
+            "sign_convention": "positive means observed point lies on positive BIM normal side",
+            "viewer_encoding": {"color_by": "signed_distance_m", "alpha_by": "valid_mask",
+                                "coordinates": "xyz_bim_m", "missing_color": None},
             "points": heat, "valid_sample_count": sum(x["valid_mask"] for x in heat),
             "total_sample_count": len(heat), "metric_validation": "pending"})
         assets = {p.name: {"path": (Path("runs") / run_id / "metric_bim" / p.name).as_posix(),
