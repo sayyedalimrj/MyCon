@@ -31,6 +31,7 @@ from pipeline.stage_09_progress.element_status_export import (
     evaluate_element_truth, evaluate_expert_progress, status_for_element,
 )
 from .scientific_progress import build_scientific_progress_report
+from .construction_audit import engineering_audit
 
 SCHEMA = "mycon.physical_monitor.v1"
 FILENAMES = (
@@ -106,6 +107,7 @@ def build_monitor_outputs(
         stat["data_date_utc"] = date.isoformat(timespec="seconds")
         status_rows.append(stat)
         row["construction_status"] = stat["construction_status"]
+        row["observation_status"] = stat["observation_status"]
         row["construction_status_reason_codes"] = stat["reason_codes"]
         row["construction_status_schema"] = stat["schema_version"]
         row["activity_ids"] = stat["activity_ids"]
@@ -163,6 +165,7 @@ def build_monitor_outputs(
         "mae_percentage_points": None
     } if expert_truth is None else evaluate_expert_progress(
         scientific["activities"], expert_truth, data_date=date))
+    audit = engineering_audit(status_rows, scientific, geometry_summary=geometry_summary)
     dashboard = {
         "schema_version": "mycon.physical_monitor.dashboard.v1",
         "scientific_source_schema": scientific["schema_version"],
@@ -171,6 +174,9 @@ def build_monitor_outputs(
         "element_status_counts": dict(Counter(r["construction_status"] for r in status_rows)),
         "n_occluded": sum(r["occlusion_state"] == "occluded" for r in status_rows),
         "n_out_of_fov": sum(r["occlusion_state"] == "out_of_fov" for r in status_rows),
+        "n_not_observable": sum(r["observation_status"] == "not_observable" for r in status_rows),
+        "observation_status_counts": dict(Counter(r["observation_status"] for r in status_rows)),
+        **audit,
         "unknown_reason_counts": dict(Counter(
             code for row in status_rows for code in row["reason_codes"].split(";") if code)),
         "geometry_validation": geometry_summary,
