@@ -214,3 +214,32 @@ def test_stage9_to_stage11_physical_monitor_five_file_smoke(tmp_path: Path):
     assert dashboard["overall"]["physical_progress_estimate"] is None
     assert dashboard["overall"]["physical_progress_lower_bound_pct"] == pytest.approx(60)
     assert dashboard["overall"]["physical_progress_upper_bound_pct"] == pytest.approx(85)
+
+
+def test_stage8_hashed_image_references_are_only_exposed_after_geometry_gate():
+    from pipeline.stage_09_progress.geometry_evidence_adapter import load_geometry_evidence_manifest
+    import csv
+    fixture = Path(__file__).resolve().parents[1] / "configs/research_progress/round2_contract_fixture"
+    bundle = load_geometry_evidence_manifest(
+        fixture / "bim_geometry_evidence.v1.json",
+        project_root=fixture.parents[2],
+        expected_ifc_sha256="1" * 64,
+        expected_scan_sha256="2" * 64,
+        expected_registration_sha256="3" * 64,
+        expected_project_id="mycon-round2-synthetic",
+        expected_global_ids={"0AbCdeFgHiJkLmNoPqRsTu", "1BcDefGhIjKlMnOpQrStUv"},
+    )
+    assert bundle.valid, bundle.reason_codes
+    evidence = bundle.for_element("0AbCdeFgHiJkLmNoPqRsTu")
+    assert evidence["geometry_adapter_valid"] is True
+    images = json.loads(evidence["image_evidence_refs_json"])
+    assert len(images) == 1 and images[0]["view_id"] == "V1"
+    assert len(images[0]["image_sha256"]) == 64
+    assert json.loads(evidence["geometry_support_sample_ids_json"])
+    invalid = load_geometry_evidence_manifest(
+        fixture / "bim_geometry_evidence.v1.json",
+        project_root=fixture.parents[2],
+        expected_ifc_sha256="f" * 64,
+    )
+    assert not invalid.valid
+    assert json.loads(invalid.for_element("0AbCdeFgHiJkLmNoPqRsTu")["image_evidence_refs_json"]) == []
