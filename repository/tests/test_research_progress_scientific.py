@@ -185,3 +185,61 @@ def test_cli_output_versioned_and_legacy_keys_preserved(tmp_path: Path):
     assert v2["overall"]["physical_progress_estimate"] == 60
     assert v2["provenance"]["inputs"]["mapping_csv"]["sha256"]
     assert main(args) == 1  # Must not overwrite same research-run ID.
+
+
+def test_stage9_to_stage11_physical_monitor_five_file_smoke(tmp_path: Path):
+    """Included in the existing integration workflow's explicit B test selection."""
+    import csv
+    from pipeline.stage_11_schedule_variance.run_physical_monitor import main as monitor_main
+    fixture = Path(__file__).resolve().parents[1] / "configs/research_progress/round2_contract_fixture"
+    arguments = [
+        "--element-metrics-csv", str(fixture / "elements_stage9.csv"),
+        "--schedule-csv", str(fixture / "schedule.csv"),
+        "--mapping-csv", str(fixture / "mapping.csv"),
+        "--project-root", str(fixture.parents[2]),
+        "--data-date-utc", "2026-01-16T00:00:00Z",
+        "--output-root", str(tmp_path),
+        "--research-run-id", "progress-monitor-ci-synthetic",
+    ]
+    assert monitor_main(arguments) == 0
+    root = tmp_path / "progress-monitor-ci-synthetic"
+    assert {p.name for p in root.iterdir()} == {
+        "element_status.csv", "element_metrics.csv", "activity_progress.csv",
+        "schedule_variance.json", "progress_dashboard.json"}
+    with (root / "element_status.csv").open(encoding="utf-8", newline="") as handle:
+        statuses = list(csv.DictReader(handle))
+    assert {row["construction_status"] for row in statuses} == {"in_progress", "unknown"}
+    dashboard = json.loads((root / "progress_dashboard.json").read_text(encoding="utf-8"))
+    assert dashboard["ground_truth_metrics"]["fraction_mae"] is None
+    assert dashboard["overall"]["physical_progress_estimate"] is None
+    assert dashboard["overall"]["physical_progress_lower_bound_pct"] == pytest.approx(60)
+    assert dashboard["overall"]["physical_progress_upper_bound_pct"] == pytest.approx(85)
+
+
+def test_stage8_hashed_image_references_are_only_exposed_after_geometry_gate():
+    from pipeline.stage_09_progress.geometry_evidence_adapter import load_geometry_evidence_manifest
+    import csv
+    fixture = Path(__file__).resolve().parents[1] / "configs/research_progress/round2_contract_fixture"
+    bundle = load_geometry_evidence_manifest(
+        fixture / "bim_geometry_evidence.v1.json",
+        project_root=fixture.parents[2],
+        expected_ifc_sha256="1" * 64,
+        expected_scan_sha256="2" * 64,
+        expected_registration_sha256="3" * 64,
+        expected_project_id="mycon-round2-synthetic",
+        expected_global_ids={"0AbCdeFgHiJkLmNoPqRsTu", "1BcDefGhIjKlMnOpQrStUv"},
+    )
+    assert bundle.valid, bundle.reason_codes
+    evidence = bundle.for_element("0AbCdeFgHiJkLmNoPqRsTu")
+    assert evidence["geometry_adapter_valid"] is True
+    images = json.loads(evidence["image_evidence_refs_json"])
+    assert len(images) == 1 and images[0]["view_id"] == "V1"
+    assert len(images[0]["image_sha256"]) == 64
+    assert json.loads(evidence["geometry_support_sample_ids_json"])
+    invalid = load_geometry_evidence_manifest(
+        fixture / "bim_geometry_evidence.v1.json",
+        project_root=fixture.parents[2],
+        expected_ifc_sha256="f" * 64,
+    )
+    assert not invalid.valid
+    assert json.loads(invalid.for_element("0AbCdeFgHiJkLmNoPqRsTu")["image_evidence_refs_json"]) == []
