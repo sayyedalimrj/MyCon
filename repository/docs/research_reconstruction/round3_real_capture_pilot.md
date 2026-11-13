@@ -34,3 +34,6 @@
 - The two original-video hashes differ: no direct camera/pose/image reuse. Historic 192 frame image receipts can inform a **historical-only** Viewer reference using explicit W2C→C2W inversion and SHA; **do not use it as the new run's camera_poses**.
 - For the required G2 complete case, run the attached R-owned Colab notebook on the exact 96s Drive media (SHA preflight), install COLMAP explicitly and create brand-new train-only sparse and test registration under unique Run ID; inspect pose/registration evidence and coverage. Supervisor retains freeze. GPU heavy training requires **separate user authorization**; not triggered by this pilot.
 - Field error/metric scale, new real cloud/PLY/checkpoint, matched 6999 Test renders/PSNR/SSIM/LPIPS and publication conclusions: **NOT_EXECUTED/UNKNOWN**.
+
+## Frozen R4 folder protection
+The Colab notebook uses **MyCon_R4 only as a READ-ONLY source**. Outputs go to a separate MyDrive root `MyCON_Reconstruction_R3_Runs/<new_run_id>`; the notebook never creates a new directory under `MyCon_R4` and refuses an existing destination.
