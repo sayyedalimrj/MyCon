@@ -16,7 +16,9 @@ const scenePoints=[...(A.mesh?.vertices||[]),...(A.point_cloud?.points||[]),
   ...(A.corners?.corners||[]).map(p=>p.xyz),
   ...(A.camera_poses?.cameras||[]).map(c=>[c.camera_to_world[0][3],c.camera_to_world[1][3],c.camera_to_world[2][3]])]
   .filter(p=>Array.isArray(p)&&p.length===3&&p.every(Number.isFinite));
-const bounds=[0,1,2].map(i=>[Math.min(...scenePoints.map(p=>p[i])),Math.max(...scenePoints.map(p=>p[i]))]);
+// Use bounded accumulation, not Math.min(...largePointArray), which fails for dense point clouds.
+const bounds=[[Infinity,-Infinity],[Infinity,-Infinity],[Infinity,-Infinity]];
+for(const p of scenePoints){for(let i=0;i<3;i++){bounds[i][0]=Math.min(bounds[i][0],p[i]);bounds[i][1]=Math.max(bounds[i][1],p[i]);}}
 const sceneCenter=bounds.map(b=>(Number.isFinite(b[0])&&Number.isFinite(b[1]))?(b[0]+b[1])/2:0);
 const sceneRadius=Math.max(1,...bounds.map(b=>Number.isFinite(b[1]-b[0])?(b[1]-b[0])/2:1));
 const extent=bounds.map((b,i)=>[sceneCenter[i]-sceneRadius*1.4,sceneCenter[i]+sceneRadius*1.4]);
