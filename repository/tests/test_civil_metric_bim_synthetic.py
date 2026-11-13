@@ -222,6 +222,22 @@ def test_create_only_outputs_and_hashed_manifest(tmp_path):
         run(tmp_path, "metric-bim-synthetic-001", references_json=r, bim_json=b)
 
 
+def test_length_only_heldout_evaluated_without_any_bim(tmp_path):
+    r = save(tmp_path / "references.json", references())
+    manifest = run(tmp_path, "metric-bim-length-only-005", references_json=r)
+    root = tmp_path / "runs/metric-bim-length-only-005/metric_bim"
+    scale = json.loads((root / "scale_estimate.json").read_text())
+    alignment = json.loads((root / "alignment_transform.json").read_text())
+    with (root / "heldout_control_errors.csv").open() as stream:
+        controls = list(csv.DictReader(stream))
+    assert scale["scale_m_per_reconstruction_unit"] == pytest.approx(2.0)
+    assert alignment["scale"] is None
+    assert len(controls) == 1
+    assert controls[0]["state"] == "measured_candidate"
+    assert float(controls[0]["unsigned_error_m"]) == pytest.approx(0.0)
+    assert alignment["metric_validation"] == "pending"
+
+
 def test_missing_bim_outputs_are_unknown_not_zero(tmp_path):
     b = save(tmp_path / "features.json", features(with_matches=False))
     result = run(tmp_path, "metric-bim-no-match-002", bim_json=b)
