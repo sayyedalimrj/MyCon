@@ -238,6 +238,17 @@ def test_length_only_heldout_evaluated_without_any_bim(tmp_path):
     assert alignment["metric_validation"] == "pending"
 
 
+def test_bim_only_candidate_scale_is_not_field_verified(tmp_path):
+    b = save(tmp_path / "bim.json", features())
+    run(tmp_path, "metric-bim-bim-only-006", bim_json=b)
+    target = tmp_path / "runs/metric-bim-bim-only-006/metric_bim"
+    scale = json.loads((target / "scale_estimate.json").read_text())
+    assert scale["scale_m_per_reconstruction_unit"] is None
+    assert scale["bim_correspondence_scale_candidate_m_per_unit"] == pytest.approx(2.0)
+    assert scale["bim_correspondence_uncertainty_1sigma_m_per_unit"] is None
+    assert scale["metric_validation"] == "pending"
+
+
 def test_missing_bim_outputs_are_unknown_not_zero(tmp_path):
     b = save(tmp_path / "features.json", features(with_matches=False))
     result = run(tmp_path, "metric-bim-no-match-002", bim_json=b)
