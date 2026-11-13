@@ -53,3 +53,25 @@ Test and train must not share site_id. Reviewer/date/doc SHA fields are required
     python -m pytest -q tests/test_research_progress_monitor.py tests/test_research_progress_scientific.py tests/test_round2_progress_contract.py tests/test_stage_11_schedule_variance.py
 
 No physical construction or held-out accuracy claims without real as-planned IFC, capture, independently verified registration/metric scale, signed BOQ/measures, exact schedule baseline and independently held-out source truth.
+
+
+## Round-2 engineering implementation (2026-11-14)
+
+- Construction status (built / not_built / in_progress / unknown) is INDEPENDENT of optical observation status (observed / not_observable / unknown, with occluded vs out_of_fov as distinct causes). A certified executed quantity can remain known when a camera cannot see an installed element.
+- Numeric zero requires dated approved quantity. Categorical not_built requires a separate absence_verified=true, absence_evidence_ref, absence_document_sha256, absence_approved_by and absence_approved_at_utc not later than the data date. Legacy not_evidenced and zero scan points cannot create not_built.
+- Optional --ifc-index-manifest consumes a read-only mycon.ifc_identity_index.v1 with source-relative immutable IFC file hash, real 22-character IFC compressed GlobalIds/classes, source-to-metre conversion, approved index provenance and IfcOpenShell parser verification. Matching index JSON and IFC SHA by themselves do NOT certify identity. Missing parser, mismatched class/units or absent IFC blocks ifc_identity_quality_gate and forces ifc_linked_construction_status=unknown without discarding independently approved measured fractions.
+- All five legacy named output artifacts remain unchanged. progress_dashboard.json now embeds engineering_audit_schema_version=mycon.progress_engineering_audit.v1 and observability_report, approved_quantity_report, wbs_boq_weight_report, uncertain_elements_report, manager_summary. These report camera image SHA refs, partial bounds, WBS/project weights, nullable activity percent and date-approved baseline without producing invented quantity/geometry.
+- Real operator protocol (not a field trial): docs/research_progress/4d_bim_field_case_protocol.md with real IFC/MEP/occluded/unobserved cases and independent BOQ, survey, camera, schedule and held-out expert source requirements.
+
+## Actual CPU and synthetic evidence, source commit c073a7cc43c4b46ee3c845400372a7808d5c36f2
+
+Local code archive from authentic GitHub Actions was extracted; all six relevant B source/test files have git blob SHA matching the PR branch exactly. Environment Python 3.13.5, pytest 9.0.2, CPU. Executed commands and exit results:
+
+- pytest -q tests/test_research_progress_monitor.py tests/test_research_progress_scientific.py => 36 passed, exit 0.
+- pytest -q tests/test_round2_progress_contract.py tests/test_stage_11_schedule_variance.py tests/test_stage_09_progress_interpretation.py tests/test_research_progress_geometry.py => 68 passed, exit 0.
+- python -m compileall -q pipeline/stage_09_progress pipeline/stage_11_schedule_variance => exit 0.
+- Synthetic Stage9-to-11 CLI with authored synthetic A manifest, expected synthetic IFC/registration hashes, approved sample quantity/BOQ/baseline => exit 0, five files produced; statuses 1 in_progress and 1 unknown; optical states 1 observed and 1 not_observable; physical point estimate null, partial-identification bounds 60–85%, planned 50%, decision blocked. No independent ground truth: categorical Precision/Recall/F1 and numeric MAE null. SHA output/input receipts are recorded in the B handoff.
+
+GitHub Actions on same B code commit (pull_request merge checkout with Git-blob-identical B files): specialized CPU https://github.com/sayyedalimrj/MyCon/actions/runs/43507962773 => 24 passed; Integration CPU https://github.com/sayyedalimrj/MyCon/actions/runs/43507962877 => 143 passed, 1 skipped. Both exit 0 on Python 3.11. Official Open3D Jupyter global registration notebook was inspected but NOT EXECUTED locally because open3d is missing and external GitHub DNS unavailable. MyCON synthetic CLI execution is distinct from external notebook.
+
+G2–G5 real field and publication gates remain blocked: no real as-built/IFC site case, heldout independent surveyed dimension/quantity/BOQ, real expert GT, or site precision/recall/F1 progress MAE. Field release is never declared passed automatically.
