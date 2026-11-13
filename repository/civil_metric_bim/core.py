@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import itertools
 import hashlib
 import json
 import math
@@ -270,6 +271,65 @@ def umeyama(src: np.ndarray, dst: np.ndarray, fixed_scale: float | None) -> tupl
     return s, R, t
 
 
+def robust_similarity(src: np.ndarray, dst: np.ndarray, fixed_scale: float | None,
+                      threshold_m: float, max_trials: int = 200,
+                      seed: int = 42) -> tuple[tuple, list[int]]:
+    """Optional seeded RANSAC Umeyama: fit controls ONLY, never evaluate holdouts here.
+
+    threshold_m is specified in the reviewed BIM adapter, not a hard-coded project
+    measurement tolerance. This is a candidate robust fit, not field validation.
+    """
+    threshold_m = positive(threshold_m, "registration.inlier_threshold_m")
+    if not 1 <= max_trials <= 10000:
+        raise ValueError("registration.max_trials must be 1..10000")
+    count = len(src)
+    minimum = 4 if fixed_scale is None else 3
+    if count < minimum + 1:
+        raise ValueError("RANSAC requires one extra independent fit feature")
+    rng = np.random.default_rng(seed)
+    total_subsets = math.comb(count, minimum)
+    if total_subsets <= max_trials:
+        subsets = list(itertools.combinations(range(count), minimum))
+    else:
+        subsets = []
+        visited = set()
+        for _ in range(max_trials * 12):
+            ids = tuple(sorted(map(int, rng.choice(count, size=minimum, replace=False))))
+            if ids not in visited:
+                visited.add(ids)
+                subsets.append(ids)
+            if len(subsets) >= max_trials:
+                break
+    best = None
+    best_ids = None
+    for ids in subsets:
+        try:
+            model = umeyama(src[list(ids)], dst[list(ids)], fixed_scale)
+        except (ValueError, np.linalg.LinAlgError):
+            continue
+        s, R, t = model
+        residuals = np.linalg.norm(s * (src @ R.T) + t - dst, axis=1)
+        fit_ids = np.flatnonzero(residuals <= threshold_m)
+        if len(fit_ids) < minimum:
+            continue
+        score = (len(fit_ids), -float(np.median(residuals[fit_ids])),
+                 -float(np.max(residuals[fit_ids])))
+        if best is None or score > best:
+            best = score
+            best_ids = fit_ids
+    if best_ids is None:
+        raise ValueError("No robust similarity consensus at operator-specified metre tolerance")
+    model = umeyama(src[best_ids], dst[best_ids], fixed_scale)
+    s, R, t = model
+    errors = np.linalg.norm(s * (src @ R.T) + t - dst, axis=1)
+    final_ids = np.flatnonzero(errors <= threshold_m)
+    if len(final_ids) < minimum:
+        raise ValueError("Robust refit lost inlier consensus")
+    if len(final_ids) != len(best_ids) or not np.array_equal(final_ids, best_ids):
+        model = umeyama(src[final_ids], dst[final_ids], fixed_scale)
+    return model, list(map(int, final_ids))
+
+
 def match_filter(bim: dict | None, for_fit: bool) -> list[dict]:
     matches = [] if bim is None else bim["matches"]
     selected = []
@@ -304,11 +364,28 @@ def build_transform(bim: dict | None, scale: dict) -> tuple[dict, tuple | None]:
         return output, None
     x = np.asarray([m["scan_xyz"] for m in matches], float)
     y = np.asarray([m["bim_xyz_m"] for m in matches], float)
+    method = (bim.get("registration") or {}).get("method", "umeyama")
+    registration = bim.get("registration") or {}
+    chosen_ids = list(range(len(matches)))
     try:
-        s, R, t = umeyama(x, y, fixed)
-    except ValueError as exc:
-        output.update(status="blocked_degenerate_correspondences", reason=str(exc))
+        if method == "umeyama":
+            s, R, t = umeyama(x, y, fixed)
+        elif method == "ransac_umeyama":
+            if "inlier_threshold_m" not in registration:
+                raise ValueError("RANSAC requires operator-specified inlier_threshold_m")
+            model, chosen_ids = robust_similarity(
+                x, y, fixed, float(registration["inlier_threshold_m"]),
+                int(registration.get("max_trials", 200)), int(registration.get("seed", 42)))
+            s, R, t = model
+        else:
+            raise ValueError("Unsupported registration.method")
+    except (ValueError, np.linalg.LinAlgError) as exc:
+        output.update(status="blocked_registration_failure", reason=str(exc))
         return output, None
+    output["registration_method"] = method
+    output["fit_inlier_match_ids"] = [matches[i]["match_id"] for i in chosen_ids]
+    output["fit_outlier_match_ids"] = [m["match_id"] for i, m in enumerate(matches) if i not in chosen_ids]
+    output["registration_tolerance_m"] = registration.get("inlier_threshold_m") if method == "ransac_umeyama" else None
     fit_delta = (s * (x @ R.T) + t) - y
     errors = np.linalg.norm(fit_delta, axis=1)
     output["fit_residuals"] = {
