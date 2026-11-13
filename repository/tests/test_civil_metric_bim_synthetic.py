@@ -204,7 +204,7 @@ def test_create_only_outputs_and_hashed_manifest(tmp_path):
     target = tmp_path / "runs/metric-bim-synthetic-001/metric_bim"
     expected = ["scale_estimate.json", "alignment_transform.json",
                 "alignment_report.csv", "heldout_control_errors.csv",
-                "deviation_map.csv", "deviation_heatmap.json"]
+                "deviation_map.csv", "deviation_heatmap.json", "viewer_handoff.json"]
     assert sorted(manifest["outputs"]) == sorted(expected)
     for name in expected:
         file = target / name
