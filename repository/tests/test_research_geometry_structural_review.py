@@ -222,3 +222,17 @@ def test_round2_real_label_must_have_verified_provenance(tmp_path):
     with pytest.raises(ValueError,match='Cannot mark unknown/synthetic source'):
         sr.generate(tmp_path,base,'geom-civil-fake-real',input_kind='real_reconstruction')
     assert not (tmp_path/'runs'/'geom-civil-fake-real').exists()
+
+# Coordinator-owned specialized CPU workflow currently selects this historical
+# A test path explicitly. Re-export the new A camera-safety suite so that the
+# exact-PR-HEAD run actually executes it without editing cross-owner workflow.
+from test_research_geometry_camera_bridge import (
+    test_registration_is_never_inferred_from_colmap_reprojection,
+    test_source_hash_tampering_fails_closed,
+    test_nonmatching_photo_name_fails_closed,
+    test_invalid_quaternion_fails_closed,
+    test_bad_camera_source_dimensions_fail,
+    test_dedicated_run_is_create_only,
+    test_reflection_does_not_count_as_registration,
+    test_sparse_ply_and_points3d_must_match,
+)
