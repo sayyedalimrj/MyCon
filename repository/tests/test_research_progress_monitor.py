@@ -62,7 +62,8 @@ def test_quantity_and_state_fail_closed(executed, expected):
 
 
 def test_verified_zero_needs_independent_absence_reference():
-    row = approved(quantity="0", absence_verified="True", absence_evidence_ref="synthetic-site-audit-1")
+    row = approved(quantity="0", absence_verified="True", absence_evidence_ref="synthetic-site-audit-1",
+                   absence_document_sha256=HASH, absence_approved_by="independent-fixture-reviewer")
     result = status_for_element(row, data_date=DATE, mapped=True, unique=True)
     assert result["construction_status"] == "not_built"
     assert result["physical_progress_estimate"] == 0.0
@@ -108,7 +109,7 @@ def test_class_abstention_does_not_impute_numeric_zero():
 def test_gt_leakage_is_rejected():
     t1 = truth(split="train")
     t2 = truth(global_id="1BcDefGhIjKlMnOpQrStUv", split="test")
-    with pytest.raises(ValueError, match="train_test_capture_session_leakage"):
+    with pytest.raises(ValueError, match="train_test_site_leakage"):
         evaluate_element_truth([], [t1, t2], data_date=DATE)
 
 
