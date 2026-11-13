@@ -652,6 +652,28 @@ def run(project_root: Path, run_id: str, *, references_json: Path | None = None,
                                 "coordinates": "xyz_bim_m", "missing_color": None},
             "points": heat, "valid_sample_count": sum(x["valid_mask"] for x in heat),
             "total_sample_count": len(heat), "metric_validation": "pending"})
+        viewer_assets = {}
+        for name in ("alignment_transform.json", "scale_estimate.json",
+                     "deviation_heatmap.json", "deviation_map.csv",
+                     "heldout_control_errors.csv"):
+            viewer_assets[name] = {
+                "path": (Path("runs") / run_id / "metric_bim" / name).as_posix(),
+                "sha256": digest(stage / name),
+            }
+        _write(stage / "viewer_handoff.json", {
+            "schema_version": "mycon.metric_bim_viewer_handoff.v1",
+            "run_id": run_id, "source_frame": frame, "target_frame": "bim_world",
+            "source_units": "reconstruction_units", "target_units": "m",
+            "scale_rotation_translation": "source XYZ transformed ONLY in derived viewer coordinates",
+            "viewer_mode": "candidate_diagnostic_only",
+            "metric_validation": "pending", "metric_coloring_allowed": False,
+            "valid_distance_requires": ["independent field controls",
+                                       "reviewed IFC reference revision",
+                                       "accepted scale and registration"],
+            "viewer_assets": viewer_assets,
+            "mask_policy": "null signed/unsigned is NO-DATA, not a measured zero",
+            "confidence": "uncalibrated; operator review required",
+        })
         assets = {p.name: {"path": (Path("runs") / run_id / "metric_bim" / p.name).as_posix(),
                            "sha256": digest(p), "bytes": p.stat().st_size}
                   for p in sorted(stage.iterdir())}
