@@ -215,7 +215,7 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("unsafe_or_invalid_progress_run_id")
         date = parse_iso_datetime(args.data_date_utc)
         schedule = load_schedule_csv(args.schedule_csv)
-        if schedule.provenance.n_skipped:
+        if schedule.provenance.n_rows_skipped:
             raise ValueError("schedule_has_skipped_invalid_rows")
         mapping = load_mapping_csv(args.mapping_csv)
         raw = _read_csv(args.element_metrics_csv, ("global_id",))
