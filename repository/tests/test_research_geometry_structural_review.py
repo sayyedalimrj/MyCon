@@ -125,3 +125,100 @@ def test_path_escape_and_metric_assertion_rejected(tmp_path):
     ob['metric_scale_verified']=False;ob['outputs']['planes.json']['path']='../../etc/passwd';base.write_text(json.dumps(ob))
     with pytest.raises(ValueError,match='out-of-project'):
         sr.generate(tmp_path,base,'geom-civil-escape-001')
+
+# Round 2: extraction on physically sampled candidate points, not Gaussian centres.
+from pipeline.stage_07_cleanup import research_dense_candidates as dc
+
+
+def sloped_room(seed=8, noise=.003, occluded=False, thinning=1):
+    rng=np.random.default_rng(seed)
+    x,y=np.meshgrid(np.linspace(-1,1,25),np.linspace(-1,1,25))
+    # A non-Manhattan vertical wall and a horizontal panel with actual finite points.
+    w=np.column_stack((.38*x.ravel(),x.ravel(),y.ravel()+2))
+    f=np.column_stack((x.ravel()+2,y.ravel()+2,np.full(x.size,.5)))
+    if occluded: w=w[~((w[:,1]>.1)&(w[:,2]>2.1))]
+    pts=np.vstack((w[::thinning],f[::thinning]))
+    return pts+rng.normal(0,noise,pts.shape)
+
+
+def test_round2_tilted_plane_noise_and_density():
+    true=np.array([1.,-.38,0]);true=true/np.linalg.norm(true)
+    for seed,noise,step in ((8,.002,1),(9,.012,2),(10,.004,3)):
+        xyz=sloped_room(seed,noise,thinning=step)
+        pl,edges,corners,qa=dc.extract(xyz,threshold=.055,min_points=55,max_planes=4,trials=90,seed=17)
+        assert pl and any(abs(np.dot(p['normal'],true))>.94 for p in pl)
+        assert qa['unknown_points']>=0
+        assert all(c['state']!='observed_supported' and c['field_confirmed'] is False for c in corners)
+
+
+def test_round2_partial_occlusion_keeps_slanted_hypothesis_unverified():
+    xyz=sloped_room(11,.006,occluded=True)
+    pl,ed,c,qa=dc.extract(xyz,threshold=.05,min_points=65,max_planes=4,trials=90,seed=13)
+    n=np.array([1.,-.38,0]);n/=np.linalg.norm(n)
+    assert any(abs(np.dot(p['normal'],n))>.94 for p in pl)
+    assert all(p['orientation_class']=='unknown_unverified_gravity' for p in pl)
+    assert all(x['state']=='candidate_extrapolated' for x in c)
+
+
+def test_round2_distant_infinite_plane_intersections_never_promote_corner():
+    a,b=np.meshgrid(np.linspace(3,4,18),np.linspace(3,4,18))
+    g=np.column_stack([a.ravel(),b.ravel()])
+    pts=np.vstack([np.column_stack((np.zeros(len(g)),g)),
+                   np.column_stack((g[:,0],np.zeros(len(g)),g[:,1])),
+                   np.column_stack((g,np.zeros(len(g))))])
+    pl,ed,co,_=dc.extract(pts,threshold=.025,min_points=65,max_planes=5,trials=90,seed=1)
+    assert len(pl)>=3
+    assert len(co)==0
+
+
+def test_round2_gaussian_centres_rejected_before_write(tmp_path):
+    src=tmp_path/'centres.ply';sr._write_ply(src,sloped_room(),np.tile([15,15,15],(1250,1)).astype('uint8'))
+    with pytest.raises(ValueError,match='Gaussian centres'):
+        dc.generate(src,tmp_path,'geom-ready-rejected',source_kind='gaussian_centers',threshold=.05)
+    assert not (tmp_path/'runs'/'geom-ready-rejected').exists()
+
+
+def test_round2_direct_cloud_candidate_and_review_hashes(tmp_path):
+    xyz=sloped_room()
+    source=tmp_path/'real_derived_candidate.ply'
+    sr._write_ply(source,xyz,np.tile([150,125,110],(len(xyz),1)).astype('uint8'))
+    base=dc.generate(source,tmp_path,'geom-ready-test-case',source_kind='depth_fused_candidate_nonmetric',
+                     threshold=.045,min_points=60,max_planes=4,trials=90)
+    assert base['metric_scale_verified'] is False and base['source_sha256']==sr.sha(source)
+    reviewed=sr.generate(tmp_path,tmp_path/'runs'/'geom-ready-test-case'/'geometry'/'comparison_ready.json',
+                         'geom-civil-direct-001',input_kind='synthetic')
+    assert reviewed['outputs']['geometry_review.html']['sha256']
+    qa=json.loads((tmp_path/'runs'/'geom-civil-direct-001'/'geometry'/'geometry_qa.json').read_text())
+    assert qa['confidence_calibrated'] is False and qa['feature_image_support_confirmed_count']==0
+
+
+def test_round2_image_index_hash_and_calibration_gate(tmp_path):
+    base=fake_source(tmp_path)
+    from PIL import Image
+    photo=tmp_path/'view.png'; Image.new('RGB',(3000,3000),(128,140,152)).save(photo)
+    extrinsic=np.eye(4).tolist()
+    index=tmp_path/'camera_index.json'
+    cam={'view_id':'v1','frame_convention':'colmap_opencv_world_to_camera','calibration_verified':True,
+         'image_path':'view.png','image_sha256':sr.sha(photo),'world_to_camera_4x4':extrinsic,
+         'fx':500,'fy':500,'cx':1000,'cy':1000,'width':3000,'height':3000}
+    index.write_text(json.dumps({'schema_version':'mycon.camera_evidence_index.v1',
+                      'coordinate_frame':'colmap_world','units':'arbitrary_reconstruction_units','cameras':[cam]}))
+    result=sr.generate(tmp_path,base,'geom-civil-camera-index',camera_index=index,input_kind='synthetic')
+    qa=json.loads((tmp_path/'runs'/'geom-civil-camera-index'/'geometry'/'geometry_qa.json').read_text())
+    assert qa['calibrated_source_camera_count']==1 and qa['camera_visibility_verified'] is False
+    plane=json.loads((tmp_path/'runs'/'geom-civil-camera-index'/'geometry'/'planes.json').read_text())['planes'][0]
+    assert len(plane['supporting_images'])==1
+    assert plane['supporting_images'][0]['status']=='projected_in_fov_occlusion_unverified'
+    assert plane['supporting_images'][0]['image_support_confirmed'] is False
+    # source image integrity still checked BEFORE a new output folder can be created
+    photo.write_bytes(b'tampered')
+    with pytest.raises(ValueError,match='image SHA-256 mismatch'):
+        sr.generate(tmp_path,base,'geom-civil-bad-photo',camera_index=index)
+    assert not (tmp_path/'runs'/'geom-civil-bad-photo').exists()
+
+
+def test_round2_real_label_must_have_verified_provenance(tmp_path):
+    base=fake_source(tmp_path)
+    with pytest.raises(ValueError,match='Cannot mark unknown/synthetic source'):
+        sr.generate(tmp_path,base,'geom-civil-fake-real',input_kind='real_reconstruction')
+    assert not (tmp_path/'runs'/'geom-civil-fake-real').exists()
