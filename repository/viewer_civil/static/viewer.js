@@ -8,7 +8,7 @@ const state={mode:'confidence',selectedCamera:null,layers:{mesh:true,point_cloud
 const swatches={point_cloud:'#caa9df',mesh:'#4cb8a4',planes:'#577f99',edges:'#f1bc7e',corners:'#c6e6f0',cameras:'#b4e3f1',path:'#7cb9e6',unknown:'#ce8ab2',bim:'#8799c1',deviation:'#ef7777'};
 const labels={point_cloud:'Point samples (optional)',mesh:'Reconstructed surfaces',planes:'Plane patches',edges:'Edges / corners lines',corners:'Corner candidates',cameras:'Camera frustums',path:'Camera trajectory',unknown:'Unknown / unsupported',bim:'Shape 4 / BIM overlay',deviation:'Metric deviation heatmap'};
 const traces=[], groupIndices={};
-const HAS_WEBGL=(()=>{try{const c=document.createElement('canvas');return !!(c.getContext('webgl')||c.getContext('experimental-webgl'));}catch(e){return false}})();
+let HAS_WEBGL=(()=>{try{const c=document.createElement('canvas');return !!(c.getContext('webgl')||c.getContext('experimental-webgl'));}catch(e){return false}})();
 const fallback={yaw:.74,pitch:.42,zoom:1,canvas:null,coords:[]};
 const extent=[[ -5,5],[-4,4],[-1,4]];
 function add(group, trace) { trace.visible=state.layers[group] ? true : false; trace.showlegend=false; trace.hoverinfo=trace.hoverinfo||'skip'; traces.push(trace); (groupIndices[group]??=[]).push(traces.length-1); }
@@ -68,7 +68,7 @@ function buildTraces(){
  }
 }
 function render(preserve=true){
- if(!HAS_WEBGL){renderCanvas();return Promise.resolve();}
+ if(!HAS_WEBGL || typeof Plotly==='undefined'){HAS_WEBGL=false;renderCanvas();return Promise.resolve();}
  const camera=preserve && $('scene')._fullLayout?.scene?.camera ? $('scene')._fullLayout.scene.camera : {eye:{x:1.55,y:1.7,z:1.07},up:{x:0,y:0,z:1}};
  buildTraces();
  return Plotly.react('scene',traces,{paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',margin:{l:0,r:0,t:0,b:0},showlegend:false,
@@ -178,7 +178,9 @@ function init(){
  const corners=A.corners.corners||[],faces=A.mesh.faces||[],edges=A.edges.edges||[];
  const rows=[['Surface facets',faces.length],['Plane patches',A.planes.planes.length],['Edge candidates',edges.length],['Corner candidates',corners.length],['Unknown features',corners.filter(c=>c.confidence===null).length+edges.filter(e=>e.state==='unknown').length]];
  $('evidence').innerHTML='';rows.forEach(([label,value])=>{const el=document.createElement('div');el.className='ev-row';const t=document.createElement('span');t.textContent=label;const n=document.createElement('strong');n.textContent=value;el.append(t,n);$('evidence').appendChild(el);});
- refreshLayers();render(false).then(()=>{selectCamera(A.camera_poses.cameras[0].camera_id);if(HAS_WEBGL)$('scene').on('plotly_click',event=>{const p=event?.points?.[0];const id=p?.customdata;if(typeof id==='string'&&A.camera_poses.cameras.some(c=>c.camera_id===id))selectCamera(id);});window.__VIEWER_READY__=true;}).catch(e=>{$('integrity-note').textContent='RENDER FAILURE: '+e.message;window.__VIEWER_ERROR__=e.message;});
+ refreshLayers();render(false).then(()=>{selectCamera(A.camera_poses.cameras[0].camera_id);if(HAS_WEBGL)$('scene').on('plotly_click',event=>{const p=event?.points?.[0];const id=p?.customdata;if(typeof id==='string'&&A.camera_poses.cameras.some(c=>c.camera_id===id))selectCamera(id);});window.__VIEWER_READY__=true;}).catch(e=>{HAS_WEBGL=false;fallback.canvas=null;renderCanvas();selectCamera(A.camera_poses.cameras[0].camera_id);
+ $('integrity-note').textContent='WebGL renderer unavailable; Canvas fallback active. '+String(e.message||e);
+ window.__VIEWER_READY__=true;});
 }
 window.MyCONViewer={selectCamera,setLayer,orbit,state,manifest:M,cameraMarkers:()=>fallback.coords.map(x=>({...x}))};
 window.__VIEWER_READY__=false;
