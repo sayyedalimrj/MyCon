@@ -600,6 +600,27 @@ def run(project_root: Path, run_id: str, *, references_json: Path | None = None,
         scale["bim_correspondence_scale_candidate_m_per_unit"] = float(tx[0])
         scale["bim_correspondence_uncertainty_1sigma_m_per_unit"] = None
         scale["bim_candidate_status"] = "requires_reviewed_model_revision_and_independent_survey"
+        scale["bim_scale_uncertainty_reason"] = "unknown_without_independent_field_control"
+        # Report stability under leave-one-feature-out, NOT statistical survey error.
+        used_ids = set(alignment.get("fit_inlier_match_ids", []))
+        used = [m for m in match_filter(bim, True) if m["match_id"] in used_ids]
+        if len(used) >= 5:
+            x = np.array([m["scan_xyz"] for m in used], dtype=float)
+            y = np.array([m["bim_xyz_m"] for m in used], dtype=float)
+            loo = []
+            for i in range(len(used)):
+                idx = np.arange(len(used)) != i
+                try:
+                    loo.append(umeyama(x[idx], y[idx], fixed_scale=None)[0])
+                except (ValueError, np.linalg.LinAlgError):
+                    pass
+            if len(loo) == len(used):
+                values = np.asarray(loo)
+                scale["bim_correspondence_jackknife_scale_stability_m_per_unit"] = float(
+                    np.sqrt((len(values) - 1) * np.mean((values - np.mean(values)) ** 2)))
+                scale["bim_correspondence_jackknife_count"] = int(len(loo))
+                scale["bim_correspondence_jackknife_interpretation"] = (
+                    "perturbation stability on fitted BIM pairs, not survey uncertainty nor confidence interval")
         scale["status"] = "bim_only_scale_proposal_not_independent_field_scale"
     alignment["run_id"] = run_id
     alignment["source_frame"] = frame
