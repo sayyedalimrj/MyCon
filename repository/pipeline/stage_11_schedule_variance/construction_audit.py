@@ -106,7 +106,7 @@ def engineering_audit(
         })
     status_counts = Counter(r["observation_status"] for r in observation_rows)
     return {
-        "schema_version": SCHEMA,
+        "engineering_audit_schema_version": SCHEMA,
         "observability_report": {
             "status_counts": dict(status_counts),
             "geometry_manifest_valid": geometry_summary.get("geometry_adapter_valid") is True,
