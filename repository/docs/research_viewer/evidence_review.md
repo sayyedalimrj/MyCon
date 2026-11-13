@@ -26,7 +26,7 @@ No code from either upstream repository has been copied; only API and UX ideas.
 - **Source** https://github.com/nerfstudio-project/nerfview/blob/bd802d765fe3ccef6c66538927bf3ce69dd69632/examples/00_dummy_rendering.py
 - **Instructions**: `python -m venv .venv; . .venv/bin/activate; pip install torch; pip install -e .; pip install -r examples/requirements.txt; python examples/00_dummy_rendering.py --port 8080`. Input is a synthetic dummy renderer, **no MyCON data**. Browser on `127.0.0.1:8080`.
 - **Execution status**: **NOT_EXECUTED** in local tool environment: `git ls-remote https://github.com/sayyedalimrj/MyCon.git HEAD` fails `Could not resolve host: github.com`; obtaining compatible CUDA/torch/gsplat or exact upstream checkout via this environment is blocked. Source file, requirements and license were actually read via the GitHub connector. Do **not** label inspected code as run.
-- Self-contained MyCON synthetic standalone viewer from prior package has separately executed browser/CPU tests and PNG/MP4, not an upstream nerfview demonstration; original package retained outside GitHub until ported by its owner.
+- Self-contained MyCON synthetic standalone viewer from prior package was actually browser/CPU tested (7 passed) and its **exact original source** is now preserved at `repository/viewer_civil/legacy_snapshot/`; a derivative screenshot/MP4 set is committed under `repository/viewer_civil/media/`. These are **not** an upstream nerfview demonstration nor real-site evidence. New Github branch source/test CI reports 11 passed, 2 skipped on SHA `f55305a9e66d9ec167468a343f4803eb3162826d`.
 
 ## Comparison and decision
 
