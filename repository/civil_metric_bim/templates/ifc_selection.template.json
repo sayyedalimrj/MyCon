@@ -1,0 +1,154 @@
+{
+  "schema_version": "mycon.ifc_field_selection.v1",
+  "source_frame": null,
+  "geometry_manifest_sha256": null,
+  "inventory_sha256": null,
+  "matches": [
+    {
+      "match_id": "fit_1",
+      "physical_feature_id": null,
+      "endpoint_id": null,
+      "kind": "corner",
+      "role": "fit",
+      "ifc_global_id": null,
+      "vertex_index": null,
+      "scan_xyz": [
+        null,
+        null,
+        null
+      ],
+      "observation_state": "unknown",
+      "approval": {
+        "status": "proposed",
+        "reviewer": null,
+        "evidence_id": null
+      },
+      "field_evidence": {
+        "path": null,
+        "sha256": null
+      }
+    },
+    {
+      "match_id": "fit_2",
+      "physical_feature_id": null,
+      "endpoint_id": null,
+      "kind": "corner",
+      "role": "fit",
+      "ifc_global_id": null,
+      "vertex_index": null,
+      "scan_xyz": [
+        null,
+        null,
+        null
+      ],
+      "observation_state": "unknown",
+      "approval": {
+        "status": "proposed",
+        "reviewer": null,
+        "evidence_id": null
+      },
+      "field_evidence": {
+        "path": null,
+        "sha256": null
+      }
+    },
+    {
+      "match_id": "fit_3",
+      "physical_feature_id": null,
+      "endpoint_id": null,
+      "kind": "corner",
+      "role": "fit",
+      "ifc_global_id": null,
+      "vertex_index": null,
+      "scan_xyz": [
+        null,
+        null,
+        null
+      ],
+      "observation_state": "unknown",
+      "approval": {
+        "status": "proposed",
+        "reviewer": null,
+        "evidence_id": null
+      },
+      "field_evidence": {
+        "path": null,
+        "sha256": null
+      }
+    },
+    {
+      "match_id": "fit_4",
+      "physical_feature_id": null,
+      "endpoint_id": null,
+      "kind": "corner",
+      "role": "fit",
+      "ifc_global_id": null,
+      "vertex_index": null,
+      "scan_xyz": [
+        null,
+        null,
+        null
+      ],
+      "observation_state": "unknown",
+      "approval": {
+        "status": "proposed",
+        "reviewer": null,
+        "evidence_id": null
+      },
+      "field_evidence": {
+        "path": null,
+        "sha256": null
+      }
+    },
+    {
+      "match_id": "control_1",
+      "physical_feature_id": null,
+      "endpoint_id": null,
+      "kind": "corner",
+      "role": "control",
+      "ifc_global_id": null,
+      "vertex_index": null,
+      "scan_xyz": [
+        null,
+        null,
+        null
+      ],
+      "observation_state": "unknown",
+      "approval": {
+        "status": "proposed",
+        "reviewer": null,
+        "evidence_id": null
+      },
+      "field_evidence": {
+        "path": null,
+        "sha256": null
+      }
+    },
+    {
+      "match_id": "control_2",
+      "physical_feature_id": null,
+      "endpoint_id": null,
+      "kind": "corner",
+      "role": "control",
+      "ifc_global_id": null,
+      "vertex_index": null,
+      "scan_xyz": [
+        null,
+        null,
+        null
+      ],
+      "observation_state": "unknown",
+      "approval": {
+        "status": "proposed",
+        "reviewer": null,
+        "evidence_id": null
+      },
+      "field_evidence": {
+        "path": null,
+        "sha256": null
+      }
+    }
+  ],
+  "planes": [],
+  "samples": []
+}

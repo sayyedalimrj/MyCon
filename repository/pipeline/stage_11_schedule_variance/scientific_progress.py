@@ -73,6 +73,8 @@ def _baseline(schedule_rows: list[Mapping[str, Any]], activity_id: str, date: dt
         reasons.append('baseline_approval_provenance_incomplete')
     elif approved > date:
         reasons.append('baseline_approved_after_data_date')
+    if as_utc(row.get('planned_as_of_utc')) > date:
+        reasons.append('baseline_snapshot_after_data_date')
     return pct if not reasons else None, audit, reasons
 
 
@@ -89,6 +91,9 @@ def _aggregate(parts: list[dict[str,Any]], weights: list[float] | None) -> dict[
         return {'physical_progress_estimate':None,'physical_progress_lower_bound_pct':None,
                 'physical_progress_upper_bound_pct':None,'planned_percent_complete':None,
                 'schedule_variance_percent':None,'observability_ratio':None,'evidence_confidence':None}
+    # Normalize before multiplying to avoid overflow with large BOQ weights.
+    maximum = max(weights)
+    weights = [w / maximum for w in weights]
     total = sum(weights)
     def avg(field: str) -> float | None:
         values = [r.get(field) for r in parts]
@@ -119,6 +124,13 @@ def build_scientific_progress_report(
     activity_records: list[dict[str,Any]] = []
     project_weights: list[float] = []
     project_bases: set[str] = set()
+    # One element-wide quantity cannot independently establish completion of
+    # multiple operations (e.g. formwork and painting). No scope allocation
+    # exists in the frozen mapping schema; abstain for shared IDs.
+    activity_by_element: dict[str, set[str]] = {}
+    for entry in mapping.entries:
+        activity_by_element.setdefault(entry.ifc_global_id, set()).add(entry.activity_id)
+    shared_ids = {gid for gid, aids in activity_by_element.items() if len(aids) > 1}
     for activity in schedule.activities:
         aid = activity.activity_id
         entries = mapping.elements_for_activity(aid)
@@ -142,10 +154,11 @@ def build_scientific_progress_report(
             if weight is not None:
                 element_weights.append(weight)
                 element_bases.add(weight_audit['basis'])
-            if len(recs) != 1:
-                warnings.append('missing_or_duplicate_element_record:'+gid)
+            if len(recs) != 1 or gid in shared_ids:
+                reason = ('shared_ifc_requires_activity_specific_quantity_allocation' if gid in shared_ids else 'missing_or_duplicate_element_record')
+                warnings.append(reason+':'+gid)
                 parsed={'physical_progress_estimate':None,'physical_progress_status':'unknown',
-                        'physical_progress_reason_codes':'missing_or_duplicate_element_record',
+                        'physical_progress_reason_codes':reason,
                         'geometry_evidence_state':'unknown', 'observability_ratio':None,
                         'evidence_confidence':None,'quantity_audit_gate':'blocked','quantity_audit':{}}
             else:
@@ -210,9 +223,19 @@ def build_scientific_progress_report(
                 },
                 'physical_progress_formula':'executed_quantity / planned_quantity' if parsed['physical_progress_estimate'] is not None else None,
             })
+        quantity_units = {e['quantity_audit'].get('quantity_unit') for e in element_records}
+        # Quantity-basis weights cannot add incompatible units. An unknown
+        # unit also cannot silently enter the quantity denominator.
+        comparable_quantity = (element_bases != {'approved_quantity'} or
+                               (len(quantity_units) == 1 and None not in quantity_units))
+        if not comparable_quantity: warnings.append('quantity_weight_units_unknown_or_mixed')
         valid_weights = (bool(entries) and len(seen_gid)==len(entries)
-                         and len(element_weights)==len(entries) and len(element_bases)==1)
+                         and len(element_weights)==len(entries) and len(element_bases)==1
+                         and comparable_quantity)
         if not valid_weights: warnings.append('invalid_or_incomparable_element_weights')
+        if valid_weights:
+            maximum = max(element_weights)
+            element_weights = [w / maximum for w in element_weights]
         total = sum(element_weights) if valid_weights else None
         if valid_weights:
             sum_known=sum(w*e['physical_progress_estimate'] for w,e in zip(element_weights,element_records)
@@ -257,9 +280,18 @@ def build_scientific_progress_report(
             'warnings':sorted(set(warnings)),'elements':element_records,
         }
         activity_records.append(row)
-        approved_weight_rec = next((r for r in baseline_rows if r.get('activity_id')==aid and
-                                    as_utc(r.get('planned_as_of_utc')) and as_utc(r['planned_as_of_utc']).date()==date.date()),{})
+        weight_candidates = [r for r in baseline_rows if str(r.get('activity_id') or '').strip()==aid and
+                             as_utc(r.get('planned_as_of_utc')) and as_utc(r['planned_as_of_utc']).date()==date.date()]
+        approved_weight_rec = weight_candidates[0] if len(weight_candidates)==1 else {}
         pw,pa,pr=_audit_weight(approved_weight_rec,key='activity',date=date)
+        if len(weight_candidates)!=1 or as_utc(approved_weight_rec.get('planned_as_of_utc')) > date:
+            pw = None
+            pr.append('missing_duplicate_or_future_activity_weight_snapshot')
+        # Project quantity weights lack an explicit common unit in the frozen
+        # schedule schema; approved cost/BOQ weights remain supported.
+        if pa['basis']=='approved_quantity':
+            pw = None
+            pr.append('project_quantity_weight_unit_not_declared')
         if pw is not None:
             project_weights.append(pw);project_bases.add(pa['basis'])
         row['activity_weight_audit']=pa
@@ -267,6 +299,9 @@ def build_scientific_progress_report(
         row['activity_weight_reason_codes']=pr
     valid_project = bool(activity_records) and len(project_weights)==len(activity_records) and len(project_bases)==1
     overall = _aggregate(activity_records,project_weights if valid_project else None)
+    overall['schedule_variance_bounds_pct'] = ([overall['physical_progress_lower_bound_pct']-overall['planned_percent_complete'],
+        overall['physical_progress_upper_bound_pct']-overall['planned_percent_complete']]
+        if overall['physical_progress_lower_bound_pct'] is not None and overall['planned_percent_complete'] is not None else None)
     overall['schedule_variance_status']=_status(overall['planned_percent_complete'],
                                                  overall['physical_progress_estimate'],on_schedule_band_pct)
     overall['activity_weights_approved']=valid_project
@@ -277,6 +312,9 @@ def build_scientific_progress_report(
         ws=[finite_number(a['activity_weight_audit'].get('value')) for a in subset]
         qualified=all(a['activity_weight_quality_gate']=='pass' for a in subset) and len(set(a['activity_weight_audit']['basis'] for a in subset))==1
         agg=_aggregate(subset,ws if qualified else None)
+        agg['schedule_variance_bounds_pct'] = ([agg['physical_progress_lower_bound_pct']-agg['planned_percent_complete'],
+            agg['physical_progress_upper_bound_pct']-agg['planned_percent_complete']]
+            if agg['physical_progress_lower_bound_pct'] is not None and agg['planned_percent_complete'] is not None else None)
         agg['schedule_variance_status']=_status(agg['planned_percent_complete'],agg['physical_progress_estimate'],on_schedule_band_pct)
         agg['activity_ids']=[a['activity_id'] for a in subset]
         agg['quality_gate']='pass' if qualified and not agg['schedule_variance_status'].startswith('unknown') else 'blocked'

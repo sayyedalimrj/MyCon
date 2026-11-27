@@ -1,0 +1,213 @@
+{
+  "schema_version": "mycon.length_references.v1",
+  "source_frame": null,
+  "source_units": "reconstruction_units",
+  "geometry_manifest_sha256": null,
+  "references": [
+    {
+      "reference_id": "fit_1",
+      "physical_source_id": null,
+      "source_kind": "field_measurement",
+      "role": "fit",
+      "endpoint_ids": [
+        null,
+        null
+      ],
+      "scan_endpoints_xyz": [
+        [
+          null,
+          null,
+          null
+        ],
+        [
+          null,
+          null,
+          null
+        ]
+      ],
+      "actual_length_m": null,
+      "actual_uncertainty_m": null,
+      "scan_distance_uncertainty_units": null,
+      "confidence": {
+        "grade": "low_unverified"
+      },
+      "measured_at": null,
+      "instrument": null,
+      "measurement_method": null,
+      "operator": null,
+      "approval": {
+        "status": "proposed",
+        "reviewer": null,
+        "evidence_id": null
+      },
+      "field_evidence": {
+        "path": null,
+        "sha256": null
+      }
+    },
+    {
+      "reference_id": "fit_2",
+      "physical_source_id": null,
+      "source_kind": "field_measurement",
+      "role": "fit",
+      "endpoint_ids": [
+        null,
+        null
+      ],
+      "scan_endpoints_xyz": [
+        [
+          null,
+          null,
+          null
+        ],
+        [
+          null,
+          null,
+          null
+        ]
+      ],
+      "actual_length_m": null,
+      "actual_uncertainty_m": null,
+      "scan_distance_uncertainty_units": null,
+      "confidence": {
+        "grade": "low_unverified"
+      },
+      "measured_at": null,
+      "instrument": null,
+      "measurement_method": null,
+      "operator": null,
+      "approval": {
+        "status": "proposed",
+        "reviewer": null,
+        "evidence_id": null
+      },
+      "field_evidence": {
+        "path": null,
+        "sha256": null
+      }
+    },
+    {
+      "reference_id": "fit_3",
+      "physical_source_id": null,
+      "source_kind": "field_measurement",
+      "role": "fit",
+      "endpoint_ids": [
+        null,
+        null
+      ],
+      "scan_endpoints_xyz": [
+        [
+          null,
+          null,
+          null
+        ],
+        [
+          null,
+          null,
+          null
+        ]
+      ],
+      "actual_length_m": null,
+      "actual_uncertainty_m": null,
+      "scan_distance_uncertainty_units": null,
+      "confidence": {
+        "grade": "low_unverified"
+      },
+      "measured_at": null,
+      "instrument": null,
+      "measurement_method": null,
+      "operator": null,
+      "approval": {
+        "status": "proposed",
+        "reviewer": null,
+        "evidence_id": null
+      },
+      "field_evidence": {
+        "path": null,
+        "sha256": null
+      }
+    },
+    {
+      "reference_id": "control_1",
+      "physical_source_id": null,
+      "source_kind": "field_measurement",
+      "role": "control",
+      "endpoint_ids": [
+        null,
+        null
+      ],
+      "scan_endpoints_xyz": [
+        [
+          null,
+          null,
+          null
+        ],
+        [
+          null,
+          null,
+          null
+        ]
+      ],
+      "actual_length_m": null,
+      "actual_uncertainty_m": null,
+      "scan_distance_uncertainty_units": null,
+      "confidence": {
+        "grade": "low_unverified"
+      },
+      "measured_at": null,
+      "instrument": null,
+      "measurement_method": null,
+      "operator": null,
+      "approval": {
+        "status": "proposed",
+        "reviewer": null,
+        "evidence_id": null
+      },
+      "field_evidence": {
+        "path": null,
+        "sha256": null
+      }
+    },
+    {
+      "reference_id": "control_2",
+      "physical_source_id": null,
+      "source_kind": "field_measurement",
+      "role": "control",
+      "endpoint_ids": [
+        null,
+        null
+      ],
+      "scan_endpoints_xyz": [
+        [
+          null,
+          null,
+          null
+        ],
+        [
+          null,
+          null,
+          null
+        ]
+      ],
+      "actual_length_m": null,
+      "actual_uncertainty_m": null,
+      "scan_distance_uncertainty_units": null,
+      "confidence": {
+        "grade": "low_unverified"
+      },
+      "measured_at": null,
+      "instrument": null,
+      "measurement_method": null,
+      "operator": null,
+      "approval": {
+        "status": "proposed",
+        "reviewer": null,
+        "evidence_id": null
+      },
+      "field_evidence": {
+        "path": null,
+        "sha256": null
+      }
+    }
+  ]
+}

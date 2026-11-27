@@ -1,0 +1,148 @@
+{
+  "schema_version": "mycon.civil_geometry_execution_evidence.v1",
+  "date_utc": "2026-11-13",
+  "source": {
+    "origin": "Google Drive original source, read-only",
+    "drive_file_id": "1qQLBz4MKud_BCUfMKfeT568ihPmv96Tk",
+    "name": "depth_fused_candidate_nonmetric.ply",
+    "sha256": "c1f706ec951a1120eb748122e54dd75cee5b3fac80135efcb5cdee844e1ef3ee",
+    "bytes": 1562666,
+    "point_count": 104161,
+    "source_kind": "depth_fused_candidate_nonmetric",
+    "source_receipt_sha256": "7e47dffb9fafb0ae1076f45549693a50373db11a1f414d879c175f3ce5840ee1",
+    "receipt_claims": {
+      "colmap_nonmetric": true,
+      "false_positive_geometry_possible": true,
+      "narrow_baseline_and_unobserved_views_certified": false
+    },
+    "independently_surveyed": false,
+    "input_is_raw_gaussian_centers": false,
+    "data_partition": "single original project source; no independent heldout split"
+  },
+  "run_ids": {
+    "base": "geom-ready-real-depth-20261113-002",
+    "review": "geom-civil-real-depth-20261113-final1"
+  },
+  "base_manifest_sha256": "1d736aac85f1c327c6d775b38c329401aae2dab026fc5622cf74d005f83a9d67",
+  "review_manifest_sha256": "d9f5cc124a0b176b11473dd59407a44ac1cae862d2af1db252a003ccffc719b0",
+  "coordinate_frame": "colmap_world_unverified",
+  "units": "arbitrary_reconstruction_units",
+  "metric_scale_verified": false,
+  "registration_verified": false,
+  "quality_status": "real_source_processed; NOT_FIELD_VALIDATED; no actual accuracy or construction semantics",
+  "output_counts": {
+    "plane_patches": 15,
+    "candidate_edges": 49,
+    "extrapolated_corner_candidates": 7,
+    "observed_supported_corners": 0,
+    "human_confirmed_corners": 0,
+    "unassigned_points": 57850
+  },
+  "camera": {
+    "calibrated_and_hash_linked_image_count": 0,
+    "camera_image_overlay": "not_executed_missing_linked_photo_pose_K",
+    "independent_occlusion_test": "not_executed"
+  },
+  "outputs": {
+    "shape3_view_02.png": {
+      "sha256": "1225c48c347c10757fd1cf53ed0b7b61ba04608067667838778de8a3df20dcf6",
+      "bytes": 237836
+    },
+    "viewer_overlay.json": {
+      "sha256": "021cce09edf43132302afde1c53e714347fa69b94b9fa6123dca2571d9f10ab0",
+      "bytes": 1586393
+    },
+    "components.csv": {
+      "sha256": "1bef6603fe71441de4a41948fea998fe52f22d81ec83ed15203b81b77bb62ee9",
+      "bytes": 16289
+    },
+    "stability_report.csv": {
+      "sha256": "db2e7f0b745be5fa6e1097d3681dc39f3a7612f1d57c00a53459404a6d28bade",
+      "bytes": 9593
+    },
+    "clean_cloud.npy": {
+      "sha256": "75714ae461209c123b772207dae70f492d821b74505c8fb7e0a0fe7792fa7b1c",
+      "bytes": 2499992
+    },
+    "planes.json": {
+      "sha256": "ccaae14c746418b6c36daab49ea888c0f6b089e1eae69be54e64db94ea8ad0a5",
+      "bytes": 798861
+    },
+    "planes_colored.ply": {
+      "sha256": "f437e5f4f16048e02c5b13ff13139b0a7debe5b1e356ce92b79e37c2d5166a36",
+      "bytes": 1666819
+    },
+    "manual_review_template.csv": {
+      "sha256": "2f497c19a73605a0ba7588a8bfd8bc5edc23f03c0c4f3b389f775d3e3f94ff29",
+      "bytes": 1518
+    },
+    "shape3_view_03.png": {
+      "sha256": "0fc59c0f1ecead299c746a92393a1efd97005abca5f2cf437e1abbc889d7e9a1",
+      "bytes": 421249
+    },
+    "shape3_view_01.png": {
+      "sha256": "a4d5647d557f3201f46d324a93d5a42c70bf35dce292081c00331457d707b32f",
+      "bytes": 338227
+    },
+    "corners.json": {
+      "sha256": "b5b5964a564090baa45956af9e89636e7dbd1093f22298805c32f306729c0a2d",
+      "bytes": 8610
+    },
+    "civil_geometry_manifest.json": {
+      "sha256": "d9f5cc124a0b176b11473dd59407a44ac1cae862d2af1db252a003ccffc719b0",
+      "bytes": 4637
+    },
+    "geometry_review.html": {
+      "sha256": "5fefdcec538d6d8d4ca953526fa3e902167a8dbcdbefd797a4c03518d99fdf4a",
+      "bytes": 1670792
+    },
+    "geometry_qa.json": {
+      "sha256": "05fc9d991333f0f6c0047c792466ef51fb48996441732c3dd44038aa22c18f75",
+      "bytes": 12634
+    },
+    "edges.json": {
+      "sha256": "8d5a0742942aa12242cc71a7b7333fbc07e6f967b9de8fce98abc65bc9579047",
+      "bytes": 548832
+    },
+    "clean_cloud.ply": {
+      "sha256": "49a3776936f442cdcf1469e6884edf9d5aede0f9d88858dc5c3ba7eae4203dad",
+      "bytes": 1666819
+    }
+  },
+  "executed": [
+    {
+      "command": "PYTHONPATH=. pytest -q tests/test_research_geometry_structural_review.py",
+      "exit_code": 0,
+      "passed": 14,
+      "failed": 0,
+      "environment": "local isolated A-owned modules; blob SHA matched GitHub committed file"
+    },
+    {
+      "command": "PYTHONPATH=. python -m pipeline.stage_07_cleanup.research_dense_candidates --input-ply <source> --project-root <isolated_root> --run-id geom-ready-real-depth-20261113-002 --source-kind depth_fused_candidate_nonmetric --source-receipt <depth_fusion.json> --threshold .09 --max-planes 9 --trials 100 --max-sample 14000 --min-points 220",
+      "exit_code": 0,
+      "result": "15 plane patches, 49 edge candidates, 7 trihedral extrapolated candidates"
+    },
+    {
+      "command": "PYTHONPATH=. python -m pipeline.stage_07_cleanup.structural_review --project-root <isolated_root> --base-manifest <base comparison_ready.json> --run-id geom-civil-real-depth-20261113-final1 --input-kind real_reconstruction",
+      "exit_code": 0,
+      "result": "geometry outputs + colored PLY + 3 RGB-free 3D previews + HTML + QA + CSV"
+    }
+  ],
+  "not_executed": [
+    "full checked-out GitHub tree regression (network DNS blocked locally)",
+    "2DGS CUDA notebook/training",
+    "Open3D upstream Python demo (package absent)",
+    "camera-matched photo overlay in actual room",
+    "independent surveyed GT and metric calibration",
+    "held-out multi-session/localization repeatability",
+    "true wall/floor/ceiling semantic certification"
+  ],
+  "human_review": {
+    "required": true,
+    "status": "pending",
+    "path": "manual_review_template.csv"
+  },
+  "software": {
+    "python": "3.13.5"
+  }
+}

@@ -11,12 +11,14 @@ import datetime as dt
 import hashlib
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
 from .evidence_metrics import element_scientific_fields, valid_sha256
-from .geometry_evidence_adapter import load_geometry_evidence_manifest
+from .geometry_evidence_adapter import GeometryEvidenceBundle, load_geometry_evidence_manifest
 from .comparison_ready_adapter import load_comparison_ready_geometry, comparison_for_element
+from .upstream_receipt_audit import audit_upstream_receipts
 
 SCHEMA = 'mycon.stage9.scientific_evidence.v2'
 
@@ -36,9 +38,16 @@ def enrich_scientific_evidence_rows(
     comparison_ready_project_id: str | None = None,
     comparison_ifc_linkage_path: Path | None = None,
     expected_comparison_linkage_sha256: str | None = None,
+    a_handoff_manifest: Path | None = None,
+    expected_a_handoff_sha256: str | None = None,
+    d_metric_manifest: Path | None = None,
+    expected_d_metric_sha256: str | None = None,
 ) -> tuple[list[dict[str,Any]], dict[str,Any]]:
+    upstream = audit_upstream_receipts(project_root=project_root,
+        a_manifest=a_handoff_manifest, a_sha256=expected_a_handoff_sha256,
+        d_manifest=d_metric_manifest, d_sha256=expected_d_metric_sha256)
     ids=[str(r.get('global_id') or '').strip() for r in rows]
-    count={gid:ids.count(gid) for gid in set(ids)}
+    count=Counter(ids)
     independent_inputs_valid = (all(valid_sha256(x) for x in (expected_ifc_sha256, expected_scan_sha256, expected_registration_sha256)) and bool(expected_project_id))
     bundle=(load_geometry_evidence_manifest(
         manifest_path, project_root=project_root, expected_global_ids=set(ids),
@@ -47,6 +56,12 @@ def enrich_scientific_evidence_rows(
         expected_registration_sha256=expected_registration_sha256,
         expected_project_id=expected_project_id,
     ) if manifest_path and independent_inputs_valid else None)
+    # A/D receipt presence is an explicit request to use these upstream runs.
+    # Their current schemas do not bind an accepted Stage8 run. Refuse a mixed
+    # provenance Stage8 claim rather than combine unrelated runs.
+    upstream_requested = a_handoff_manifest is not None or d_metric_manifest is not None
+    if upstream_requested:
+        bundle = None
     # The generic reconstruction package is valid even without IFC or metric
     # scale. It is diagnostic-only until an independently audited mapping
     # passes a separate scale, registration and identity gate.
@@ -80,23 +95,23 @@ def enrich_scientific_evidence_rows(
         # revalidate signed quantity from the *raw* audit fields below.
         pre=element_scientific_fields(source,require_audit=True,data_date=data_date)
         if not bundle:
-            geom={'geometry_adapter_valid':False,'geometry_evidence_state':'unknown_manifest',
-                  'observability_ratio':None,'observability_source':'',
-                  'geometry_manifest_sha256':None,'geometry_evidence_reason_codes':'manifest_not_supplied'}
+            reason = ('upstream_receipts_not_bound_to_approved_stage8' if upstream_requested else
+                      'manifest_not_supplied' if not manifest_path else 'independent_geometry_hashes_missing')
+            geom=GeometryEvidenceBundle(False,(reason,),None,{}).for_element(gid)
         else:
             geom=bundle.for_element(gid,pre['physical_progress_estimate'])
         if count.get(gid,0) != 1 or not gid:
-            geom.update({'geometry_adapter_valid':False,
-                         'geometry_evidence_state':'unknown_duplicate_or_missing_global_id',
-                         'observability_ratio':None,
-                         'geometry_evidence_reason_codes':'duplicate_or_missing_global_id'})
+            geom=GeometryEvidenceBundle(False,('duplicate_or_missing_global_id',),None,{}).for_element(gid)
+            geom['geometry_evidence_state']='unknown_duplicate_or_missing_global_id'
         source.update(geom)
+        # Always overwrite CSV-derived flags; stale/untrusted claims must not
+        # survive a missing manifest. A/D candidates cannot unlock linkage.
+        source.update(comparison_for_element(
+            generic, gid, linkage=None if upstream_requested else mapping_doc,
+            expected_ifc_sha256=expected_ifc_sha256,
+            expected_registration_sha256=expected_registration_sha256,
+        ))
         if generic is not None:
-            source.update(comparison_for_element(
-                generic, gid, linkage=mapping_doc,
-                expected_ifc_sha256=expected_ifc_sha256,
-                expected_registration_sha256=expected_registration_sha256,
-            ))
             if count.get(gid,0) != 1 or not gid:
                 source.update({
                     'comparison_ifc_quality_gate':'blocked',
@@ -116,9 +131,10 @@ def enrich_scientific_evidence_rows(
         'input_element_count':len(rows),
         'distinct_global_id_count':len(count),
         'geometry_adapter_valid':bool(bundle and bundle.valid),
-        'geometry_adapter_reasons':list(bundle.reason_codes) if bundle else ([
+        'upstream_receipt_audit':upstream,
+        'geometry_adapter_reasons':(['upstream_receipts_not_bound_to_approved_stage8'] if upstream_requested else list(bundle.reason_codes) if bundle else ([
             'independent_ifc_scan_registration_hashes_or_project_id_missing'
-        ] if manifest_path else ['manifest_not_supplied']),
+        ] if manifest_path else ['manifest_not_supplied'])),
         'manifest_sha256':bundle.manifest_sha256 if bundle else None,
         'verified_quantity_count':sum(r['physical_progress_status']=='verified_quantity' for r in out),
         'unknown_geometry_count':sum(str(r['geometry_evidence_state']).startswith('unknown') for r in out),
@@ -158,6 +174,10 @@ def main(argv: list[str] | None = None) -> int:
                    help='Optional separately reviewed feature-to-IFC mapping JSON.')
     p.add_argument('--expected-comparison-link-sha256',
                    help='Independent expected SHA256 of mapping JSON; required when mapping supplied.')
+    p.add_argument('--a-handoff-manifest',type=Path)
+    p.add_argument('--expected-a-handoff-sha256')
+    p.add_argument('--d-metric-manifest',type=Path)
+    p.add_argument('--expected-d-metric-sha256')
     args=p.parse_args(argv)
     try:
         date=dt.datetime.fromisoformat(args.data_date_utc.replace('Z','+00:00'))
@@ -173,7 +193,11 @@ def main(argv: list[str] | None = None) -> int:
             comparison_ready_manifest_path=args.comparison_ready_manifest,
             comparison_ready_project_id=args.comparison_ready_project_id,
             comparison_ifc_linkage_path=args.comparison_feature_ifc_json,
-            expected_comparison_linkage_sha256=args.expected_comparison_link_sha256)
+            expected_comparison_linkage_sha256=args.expected_comparison_link_sha256,
+            a_handoff_manifest=args.a_handoff_manifest,
+            expected_a_handoff_sha256=args.expected_a_handoff_sha256,
+            d_metric_manifest=args.d_metric_manifest,
+            expected_d_metric_sha256=args.expected_d_metric_sha256)
         if args.out_element_csv.exists() or args.out_summary_json.exists():
             raise FileExistsError('scientific evidence output exists; use a unique progress- run ID')
         report['inputs']={'element_metrics_csv_sha256':_hash(args.element_metrics_csv),

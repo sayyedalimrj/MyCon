@@ -1,0 +1,21 @@
+{
+  "schema_version": "mycon.thesis_evidence.v1",
+  "run_id": "validation-c-REPLACE-WITH-UNIQUE-RUN-ID",
+  "coordinate_frame": "unverified",
+  "units": "unknown",
+  "cases": [],
+  "example_only_not_an_experiment": {
+    "method_variants": [
+      {"method": "MyCON_6999", "variant": "192_frames", "paired_reference": true},
+      {"method": "MyCON_new", "variant": "more_frames", "paired_reference": false}
+    ],
+    "required_real_case_fields": [
+      "case_id", "site_id", "building_id", "session_id", "split=test", "data_kind=real",
+      "capture_source:{path,sha256}", "capture_sha256",
+      "independent_gt_source:{path,sha256}", "independent_gt_verified=true", "gt_reviewed=true",
+      "independent_gt_reviewer", "independent_gt_review_date_utc", "ground_truth_source_type",
+      "paired_test_view_ids:[view_id]", "views:[{view_id,reference_rgb:{path,sha256},prediction_rgb:{path,sha256},camera_receipt_sha256,mask_sha256,color_space}]"
+    ],
+    "scientific_measurements": "not_evaluated"
+  }
+}

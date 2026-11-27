@@ -1,0 +1,216 @@
+{
+  "schema_version": "mycon.civil_sfm_real_execution_evidence.v1",
+  "date_utc": "2026-11-27",
+  "code_owner": "Civil Geometry A",
+  "target_pr": 42,
+  "r_producer_contract": {
+    "repository_ref": "research/mycon-reconstruction-20261113",
+    "head_sha_inspected": "639810de055bac7e5986c35731423fcee78c737e",
+    "dataset_schema": "mycon.reconstruction.dataset.v1",
+    "pose_schema": "mycon.reconstruction.camera_poses.v1",
+    "pose_convention": "colmap_opencv_world_to_camera",
+    "fresh_real_capture_camera_poses_status": "NOT_GENERATED_COLMAP_EXECUTABLE_MISSING",
+    "can_prove_R_new_run_same_frame_with_historical_source": false
+  },
+  "historical_real_source": {
+    "source_kind": "COLMAP_SPARSE_NOT_DENSE",
+    "camera_frame": "colmap_sfm_world_nonmetric",
+    "camera_frame_status": "internally_verified_old_SfM_model_only",
+    "depth_fusion_shared_frame": "UNREGISTERED",
+    "model_sha256": {
+      "cameras.txt": "4630c9deee24da80337e0d8c70d46077c395c2c0ae24e693343839b06e4e1b14",
+      "images.txt": "b5b6d85cc739ec29a853e9fa593dcc5b3ef2058e9c50a29636ac6593fa37cb94",
+      "points3D.txt": "a735bdbcb15c58e5e9ccb0357f76ad7fbc969d6345e83084cd9fceba0330fbed"
+    },
+    "original_observation_points": 51894,
+    "quality_filtered_points": 34039,
+    "quality_filter": {
+      "min_track_length": 4,
+      "max_point_SfM_reprojection_error_px": 2
+    },
+    "reviewed_source_frames": [
+      {
+        "name": "frame_000096.jpg",
+        "sha256": "4ea00a1a713bf9bc859e33a38358071fe4a13ea114df9d59c2ca1a6f8bfcddc0",
+        "reprojection_median_px": 0.6735950939754639,
+        "reprojection_p95_px": 1.8777276305034818
+      },
+      {
+        "name": "frame_000120.jpg",
+        "sha256": "1687d6004fdf9deb150575fda484da51c7c7fc54464a7ba1544923b7d155c447",
+        "reprojection_median_px": 0.7803629684351955,
+        "reprojection_p95_px": 2.136628564185874
+      },
+      {
+        "name": "frame_000144.jpg",
+        "sha256": "a3afaca52f885103f19c03162dcd1e3c934fad517589f399f125d4172aa25063",
+        "reprojection_median_px": 0.7621074729662122,
+        "reprojection_p95_px": 2.4452836144913306
+      },
+      {
+        "name": "frame_000168.jpg",
+        "sha256": "ebc3ce11bbece5aa0a7cced9537d89cb43540be4ca1244b9ed5a9774979a9cc4",
+        "reprojection_median_px": 0.7448320850755663,
+        "reprojection_p95_px": 2.029361436108141
+      },
+      {
+        "name": "frame_000192.jpg",
+        "sha256": "4a279ee0c7d690f6a4de3b17a3b77eef2fd88c15a2e1f1ef28317d38b46741cb",
+        "reprojection_median_px": 0.7132664047358614,
+        "reprojection_p95_px": 1.987600102919344
+      }
+    ]
+  },
+  "actual_real_processing": {
+    "status": "EXECUTED_REAL_DERIVED_NONMETRIC_NOT_GROUND_TRUTH",
+    "run_id": "geom-civil-r-frame-20261127-real-historical-cli02",
+    "cli_exit_code": 0,
+    "input_geometry": "same original points3D model as source-image COLMAP poses; not Depth Fusion",
+    "plane_patch_count": 10,
+    "candidate_edge_count": 13,
+    "hypothetical_corner_count": 0,
+    "field_confirmed_corner_count": 0,
+    "physical_wall_floor_ceiling_labels_confirmed": 0,
+    "unassigned_quality_point_count": 22043,
+    "model_internal_reprojection_not_independent_metric_gt": true
+  },
+  "repeatability_real_input_synthetic_perturbations": {
+    "report_schema": "mycon.civil_sfm_repeatability.v1",
+    "source_points3d_sha256": "a735bdbcb15c58e5e9ccb0357f76ad7fbc969d6345e83084cd9fceba0330fbed",
+    "not_independent_validation": true,
+    "baseline_patches": 10,
+    "per_scenario": [
+      {
+        "scenario": "half_density",
+        "matched": 5,
+        "total": 10,
+        "re_detected": 8
+      },
+      {
+        "scenario": "occluded_xy_quadrant",
+        "matched": 4,
+        "total": 10,
+        "re_detected": 10
+      },
+      {
+        "scenario": "gaussian_noise_source_units_0p025",
+        "matched": 7,
+        "total": 10,
+        "re_detected": 10
+      },
+      {
+        "scenario": "threshold_low_0p85x",
+        "matched": 6,
+        "total": 10,
+        "re_detected": 9
+      },
+      {
+        "scenario": "threshold_high_1p15x",
+        "matched": 6,
+        "total": 10,
+        "re_detected": 10
+      }
+    ]
+  },
+  "local_cpu_tests": {
+    "command": "cd repository && PYTHONPATH=. pytest -q tests/test_research_geometry_r_frame.py tests/test_research_geometry_camera_bridge.py tests/test_research_geometry_structural_review.py",
+    "exit_code": 0,
+    "passed": 39,
+    "failed": 0,
+    "python": "3.13.5",
+    "new_code_git_blob_sha_match_expected": {
+      "r_frame_geometry.py": "4930284f431d078fed85c89a0afd3599282d117f",
+      "r_frame_stability.py": "714cd9b2d9b77e92c7b8b2047691845c7dbb904e",
+      "test_research_geometry_r_frame.py": "154f836b1611868eff1783be7429a9aab2eb9b86"
+    }
+  },
+  "outputs": {
+    "source_rgb_reference.ply": {
+      "sha256": "926e7d7811511db8cf9cfe35f8e62331fc2b192be6498e28710c257babbc50b8",
+      "bytes": 544866
+    },
+    "corners.json": {
+      "sha256": "2e932ba6c98d5bcf4ada4151b3ab64b692db878388de590b5da9ed02f533f034",
+      "bytes": 232
+    },
+    "planes.json": {
+      "sha256": "51b94ea14fb6ba747d159c520098c05141fc90f62cb434c7a464de66daa3c68b",
+      "bytes": 484249
+    },
+    "planes_colored.ply": {
+      "sha256": "faaf5be3f97bd51f745d08507a1e5807e8081d1ed0d7ea15f52d6ed102fb0b28",
+      "bytes": 544866
+    },
+    "real_sfm_shape3_view_01.png": {
+      "sha256": "80c9c710e4316e57ba099549a73d1a7a1aa37eec07157cd9a02ff7d585eb1810",
+      "bytes": 520886
+    },
+    "real_sfm_shape3_view_02.png": {
+      "sha256": "49cd2df55eabf0724e01131bbc60560c302adbb9bd44ae38c1c525a1f6447a53",
+      "bytes": 510131
+    },
+    "source_point3d_ids.npy": {
+      "sha256": "cc430014a81ff14c2d2ebcf47abdeb0f4f23ef9f2c1f22669a98409be41eaf57",
+      "bytes": 272440
+    },
+    "components.csv": {
+      "sha256": "13473fcb4fa7a1ba3a0b9c3976852abb4d9958d5d7996f06a198a3ff40d3530a",
+      "bytes": 1455
+    },
+    "shape3_sfm_review.html": {
+      "sha256": "711569def2cb78b8bc90586126dcb8f4886626fe6f81aef45a79f1aff273807e",
+      "bytes": 421933
+    },
+    "real_sfm_shape3_view_03.png": {
+      "sha256": "c0920de083d7dfd4031c5466351b9aac81a590a004cd578a8d8b04adeba0f1df",
+      "bytes": 480699
+    },
+    "unknown_filtered_point_indices.npy": {
+      "sha256": "9108d775c2341f8e944f069456d62d5aa23eda0dc1f24e43d2940aa49db41c21",
+      "bytes": 176472
+    },
+    "viewer_overlay.json": {
+      "sha256": "c2196dfcca4a86cac9885cd38c78d1fa0de6bacefd113d897a7abf5c67c28c40",
+      "bytes": 419181
+    },
+    "cloud_xyz.npy": {
+      "sha256": "48b37cdabcd5f81c66c01fc7490a8aa6ff69cd48190ee5cabec16e39b4ad5123",
+      "bytes": 817064
+    },
+    "geometry_qa.json": {
+      "sha256": "ea0e730f22304b3a2b570f591f0422bbf367eef892faf3554989f7d211e493ac",
+      "bytes": 11559
+    },
+    "camera_views.json": {
+      "sha256": "e6a9ca4acc522cdc048b52207a71ac339a9ecd27df5a9e63ef2491e918cd7be8",
+      "bytes": 9645
+    },
+    "edges.json": {
+      "sha256": "22e7a266d2947474d218233634e806031bbecdd5280d7e5341557cb41bd846fe",
+      "bytes": 123270
+    },
+    "civil_r_frame_manifest.json": {
+      "sha256": "d36fc4620401230c98e3e3255607f8d1bde9bcf602553f2c33111fb03e10f63c",
+      "bytes": 5434
+    }
+  },
+  "not_executed": [
+    "new R COLMAP pose model extraction",
+    "real Dense/MVS surface geometry",
+    "Depth Fusion camera-world alignment",
+    "independent surveyed dimensions/metric scale",
+    "field engineering approval",
+    "true corner visibility and physical validation",
+    "new video to historical camera matching",
+    "GPU training",
+    "independent heldout F1/precision/recall"
+  ],
+  "safety": {
+    "original_source_changed": false,
+    "original_checkpoints_changed": false,
+    "metric_scale_verified": false,
+    "depth_fusion_used_as_camera_frame_aligned": false,
+    "new_run_only": true,
+    "not_merged": true
+  }
+}
