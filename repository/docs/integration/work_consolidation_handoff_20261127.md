@@ -1,0 +1,33 @@
+# MyCON — Work consolidation handoff (2026-11-27)
+Status: Coordinator source/interface audit, ready for isolated implementation. Work takes over all six workstreams; no need to reopen old chats. Do not treat this document as evidence of actual runtime success.
+
+## Frozen baseline
+- Integration base for verified rehearsal: bb33b9d871071fd6e1cb40a406cc6439688f2cfe; R4 CI workflow commit 598ef116c0b2b4e281a54939efa4d81640dea452.
+- R #49 114a8df1cd5def7fed0c1e423a73febebe7a0de8
+- A #42 9d9e346324876a68470280daf527dea6f465bf3b
+- V #50 955cb3d98a5819204238a8ab9c2bade6232e426e
+- D #45 a540728f4c61dddf891e1df42a4177e073e7b3cd
+- C #46 9f5a40901f3b220ff7d833579ce56660e0b0c20a
+- B #47 b12905e78fc5ebe4fbe396eccbfa5c0c35306674
+- Rechecked six PR HEADs in this turn, all identical, open draft/unmerged.
+- Verified R4 combined CPU: 245 passed/3 skipped + 131 passed/1 skipped = 376 passed/4 skipped/0 failed. https://github.com/sayyedalimrj/MyCon/actions/runs/46038793890
+- Issue #48: https://github.com/sayyedalimrj/MyCon/issues/48#issuecomment-7224005334
+- #36 and #37 historical merged; no parallel chat work required.
+
+## Source-level findings to reproduce and fix first
+1. R→A model hash mismatch: reconstruction/general_pilot.py stage() produces train_text and same_run_products/av_handoff.json; workflow.py lines 458–462 records BOTH train_colmap_model_sha256 (train_text/images.txt) and registered_colmap_model_sha256 (registered_text/images.txt). A pipeline/stage_07_cleanup/r_frame_geometry.py _r_compat compares ONLY registered_colmap_model_sha256 against supplied images.txt, then deliberately refuses to promote even a hash match pending per-view pose reconciliation. A supplied frozen TRAIN text can fail although its own hash matches R's train field. Reproduce in test; distinguish model roles explicitly, compare correct hash, reconcile each source relative image name/view_id, camera parameters, split, world-to-camera SE(3), reprojection, hash; preserve refusal for missing/conflicting proof. Do not equate hash alone with world registration or use held-out RGB to fit geometry.
+2. A→V schema mismatch: A r_frame_geometry.py SCHEMA mycon.civil_sfm_feature_evidence.v1 is not V producer_bridge.py _import_A required mycon.civil_geometry_review.v1; V expects outputs.viewer_overlay.json.relative_path and schema/run/frame/unit match, separately reviewed mycon.viewer.frame_bridge.v1. A's SfM-only diagnostics are not dense surfaces or metric GT. Implement version-aware, provenance-bound adapter/test, preserving uncertainty; no fabricated independent reviewer. For truly identical frozen source models, demonstrate same-frame binding numerically and differentiate internal common-frame proof from independent field acceptance. External depth must remain unregistered until verified.
+3. D/B bridge: D civil_metric_bim/field_run.py geometry_input() requires mycon.comparison_ready_geometry.v1 with hashed outputs, not R av_handoff or A SfM diagnostics. B pipeline/stage_09_progress/upstream_receipt_audit.py expects A mycon.civil_geometry_viewer_handoff.v1 and D mycon.metric_bim_alignment.v1 with exact descriptor keys, sizes and hashes; audit integrity is not engineering authority. Design coordinator-owned Stage8 binding with same source run/frame/provenance, approved scale and IFC revision/GlobalIds, independent GT. Do not relabel schema or manufacture approval.
+4. R fresh run currently only real 34.92s frame selection (2096 decoded, 49 train/12 test/9 rejected); COLMAP absent, pycolmap install failed, CUDA unavailable. Old 96s/192-camera/6999 baseline is distinct; A/V old depth and cameras not proven aligned. 187 historical source images unavailable to current V archive. Browser Canvas passed, WebGL unavailable. Drive uploads previously 403. No fresh MVS/GS training or real paired comparative metrics. Resolve runtime and artifact transport with genuine evidence.
+
+## Reproduce combined checkout without remote PR merge
+Use authenticated Git in Work, in a NEW clean checkout (never reset an existing working tree). Fetch the Integration tip and the exact six heads above; verify fetched hashes. Start a unique candidate branch e.g. research/mycon-work-consolidation-20261127 from latest Integration only after checking no incompatible intervening changes; reproduce frozen rehearsal separately on bb33b9d if needed. Locally merge in order R,A,V,D,C,B with --no-ff; do not push main, merge/close existing remote PRs, rebase or force-push. If a candidate branch is created, it is the ONLY new consolidation branch. Keep current owner branches intact. Consult the exact R4 workflow for dependencies and tests:
+.github/workflows/mycon-six-stream-merge-rehearsal-round4-20261127.yml
+Run all listed tests + new cross-interface E2E and adversarial tests. Full tests/skip reasons must be logged, not just status. Candidate commits may be pushed to that isolated branch; no remote merge without explicit user review.
+
+## Deliverables and gates
+- Real general-purpose notebook: project/session input, optional BIM, runtime preflight, train/heldout split frozen by C, real COLMAP fresh poses/sparse/undistortion and dense MVS when capable, staged GS only (new expensive training needs user approval), A nonmetric geometry, V actual clickable source images and WebGL where available, D reviewed metric/IFC, B Stage9→11, C evidence. Run CPU/synthetic E2E first, then available real data. Every stage create-only, skip/block gracefully, report output hashes and exact command.
+- No BIM mode must work without making metric or progress claims. Missing evidence remains UNKNOWN/null, not zero. Separate old baselines, synthetic results, real internal diagnostics, independent field GT.
+- Explicit statuses implemented / cpu_tested / gpu_tested / real_data_tested / field_validated / blocked. Preserve MyCon_R4, original videos, ckpt_6999_rank0.pt, resume_step_006999.pt, historical COLMAP and all baselines read-only. No new heavy GPU training without explicit approval.
+- G2 fresh real R→A→V; G3 independent metric controls (>=3 fit + >=2 heldout, engineer-set tolerance) and IFC where applicable; G4 matched independent science including semantic F1, geometry/NVS, speed/VRAM, failure denominators, distinct scenes and >=2 dates for progress; G5 final package. G0/G1 CPU verified only; G2–G5 not yet passed.
+- Final Work handoff: candidate branch/commit, changed files, logs, reproducible CLI and one notebook, offline viewer, output manifests, screenshots, test/skip results, blocker and next action, rollback/reproduction instructions, update Issue #48. No fake numbers or unapproved data publication.
