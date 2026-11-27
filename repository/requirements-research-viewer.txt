@@ -1,0 +1,4 @@
+plotly>=5.18,<7
+pytest>=8,<10
+# Optional for screenshots / video: playwright (+ chromium) and ffmpeg executable
+Pillow>=9,<13
