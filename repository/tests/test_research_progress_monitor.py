@@ -421,3 +421,38 @@ def test_a_d_cli_diagnostics_preserve_unknown_and_boq_bounds(tmp_path):
         states = list(csv.DictReader(handle))
     assert {s["construction_status"] for s in states} == {"in_progress", "unknown"}
     assert all(s["observation_status"] == "unknown" for s in states)
+
+
+def test_missing_mapped_element_remains_explicit_unknown(tmp_path):
+    import shutil
+    fixture = tmp_path / "fixture"
+    shutil.copytree(FIXTURE, fixture)
+    src = fixture / "elements_stage9.csv"
+    with src.open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        fields = reader.fieldnames
+        rows = list(reader)
+    with src.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fields)
+        writer.writeheader()
+        writer.writerow(rows[0])
+    args = [
+        "--element-metrics-csv", str(src), "--schedule-csv", str(fixture / "schedule.csv"),
+        "--mapping-csv", str(fixture / "mapping.csv"), "--project-root", str(tmp_path),
+        "--data-date-utc", DATE.isoformat(), "--output-root", str(tmp_path / "runs"),
+        "--research-run-id", "progress-missing-ledger",
+    ]
+    assert main(args) == 0
+    out = tmp_path / "runs/progress-missing-ledger"
+    with (out / "element_status.csv").open(newline="", encoding="utf-8") as fh:
+        records = {r["global_id"]: r for r in csv.DictReader(fh)}
+    assert len(records) == 2
+    missing = records[rows[1]["global_id"]]
+    assert missing["construction_status"] == "unknown"
+    assert missing["physical_progress_estimate"] == ""
+    assert missing["source_element_record_missing"] == "True"
+    report = json.loads((out / "progress_dashboard.json").read_text())
+    assert report["n_missing_source_element_records"] == 1
+    assert report["overall"]["physical_progress_estimate"] is None
+    assert report["overall"]["physical_progress_lower_bound_pct"] == pytest.approx(60)
+    assert report["overall"]["physical_progress_upper_bound_pct"] == pytest.approx(85)
