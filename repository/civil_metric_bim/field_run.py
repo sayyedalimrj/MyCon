@@ -58,6 +58,7 @@ def validate_survey(root, survey, geom_path, geom):
     geometry_binding(survey, geom_path, geom)
     core.validate_inputs(survey, None)
     groups, endpoints = set(), set()
+    endpoint_xyz = []
     counts = {"fit": 0, "control": 0}
     for r in survey["references"]:
         # Provisional/nominal suggestions may be retained, but never counted.
@@ -75,6 +76,10 @@ def validate_survey(root, survey, geom_path, geom):
         ids = [required_text(x, "endpoint ID") for x in ids]
         if group in groups or len(set(ids)) != 2 or endpoints.intersection(ids):
             raise ValueError("Field spans must use separate physical groups and endpoint IDs")
+        xyz = [core.point(p, "survey endpoint") for p in r["scan_endpoints_xyz"]]
+        if any(np.linalg.norm(p - q) <= 1e-8 for p in xyz for q in endpoint_xyz):
+            raise ValueError("Coincident scan endpoints are not independent")
+        endpoint_xyz.extend(xyz)
         groups.add(group)
         endpoints.update(ids)
         counts[r["role"]] += 1
@@ -176,7 +181,10 @@ def run_field(root, run_id, geometry_rel, survey_rel=None, inventory_rel=None,
                 if not core.approved(r) or r.get("actual_length_m") is None or r.get("confidence", {}).get("grade") != "high_reviewed":
                     continue
                 for m in adapter["matches"]:
-                    if r["role"] != m["role"] and m["endpoint_id"] in r["endpoint_ids"]:
+                    if r["role"] != m["role"] and (
+                            m["endpoint_id"] in r["endpoint_ids"] or any(
+                                np.linalg.norm(np.asarray(m["scan_xyz"]) - np.asarray(p)) <= 1e-8
+                                for p in r["scan_endpoints_xyz"])):
                         raise ValueError("Length/IFC cross-role physical endpoint leakage")
         _, tx = core.build_transform(adapter, scale)
         if tx is None:
