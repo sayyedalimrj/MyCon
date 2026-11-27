@@ -85,3 +85,8 @@ Browser fallback supports dynamic nonmetric scene bounds rather than assuming a 
 **Actual GitHub CPU test on Round-3 source commit:** [workflow #43516797441](https://github.com/sayyedalimrj/MyCon/actions/runs/43516797441), 28 passed, 3 skipped; CI lacks browser/Plotly extras. A separate local Chromium synthetic R-camera six-view exercise verified camera #4 selection, source image rendering and Canvas fallback, with screenshots and a short H.264 rotation; attempts to obtain WebGL context via SwiftShader failed in that environment. These are **synthetic browser artifacts, not real-site photos or GPU validation**.
 
 **Remaining blockers:** true R `camera_poses.json` + verified frames for the same original MyCON session, A/R co-registration QA, and a WebGL-capable browser/GPU environment. Optional survey/IFC/metric controls remain independently gated and are not authorized by synthetic inputs.
+
+
+## Round 4: audited real A archive / independent review
+
+The new `viewer_civil.independent_review` CLI creates separate historical COLMAP and A Shape3 viewports (plus optional genuinely registered fresh R). The reviewed-transform path above is unchanged; unregistered geometry is never overlaid on cameras. 192 historical poses, five verified original photo links, 187 explicitly unavailable photos; 25,000 A depth samples, 15 plane boundaries, 49 edges, seven corner candidates, zero field-confirmed. Metric/BIM gates remain off. See [R4 reproduction, provenance and test report](../docs/research_viewer/round4_real_independent_workspace_20261127.md). Actual real-input Canvas browser tests passed; requested WebGL context unavailable, fallback only, GPU/WebGL not verified.
