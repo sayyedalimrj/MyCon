@@ -323,3 +323,101 @@ def test_ifc_index_outside_project_is_blocked(tmp_path):
     result = read_ifc_identity_index(elsewhere, project_root=tmp_path)
     assert result.valid is False
     assert result.elements == {}
+
+
+def _upstream_fixture(tmp_path, owner):
+    """Use the precise producer receipt shapes; no real geometry claimed."""
+    from pipeline.stage_09_progress.upstream_receipt_audit import SCHEMAS
+    names = (["registration_qa.json", "feature_evidence.json", "unknown_regions.json"]
+             if owner == "A" else ["scale_estimate.json", "alignment_transform.json",
+             "heldout_control_errors.csv", "deviation_heatmap.json", "viewer_handoff.json"])
+    folder = tmp_path / owner
+    folder.mkdir()
+    outputs = {}
+    for name in names:
+        asset = folder / name
+        asset.write_text("{}")
+        outputs[name] = {
+            ("path_relative_to_project" if owner == "A" else "path"): asset.relative_to(tmp_path).as_posix(),
+            "sha256": hashlib.sha256(asset.read_bytes()).hexdigest(), "bytes": asset.stat().st_size,
+        }
+    doc = {"schema_version": SCHEMAS[owner], "outputs": outputs,
+           "run_id": "geom-civil-synthetic" if owner == "A" else "metric-bim-synthetic"}
+    if owner == "A":
+        doc.update(registration_status="UNREGISTERED", camera_and_depth_co_registered=False,
+                   metric_scale_verified=False, feature_photo_projection_allowed=False)
+    else:
+        doc.update(metric_validation="pending", metric_scale_verified=False,
+                   registration_verified=False, can_feed_stage8=False,
+                   target_frame="bim_world", target_units="m")
+    path = folder / "manifest.json"
+    path.write_text(json.dumps(doc))
+    return path, hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_upstream_receipts_valid_integrity_is_not_metric_authority(tmp_path):
+    from pipeline.stage_09_progress.upstream_receipt_audit import audit_upstream_receipts
+    a, ah = _upstream_fixture(tmp_path, "A")
+    d, dh = _upstream_fixture(tmp_path, "D")
+    report = audit_upstream_receipts(project_root=tmp_path, a_manifest=a, a_sha256=ah,
+                                    d_manifest=d, d_sha256=dh)
+    assert report["A"]["integrity_valid"] and report["D"]["integrity_valid"]
+    assert report["A"]["verified_artifact_count"] == 3
+    assert report["D"]["verified_artifact_count"] == 5
+    assert report["direct_geometry_gate"] == "blocked"
+    assert not report["A"]["geometry_authority"] and not report["D"]["geometry_authority"]
+    (d.parent / "scale_estimate.json").write_text("tampered")
+    report = audit_upstream_receipts(project_root=tmp_path, d_manifest=d, d_sha256=dh)
+    assert report["D"]["integrity_valid"] is False
+
+
+def test_stale_geometry_csv_claims_are_cleared(tmp_path):
+    from pipeline.stage_09_progress.enrich_scientific_evidence import enrich_scientific_evidence_rows
+    row = approved(geometry_adapter_valid=True, geometry_quality_gate="pass",
+                   geometry_evidence_state="occluded", observability_source="raycast_zbuffer",
+                   observability_ratio=0, geometry_n_views=8, comparison_ready_valid=True,
+                   comparison_metric_scale_verified=True, comparison_registration_verified=True,
+                   comparison_ifc_quality_gate="pass", geometric_agreement_state="conforming",
+                   image_evidence_refs_json='[{"view_id":"invented"}]')
+    rows, _ = enrich_scientific_evidence_rows([row], manifest_path=None, project_root=tmp_path, data_date=DATE)
+    item = rows[0]
+    assert item["physical_progress_estimate"] == pytest.approx(.4)
+    assert item["geometry_adapter_valid"] is False
+    assert item["geometry_quality_gate"] == "blocked"
+    assert item["comparison_ifc_quality_gate"] == "blocked"
+    assert item["image_evidence_refs_json"] == "[]"
+    assert item["observability_ratio"] is None
+
+
+def test_a_d_cli_diagnostics_preserve_unknown_and_boq_bounds(tmp_path):
+    import shutil
+    fixture = tmp_path / "fixture"
+    shutil.copytree(FIXTURE, fixture)
+    a, ah = _upstream_fixture(tmp_path, "A")
+    d, dh = _upstream_fixture(tmp_path, "D")
+    args = [
+        "--element-metrics-csv", str(fixture / "elements_stage9.csv"),
+        "--schedule-csv", str(fixture / "schedule.csv"),
+        "--mapping-csv", str(fixture / "mapping.csv"),
+        "--project-root", str(tmp_path), "--data-date-utc", DATE.isoformat(),
+        "--output-root", str(tmp_path / "runs"), "--research-run-id", "progress-upstream-audit",
+        "--a-handoff-manifest", str(a), "--expected-a-handoff-sha256", ah,
+        "--d-metric-manifest", str(d), "--expected-d-metric-sha256", dh,
+    ]
+    assert main(args) == 0
+    out = tmp_path / "runs/progress-upstream-audit"
+    report = json.loads((out / "progress_dashboard.json").read_text())
+    assert report["geometry_validation"]["upstream_receipt_audit"]["A"]["integrity_valid"]
+    assert report["geometry_validation"]["upstream_receipt_audit"]["D"]["integrity_valid"]
+    assert report["geometry_validation"]["geometry_adapter_valid"] is False
+    assert report["overall"]["physical_progress_estimate"] is None
+    assert report["overall"]["physical_progress_lower_bound_pct"] == pytest.approx(60)
+    assert report["overall"]["physical_progress_upper_bound_pct"] == pytest.approx(85)
+    assert report["overall"]["schedule_variance_bounds_pct"] == pytest.approx([10,35])
+    assert report["overall"]["schedule_variance_percent"] is None
+    assert report["provenance"]["input_artifacts"]["a_handoff_manifest"]["sha256"] == ah
+    assert report["provenance"]["input_artifacts"]["d_metric_manifest"]["sha256"] == dh
+    with (out / "element_status.csv").open(newline="", encoding="utf-8") as handle:
+        states = list(csv.DictReader(handle))
+    assert {s["construction_status"] for s in states} == {"in_progress", "unknown"}
+    assert all(s["observation_status"] == "unknown" for s in states)
