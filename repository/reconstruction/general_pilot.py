@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from .workflow import Blocked, checked_run, sha256, emit_json, parse_colmap_text, _run_colmap
 
@@ -36,7 +37,7 @@ def _ply_vertices(path):
                 break
     raise Blocked("Invalid or truncated PLY header")
 
-def stage(run_dir: Path, executable="colmap", max_image_size=1600, run_dense=True):
+def stage(run_dir: Path, executable="colmap", max_image_size=1600, run_dense=True, dense_backend="pycolmap_cuda12"):
     """Call only after fresh workflow.run_colmap. Never use historical model or Test RGB."""
     root = run_dir.resolve()
     m = checked_run(root)
@@ -124,10 +125,22 @@ def stage(run_dir: Path, executable="colmap", max_image_size=1600, run_dense=Tru
             if not shutil.which("nvidia-smi"):
                 raise Blocked("No nvidia-smi; Dense PatchMatch needs a compatible GPU build")
             subprocess.run(["nvidia-smi","-L"],check=True,capture_output=True,text=True)
-            _run_colmap([executable,"patch_match_stereo","--workspace_path",str(dense),"--workspace_format","COLMAP",
+            if dense_backend == "pycolmap_cuda12":
+                # Official pinned CUDA wheel, separate process keeps a GPU crash out of the notebook kernel.
+                script = ("import sys,pycolmap as p; "
+                          "assert p.__version__=='3.13.0', p.__version__; "
+                          "assert p.has_cuda, 'pycolmap is not CUDA-enabled'; "
+                          "o=p.PatchMatchOptions(max_image_size=int(sys.argv[3]),geom_consistency=True,cache_size=4.0); "
+                          "p.patch_match_stereo(sys.argv[1],options=o); "
+                          "p.stereo_fusion(sys.argv[2],sys.argv[1],input_type='geometric')")
+                _run_colmap([sys.executable,"-c",script,str(dense),str(fused),str(max_image_size)],log)
+            elif dense_backend == "cli_cuda":
+                _run_colmap([executable,"patch_match_stereo","--workspace_path",str(dense),"--workspace_format","COLMAP",
                          "--PatchMatchStereo.geom_consistency","true","--PatchMatchStereo.max_image_size",str(max_image_size)],log)
-            _run_colmap([executable,"stereo_fusion","--workspace_path",str(dense),"--workspace_format","COLMAP",
+                _run_colmap([executable,"stereo_fusion","--workspace_path",str(dense),"--workspace_format","COLMAP",
                          "--input_type","geometric","--output_path",str(fused)],log)
+            else:
+                raise Blocked("Unsupported dense backend")
             dense_n=_ply_vertices(fused)
             status="executed_nonempty_unscaled_candidate"
         except (Blocked,OSError,ValueError,subprocess.SubprocessError) as exc:
@@ -146,7 +159,7 @@ def stage(run_dir: Path, executable="colmap", max_image_size=1600, run_dense=Tru
             "units":"reconstruction_units_unscaled","metric_scale_verified":False,
             "independent_registration_verified":False,"field_surface_validated":False,
             "registered_train":len(known),"sparse_vertices":sparse_n,
-            "dense_status":status,"dense_vertices_header":dense_n,
+            "dense_status":status,"dense_backend":dense_backend,"dense_vertices_header":dense_n,
             "dense_candidate_path":fused.relative_to(root).as_posix() if dense_n else None,
             "same_world_basis":"COLMAP undistorter of frozen TRAIN model; W2C numerical consistency checked",
             "gs_training":"not_executed_requires_new_explicit_approval",
