@@ -62,3 +62,10 @@ Updated: 2026-11-14 (Iran timezone; GitHub UTC 2026-11-13). Branch: `research/my
 
 ## Current PR
 - Draft [PR #45](https://github.com/sayyedalimrj/MyCon/pull/45) targets Integration; merge is explicitly forbidden until coordinator review. No new test was executed as part of this handoff revision.
+
+## 2026-11-27 — Field-pilot continuation (PR #45)
+
+- Added `civil_metric_bim/field_run.py` and `ifc_inventory.py`: strict read-only geometry/evidence hashes; independent 3+ fit spans and 2+ withheld controls; distinct endpoint IDs/coordinates; explicit field instrument, method, date/operator/reviewer; operator diagnostic tolerance; optional IFC GlobalId triangulation in SI engineering world coordinates, explicit unit declaration, independently reviewed corner correspondences and finite triangle masks. BIM-only remains provisional. Combined route fixes survey-derived scale; no automatic ICP or field certification. No Stage8, original asset or other owner's file changes.
+- Field protocol: `repository/docs/research_metric_bim/field_pilot.md`; blank inputs in `civil_metric_bim/templates/`. All runs create-only, outputs and field receipt link hashes; gates remain pending/false. No real room survey or IFC received, no site run.
+- New tests `tests/test_civil_metric_bim_field_pilot.py`: synthetic adapter and actual optional native IFC fixture (skips if dependency absent). Earlier verified CI on `2feafa373e1b14a81bef8acb690902716126a39f` [run 46035857537](https://github.com/sayyedalimrj/MyCon/actions/runs/46035857537): 49 passed, 1 skipped (native backend), exit 0. Later spatial endpoint hardening and unit declaration checks require new CI. Optional native parser not locally installed; actual IFC backend and real site validation remain not executed. See PR comments for exact latest head CI evidence.
+- Last implementation commit before this handoff: `11edbaa5f99ff8c6560047f81c1b2e5640058d9b`. This is a new documentation revision, not an assertion of a successful final-head test.
