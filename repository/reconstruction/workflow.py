@@ -301,7 +301,37 @@ def _colmap_cpu_options(executable: str) -> tuple[str, str]:
     return tuple(choices)
 
 
-def run_colmap(run_dir: Path, executable: str, *, execute: bool = False) -> dict:
+def _choose_train_model(sparse: Path, train_count: int) -> tuple[Path, list[dict]]:
+    """Prefer distinct registered images, then 3D count, with a stable tie-break."""
+    stats = []
+    for folder in sorted(sparse.iterdir()):
+        if not folder.is_dir():
+            continue
+        if not all((folder / filename).is_file() for filename in ("images.bin", "points3D.bin", "cameras.bin")):
+            continue
+        counts = []
+        for filename in ("images.bin", "points3D.bin"):
+            with (folder / filename).open("rb") as stream:
+                header = stream.read(8)
+            if len(header) != 8:
+                raise Blocked(f"Truncated COLMAP model header: {folder.name}/{filename}")
+            counts.append(int.from_bytes(header, "little"))
+        registered, points = counts
+        if registered > train_count:
+            raise Blocked("Sparse model claims more views than the frozen train list")
+        stats.append({"id": folder.name, "registered_images": registered, "points3d": points})
+    candidates = [row for row in stats if row["registered_images"] > 0 and row["points3d"] > 0]
+    if not candidates:
+        raise Blocked("Fresh COLMAP mapping produced zero nonempty sparse models")
+    best = min(candidates, key=lambda row: (-row["registered_images"], -row["points3d"], row["id"]))
+    return sparse / best["id"], stats
+
+
+def run_colmap(run_dir: Path, executable: str, *, execute: bool = False,
+               train_matcher: str = "sequential", feature_image_size: int | None = None) -> dict:
+    if train_matcher not in {"sequential", "exhaustive"} or (
+            feature_image_size is not None and not 320 <= feature_image_size <= 4096):
+        raise Blocked("Invalid training matcher or feature image size")
     m = checked_run(run_dir)
     output = run_dir / "colmap"
     plan = {"schema_version": "mycon.reconstruction.colmap_plan.v1", "run_id": run_dir.name,
@@ -310,6 +340,7 @@ def run_colmap(run_dir: Path, executable: str, *, execute: bool = False) -> dict
             "fresh_cameras_required": True, "existing_6999_poses_must_not_be_reused": True,
             "input_sha256": sha256(run_dir / "dataset_manifest.json"),
             "train_only_mapper": True, "test_localization_only_after_mapper": True,
+            "train_matcher": train_matcher, "feature_image_size": feature_image_size,
             "output_relpath": "colmap", "status": "not_executed"}
     if not execute:
         return plan
@@ -324,6 +355,9 @@ def run_colmap(run_dir: Path, executable: str, *, execute: bool = False) -> dict
             or sha256(trainlist) != m.get("train_list_sha256")):
         raise Blocked("Training list differs from the frozen split or its SHA256")
     feature_cpu_flag, matching_cpu_flag = _colmap_cpu_options(executable)
+    feature_options = [feature_cpu_flag, "0"]
+    if feature_image_size is not None:
+        feature_options += [feature_cpu_flag.split(".")[0] + ".max_image_size", str(feature_image_size)]
     output.mkdir(parents=False, exist_ok=False)
     log = output / "colmap.log"
     db = output / "database.db"
@@ -337,18 +371,14 @@ def run_colmap(run_dir: Path, executable: str, *, execute: bool = False) -> dict
     testlist.write_text("\n".join(test_names) + "\n", encoding="utf-8")
     cmds = [
       [executable, "feature_extractor", "--database_path", str(db), "--image_path", str(run_dir / "images"),
-       "--image_list_path", str(trainlist), "--ImageReader.single_camera_per_folder", "1", feature_cpu_flag, "0"],
-      [executable, "sequential_matcher", "--database_path", str(db), matching_cpu_flag, "0"],
+       "--image_list_path", str(trainlist), "--ImageReader.single_camera_per_folder", "1", *feature_options],
+      [executable, train_matcher + "_matcher", "--database_path", str(db), matching_cpu_flag, "0"],
       [executable, "mapper", "--database_path", str(db), "--image_path", str(run_dir / "images"),
        "--output_path", str(sparse)],
     ]
     for cmd in cmds:
         _run_colmap(cmd, log)
-    models = sorted([p for p in sparse.iterdir() if p.is_dir() and (p / "images.bin").is_file()],
-                    key=lambda p: -sum((p / n).stat().st_size for n in ("cameras.bin", "images.bin", "points3D.bin") if (p / n).is_file()))
-    if not models:
-        raise Blocked("Fresh COLMAP mapping produced zero sparse models")
-    model = models[0]
+    model, components = _choose_train_model(sparse, len(expected_train_names))
     train_txt = output / "train_text"
     train_txt.mkdir()
     _run_colmap([executable, "model_converter", "--input_path", str(model), "--output_path", str(train_txt), "--output_type", "TXT"], log)
@@ -360,7 +390,7 @@ def run_colmap(run_dir: Path, executable: str, *, execute: bool = False) -> dict
     frozen_train_sha = {n: sha256(model / n) for n in ("cameras.bin", "images.bin", "points3D.bin")}
     _run_colmap([executable, "feature_extractor", "--database_path", str(db),
                  "--image_path", str(run_dir / "images"), "--image_list_path", str(testlist),
-                 "--ImageReader.single_camera_per_folder", "1", feature_cpu_flag, "0"], log)
+                 "--ImageReader.single_camera_per_folder", "1", *feature_options], log)
     _run_colmap([executable, "exhaustive_matcher", "--database_path", str(db),
                  matching_cpu_flag, "0"], log)
     if any(sha256(model / n) != frozen_train_sha[n] for n in frozen_train_sha):
@@ -377,6 +407,7 @@ def run_colmap(run_dir: Path, executable: str, *, execute: bool = False) -> dict
     from .coverage import coverage
     coverage(run_dir)
     plan.update({"status": "colmap_executed", "train_model_relpath": rel(model, run_dir),
+                 "train_sparse_components": components, "selection_policy": "registered_images_then_points3d",
                  "registered_model_relpath": rel(registered, run_dir), "logs_relpath": rel(log, run_dir),
                  "quality_report_relpath": "registration_quality.json", "coverage_report_relpath": "coverage_report.json",
                  "registration_count_train": audit["registered_train"],
@@ -688,6 +719,8 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--run-dir", type=Path, required=True)
     b.add_argument("--executable", default="colmap")
     b.add_argument("--execute-colmap", action="store_true")
+    b.add_argument("--train-matcher", choices=("sequential", "exhaustive"), default="sequential")
+    b.add_argument("--feature-image-size", type=int)
     c = subs.add_parser("score", help="Score independently rendered registered test views")
     c.add_argument("--run-dir", type=Path, required=True)
     c.add_argument("--render-manifest", type=Path, required=True)
@@ -708,7 +741,9 @@ def main(argv: list[str] | None = None) -> int:
                           sample_hz=opts.sample_hz, max_frames=opts.max_frames, min_blur=opts.min_blur,
                           min_mean=opts.min_mean, max_mean=opts.max_mean, max_clip=opts.max_clip,
                           embargo_sec=opts.embargo_sec)
-        elif opts.action == "colmap": res = run_colmap(opts.run_dir, opts.executable, execute=opts.execute_colmap)
+        elif opts.action == "colmap":
+            res = run_colmap(opts.run_dir, opts.executable, execute=opts.execute_colmap,
+                             train_matcher=opts.train_matcher, feature_image_size=opts.feature_image_size)
         elif opts.action == "score": res = score(opts.run_dir, opts.render_manifest, compute_lpips=opts.compute_lpips)
         elif opts.action == "compare": res = compare_6999(opts.run_dir, opts.baseline_per_view)
         elif opts.action == "plan-gs": res = train_plan(opts.run_dir, prior_checkpoint=opts.prior_checkpoint)

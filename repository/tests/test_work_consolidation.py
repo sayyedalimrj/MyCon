@@ -9,7 +9,7 @@ import pytest
 
 from pipeline.stage_07_cleanup.r_frame_geometry import generate
 from pipeline.stage_09_progress.enrich_scientific_evidence import enrich_scientific_evidence_rows
-from reconstruction.workflow import Blocked, report_poses, run_colmap, sha256
+from reconstruction.workflow import Blocked, _choose_train_model, report_poses, run_colmap, sha256
 from viewer_civil.core import ViewerInputError, load_bundle
 from viewer_civil.producer_bridge import convert_r_run
 from test_research_geometry_r_frame import fixture
@@ -116,3 +116,16 @@ def test_tampered_train_list_never_reaches_colmap(tmp_path):
     with pytest.raises(Blocked, match="Training list differs from the frozen split"):
         run_colmap(run, sys.executable, execute=True)
     assert not (run / "colmap").exists()
+
+
+
+def test_sparse_component_selection_prioritizes_camera_registration(tmp_path):
+    for label, registered, points in [("0", 17, 1625), ("1", 20, 1522), ("2", 2, 15)]:
+        model = tmp_path / label
+        model.mkdir()
+        (model / "images.bin").write_bytes(registered.to_bytes(8, "little"))
+        (model / "points3D.bin").write_bytes(points.to_bytes(8, "little"))
+        (model / "cameras.bin").write_bytes(b"fixture")
+    selected, counts = _choose_train_model(tmp_path, 49)
+    assert selected.name == "1"
+    assert len(counts) == 3

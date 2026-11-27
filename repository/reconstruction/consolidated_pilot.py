@@ -65,6 +65,9 @@ def main(argv: list[str] | None = None) -> int:
     cli.add_argument("--sample-hz", type=float, default=2.)
     cli.add_argument("--max-frames", type=int, default=64)
     cli.add_argument("--max-image-size", type=int, default=960)
+    cli.add_argument("--train-matcher", choices=("sequential", "exhaustive"), default="sequential",
+                     help="Exhaustive matching retries fragmented sequential captures under a new run ID")
+    cli.add_argument("--feature-image-size", type=int)
     cli.add_argument("--geometry-threshold", required=True, type=float,
                      help="Exploratory plane threshold in unscaled COLMAP world units")
     cli.add_argument("--attempt-dense", action="store_true", help="Run CUDA PatchMatch and fusion if available")
@@ -102,7 +105,9 @@ def main(argv: list[str] | None = None) -> int:
             stages[step] = {"status": "created", "counts": selected["counts"],
                             "dataset_sha256": sha256(run / "dataset_manifest.json")}
             step = "sfm"
-            stages[step] = run_colmap(run, args.executable, execute=True)
+            stages[step] = run_colmap(run, args.executable, execute=True,
+                                      train_matcher=args.train_matcher,
+                                      feature_image_size=args.feature_image_size)
         else:
             step = "sfm"
             execution = run / "colmap/colmap_execution.json"

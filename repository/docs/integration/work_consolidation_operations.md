@@ -64,3 +64,21 @@ The original proposal sets four goals: rapid as-built geometry, construction-ele
 | Predeclared ablations | Frame selection and embargo; sparse/dense support; geometry plus image evidence vs geometry-only; semantics with and without limited labels; fit-only metric vs withheld control; occlusion-aware vs naive policy. Keep failure rows and coverage in the paired comparison. |
 
 Baseline methods are grounded in [Schönberger and Frahm, 2016, DOI 10.1109/CVPR.2016.445](https://doi.org/10.1109/CVPR.2016.445), [Kerbl et al., 2023, DOI 10.1145/3592433](https://doi.org/10.1145/3592433), and [Bosché et al., 2015, DOI 10.1016/j.autcon.2014.05.014](https://doi.org/10.1016/j.autcon.2014.05.014). The per-stream reviews retain method/code/license and executable example provenance. Record each case in the validation stream before exposing its held-out checks. No paired accuracy/promised performance threshold applies to the exploratory room-video pilot.
+
+## Work execution record, 2026-11-28 (Tehran)
+
+The source was the existing 34.922 s room capture obtained from Drive. Its source SHA-256 matched the R4 receipt before and after processing. The same temporal holdout roster was used for all three runs (49 train, 12 test after selection). These were exploratory retries on one capture, with two reconstruction settings and a corrected model selection policy.
+
+| Run | COLMAP settings | Train registered | Test localized | Sparse XYZ | Plane candidates |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Work R4 | Sequential, native feature resolution, legacy byte-size selection | 19/49 | 0/12 | 7,816 | 2 |
+| Reduced-resolution retry | Exhaustive, 960 px feature extraction, legacy byte-size selection | 17/49 | 0/12 | 1,625 | 0 |
+| Coverage-based retry | Exhaustive, 960 px feature extraction, selection by registered train image count | 19/49 | 1/12 | 1,289 | 0 |
+
+The reduced-resolution retry produced a 20-camera component that the byte-size ranking discarded in favor of a 17-camera component. The corrected selector ranks registered train images first and 3D points second and records every component. COLMAP mapper variation and the differing settings prevent attributing the held-out difference to any one change.
+
+The first-run Shape 3 passed the internal frame gate, with 2,289 quality-gated sparse points and zero confirmed physical features. Opening the offline bundle in Chromium via `file://` used an actual Plotly WebGL scene rendered by ANGLE/SwiftShader. A camera click displayed the original 1920×1080 image, verified by SHA-256, and the scene kept the metric/deviation layer disabled. Software WebGL establishes the browser path, without hardware-GPU evidence. The first-run offline bundle is retained for inspection; the retries and selection evidence are in the evidence package.
+
+On Python 3.11, the 376-pass R4 workflow reproduced with the same four skips. After installing Playwright/Chromium, IfcOpenShell, Gradio and its SOCKS dependency in Work, and then Open3D for the broader legacy tests, `python -m pytest -q -rs` executed **1,131 passed, zero skipped, zero failed**; five dependency deprecation warnings. A malformed IFC that previously raised native `RuntimeError` is now captured as an unverified identity result. Colab notebook cells were syntax-checked; the end-to-end run used the same pilot CLI on Work.
+
+Dense PatchMatch was attempted and reported blocked because the environment exposes no CUDA device. GS training was not started; the hashed train-only staged inputs were created. The single recovered held-out pose provides no independently compared RGB or geometry, so PSNR, SSIM, LPIPS, surveyed scale, semantic accuracy, IFC alignment, Shape 4 and physical progress remain **NOT_EVALUATED**. Required field artifacts are a second distinct construction scene, independent measurement and labels, exact site IFC and reviewed registration where applicable, and two dated as-built captures with signed quantities, BOQ/WBS and baseline.
