@@ -112,6 +112,9 @@ def build_monitor_outputs(
         stat["ifc_source_sha256"] = identity.ifc_sha256
         stat["ifc_class"] = ifc_element.get("ifc_class") if ifc_element else None
         stat["ifc_linked_construction_status"] = stat["construction_status"] if ifc_element else "unknown"
+        stat["source_element_record_missing"] = row.get("source_element_record_missing", False)
+        if stat["source_element_record_missing"] is True:
+            stat["reason_codes"] = ";".join(filter(None, (stat["reason_codes"], "source_element_record_missing")))
         stat["activity_ids"] = ";".join(sorted(set(id_to_aids.get(gid, ()))))
         stat["wbs_codes"] = ";".join(sorted(set(id_to_wbs.get(gid, ()))))
         stat["run_id"] = run_id
@@ -185,6 +188,7 @@ def build_monitor_outputs(
         "scientific_source_schema": scientific["schema_version"],
         "run_id": run_id, "data_date_utc": scientific["data_date_utc"],
         "n_elements": len(status_rows),
+        "n_missing_source_element_records": sum(r.get("source_element_record_missing") is True for r in status_rows),
         "element_status_counts": dict(Counter(r["construction_status"] for r in status_rows)),
         "n_occluded": sum(r["occlusion_state"] == "occluded" for r in status_rows),
         "n_out_of_fov": sum(r["occlusion_state"] == "out_of_fov" for r in status_rows),
@@ -262,6 +266,14 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("mapping_contains_unidentified_boq_rows")
         mapping = load_mapping_csv(args.mapping_csv)
         raw = _read_csv(args.element_metrics_csv, ("global_id",))
+        # Every approved mapping ID must remain in the output denominator and
+        # element ledger, even when no Stage9 row exists for it.
+        present = {str(r.get("global_id") or "").strip() for r in raw}
+        missing_ids = sorted({e.ifc_global_id for e in mapping.entries} - present)
+        for row in raw:
+            row["source_element_record_missing"] = False
+        raw.extend({"global_id": gid, "source_element_record_missing": True}
+                   for gid in missing_ids)
         baseline_path = args.baseline_csv or args.schedule_csv
         baselines = _read_csv(baseline_path, ("activity_id",))
         ground = _read_csv(args.ground_truth_csv, ("global_id", "split", "site_id", "capture_session_id", "reviewer", "verified_at_utc", "document_sha256")) if args.ground_truth_csv else None
