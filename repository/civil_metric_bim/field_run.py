@@ -107,12 +107,20 @@ def build_ifc_adapter(root, inv_path, inv, selection, geom_path, geom):
         if r.get("observation_state") not in core.FIT_STATES:
             raise ValueError("Unsupported or extrapolated corner")
         required_text(r.get("physical_feature_id"), "physical_feature_id")
+        required_text(r.get("endpoint_id"), "physical endpoint ID")
         p = selected_vertex(element, r["vertex_index"])
         matches.append({**r, "bim_xyz_m": p})
     feature_ids = [r["physical_feature_id"] for r in matches]
     targets = [(r["ifc_global_id"], r["vertex_index"]) for r in matches]
-    if len(set(feature_ids)) != len(feature_ids) or len(set(targets)) != len(targets):
+    endpoints = [r["endpoint_id"] for r in matches]
+    if (len(set(feature_ids)) != len(feature_ids) or len(set(targets)) != len(targets)
+            or len(set(endpoints)) != len(endpoints)):
         raise ValueError("Repeated physical feature or IFC vertex across fit/control")
+    for i, a in enumerate(matches):
+        for b in matches[:i]:
+            if (np.linalg.norm(np.asarray(a["bim_xyz_m"]) - b["bim_xyz_m"]) <= 1e-8 or
+                    np.linalg.norm(np.asarray(a["scan_xyz"]) - b["scan_xyz"]) <= 1e-8):
+                raise ValueError("Coincident corner coordinates are not independent")
     for r in selection.get("planes", []):
         reviewed(root, r)
         element = elements[r["ifc_global_id"]]
@@ -163,6 +171,13 @@ def run_field(root, run_id, geometry_rel, survey_rel=None, inventory_rel=None,
         hold = sum(r["role"] == "control" for r in adapter["matches"])
         if fit < minimum or hold < 2:
             raise ValueError("IFC pilot needs >=%d fit corners and >=2 independent holdouts" % minimum)
+        if refs:
+            for r in refs["references"]:
+                if not core.approved(r) or r.get("actual_length_m") is None or r.get("confidence", {}).get("grade") != "high_reviewed":
+                    continue
+                for m in adapter["matches"]:
+                    if r["role"] != m["role"] and m["endpoint_id"] in r["endpoint_ids"]:
+                        raise ValueError("Length/IFC cross-role physical endpoint leakage")
         _, tx = core.build_transform(adapter, scale)
         if tx is None:
             raise ValueError("IFC registration is degenerate or has no consensus")
