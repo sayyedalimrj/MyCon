@@ -257,3 +257,18 @@ def test_paired_site_cluster_bootstrap_two_sites_exploratory(tmp_path):
         ci=[x for x in csv.DictReader(f) if x['metric']=='ssim'][0]
     assert ci['cluster_unit']=='site' and ci['reason']=='exploratory_small_site_count'
     assert float(ci['ci95_lower'])<=float(ci['ci95_upper'])
+# Validation/C additive regression discovery: the coordinator-owned specialized
+# CI currently selects this module explicitly. Import the independent real
+# source-intake correctness tests so it cannot silently skip their execution.
+# These functions all use synthetic fixtures; they are not field performance.
+from test_research_validation_real_intake_audit import (  # noqa: E402,F401
+    test_projection_zero_residual,
+    test_projection_rejects_behind_camera,
+    test_member_path_rejects_escape,
+    test_synthetic_pkg_hash_and_unregistered_gate,
+    test_reject_tampered_member,
+    test_refuse_run_overwrite,
+    test_reject_expected_package_hash,
+    test_reject_unsafe_runid,
+    test_reject_incomplete_camera_registration_receipt,
+)
