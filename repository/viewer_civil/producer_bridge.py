@@ -2,7 +2,7 @@
 
 R world-to-camera (OpenCV, X-right/Y-down/Z-forward) must be inverted
 for the V camera-to-world contract. A geometry is withheld unless a
-hash-pinned independent coordinate-frame review explicitly approves it.
+reviewed frame bridge or the verified frozen train model binds it internally.
 """
 from __future__ import annotations
 import argparse
@@ -11,11 +11,12 @@ import json
 import math
 import shutil
 from pathlib import Path
-from .core import ViewerInputError, RUN_ID, _matrix, read_path, sha256, load_bundle
+from .core import ViewerInputError, RUN_ID, _matrix, json_file, read_path, sha256, load_bundle
 
 R_DATASET = "mycon.reconstruction.dataset.v1"
 R_POSES = "mycon.reconstruction.camera_poses.v1"
 A_REVIEW = "mycon.civil_geometry_review.v1"
+A_SPARSE = "mycon.civil_sfm_feature_evidence.v1"
 FRAME_BRIDGE = "mycon.viewer.frame_bridge.v1"
 R_CONVENTION = "colmap_opencv_world_to_camera"
 
@@ -66,9 +67,72 @@ def _xyz(T,p):
         raise ViewerInputError("geometry XYZ invalid")
     return [sum(T[i][j]*p[j] for j in range(3))+T[i][3] for i in range(3)]
 
-def _import_A(root,relative,bridge_relative,rsha):
+def _import_sparse_A(root, a, manifest_path, r_root, dataset):
+    """Bind sparse diagnostics to the same frozen train model for display only."""
+    from pipeline.stage_07_cleanup.r_frame_geometry import FRAME, reconcile_r_model
+    from reconstruction.workflow import Blocked, IMAGE_KEYS
+
+    audit = {"a_manifest_sha256": sha256(manifest_path), "independent_review": False}
+    if a.get("r_run_shared_frame_verified") is not True:
+        return None, "A_sparse_source_frame_unbound; geometry withheld", audit
+    if (a.get("coordinate_frame") != FRAME or a.get("units") != "arbitrary_COLMAP_units"
+            or a.get("metric_scale_verified") is not False
+            or a.get("source_model_physical_surface_verified") is not False):
+        raise ViewerInputError("A sparse coordinate frame, units or authority invalid")
+    model = [read_path(r_root, "colmap/train_text/" + name) for name in IMAGE_KEYS]
+    r_dataset = r_root / "dataset_manifest.json"
+    r_poses = r_root / "camera_poses.json"
+    try:
+        binding = reconcile_r_model(r_root, *model, r_dataset, r_poses)
+    except Blocked as exc:
+        raise ViewerInputError(str(exc)) from exc
+    if (binding["shared_world_frame_verified"] is not True or binding != a.get("r_compatibility")
+            or binding["source_model_sha256"] != a.get("source_colmap_model_sha256")):
+        raise ViewerInputError("A sparse model does not match the current R frozen train model")
+    photos = a.get("source_photo_sha256")
+    train = {Path(f["image_relpath"]).relative_to("images").as_posix(): f["image_sha256"]
+             for f in dataset["frames"] if f["split"] == "train"}
+    if (not isinstance(photos, dict) or len(photos) < 3
+            or any(train.get(name) != sha for name, sha in photos.items())):
+        raise ViewerInputError("A sparse photo provenance does not match the R train split")
+    output = a.get("outputs", {}).get("viewer_overlay.json")
+    if not isinstance(output, dict):
+        raise ViewerInputError("Missing A sparse overlay receipt")
+    path = read_path(root, output.get("relative_path"))
+    if (path.parent != manifest_path.parent or path.name != "viewer_overlay.json"
+            or output.get("sha256") != sha256(path) or output.get("bytes") != path.stat().st_size):
+        raise ViewerInputError("A sparse overlay receipt SHA256, path or size mismatch")
+    overlay = json_file(path)
+    if (overlay.get("schema_version") != A_SPARSE or overlay.get("frame") != FRAME
+            or overlay.get("status") != "frozen_train_SfM_internal_only"
+            or overlay.get("metric_scale_verified") is not False
+            or overlay.get("feature_physical_confirmation") is not False):
+        raise ViewerInputError("A sparse overlay provenance or status invalid")
+    data = overlay["render_data"]
+    normalized = {
+        "points": data["points"],
+        "planes": [{"plane_id": p["id"], "finite_boundary_xyz": p["boundary"]}
+                   for p in data["planes"]],
+        "edges": [{"edge_id": e["id"], "endpoints_xyz": e["ends"], "state": "candidate"}
+                  for e in data["edges"]],
+        "corners": [{"corner_id": c["id"], "xyz": c["xyz"], "state": "candidate_extrapolated"}
+                    for c in data["corners"]],
+    }
+    identity = [[float(i == j) for j in range(4)] for i in range(4)]
+    audit.update({"a_overlay_sha256": output["sha256"], "binding": binding, "sparse_only": True})
+    return (normalized, identity), "same_frozen_train_model_internal_nonmetric", audit
+
+
+def _import_A(root,relative,bridge_relative,rsha,r_root,dataset):
     """A source is validated independently; unsupported co-registration stays hidden."""
-    a, ap = _read_json(root,relative,A_REVIEW)
+    ap = read_path(root, relative)
+    a = json_file(ap)
+    if a.get("schema_version") == A_SPARSE:
+        if bridge_relative:
+            raise ViewerInputError("Sparse A model uses its frozen R model binding directly")
+        return _import_sparse_A(root, a, ap, r_root, dataset)
+    if a.get("schema_version") != A_REVIEW:
+        raise ViewerInputError("source schema mismatch: " + relative)
     receipt=a.get("outputs",{}).get("viewer_overlay.json")
     if not isinstance(receipt,dict):
         raise ViewerInputError("A viewer_overlay receipt missing")
@@ -141,7 +205,7 @@ def convert_r_run(run_dir,destination,*,project_root=None,a_manifest=None,frame_
     geometry=None;state="no_A_geometry_supplied";gaudit=None
     if a_manifest:
         if project_root is None:raise ViewerInputError("A project root missing")
-        geometry,state,gaudit=_import_A(Path(project_root).resolve(),a_manifest,frame_bridge,sha256(ppath))
+        geometry,state,gaudit=_import_A(Path(project_root).resolve(),a_manifest,frame_bridge,sha256(ppath),root,dataset)
     entries={"camera_poses":[],"frame_manifest":[],"planes":[],"edges":[],"corners":[],
              "mesh":{"vertices":[],"faces":[]},"alignment_result":{
              "metric_scale_verified":False,"registration_verified":False,

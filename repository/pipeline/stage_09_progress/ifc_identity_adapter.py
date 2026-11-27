@@ -110,7 +110,7 @@ def read_ifc_identity_index(manifest_path: Path | str | None, *,
                         not math.isfinite(recorded_scale) or recorded_scale <= 0 or
                         not math.isclose(scale, recorded_scale, rel_tol=1e-9, abs_tol=1e-12)):
                     errors.append("ifc_unit_conversion_mismatch")
-            except (OSError, ValueError, TypeError, AttributeError, KeyError) as exc:
+            except (OSError, ValueError, TypeError, AttributeError, KeyError, RuntimeError) as exc:
                 errors.append("ifc_parser_validation_failed:" + type(exc).__name__)
         if errors:
             return IFCIndex(False, tuple(sorted(set(errors))), ifc_hash, index_hash, {})

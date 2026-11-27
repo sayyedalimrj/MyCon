@@ -1,0 +1,13 @@
+# Python 3.11 Work pilot. CUDA builds and optional research models are separate.
+numpy==1.26.4
+scipy==1.17.1
+opencv-python-headless==4.11.0.86
+Pillow==11.3.0
+trimesh==4.12.2
+matplotlib==3.11.2
+pandas==2.3.3
+scikit-image==0.26.0
+plotly==6.9.0
+PyYAML==6.0.4
+requests==2.34.2
+httpx==0.29.0

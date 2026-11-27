@@ -92,7 +92,7 @@ def parse_images(p: Path, selected: set[str]) -> tuple[dict, int]:
     with p.open(encoding="utf8") as f:
         for line in f:
             if not line.strip() or line.startswith("#"):continue
-            a=line.split()
+            a=line.strip().split(maxsplit=9)
             if len(a) < 10: raise ValueError("Malformed COLMAP images.txt pose line")
             image_count+=1
             name=a[9]

@@ -317,13 +317,18 @@ def run_colmap(run_dir: Path, executable: str, *, execute: bool = False) -> dict
         raise Blocked("COLMAP output already exists: create a new Run ID; no force overwrite")
     if not shutil.which(executable) and not Path(executable).is_file():
         raise Blocked(f"COLMAP not installed: {executable}")
+    trainlist = run_dir / "train_image_names.txt"
+    expected_train_names = [Path(f["image_relpath"]).relative_to("images").as_posix()
+                            for f in m["frames"] if f["split"] == "train"]
+    if (trainlist.read_text(encoding="utf-8").splitlines() != expected_train_names
+            or sha256(trainlist) != m.get("train_list_sha256")):
+        raise Blocked("Training list differs from the frozen split or its SHA256")
     feature_cpu_flag, matching_cpu_flag = _colmap_cpu_options(executable)
     output.mkdir(parents=False, exist_ok=False)
     log = output / "colmap.log"
     db = output / "database.db"
     sparse = output / "sparse"
     sparse.mkdir()
-    trainlist = run_dir / "train_image_names.txt"
     testlist = output / "test_image_names.txt"
     # Never put test features or matches into the mapper database until AFTER
     # train-only mapping has completed and the resulting model is frozen.
@@ -389,6 +394,8 @@ def parse_colmap_text(model_dir: Path) -> tuple[dict[int, dict], dict[str, dict]
         if not line.strip() or line.lstrip().startswith("#"): continue
         parts = line.split()
         camera_id, model, w, h = int(parts[0]), parts[1], int(parts[2]), int(parts[3])
+        if camera_id in cam:
+            raise Blocked("Duplicate COLMAP camera ID")
         cam[camera_id] = {"model": model, "width": w, "height": h, "parameters": [float(x) for x in parts[4:]]}
     raw = (model_dir / "images.txt").read_text(encoding="utf-8").splitlines()
     images = {}
@@ -411,6 +418,8 @@ def parse_colmap_text(model_dir: Path) -> tuple[dict[int, dict], dict[str, dict]
           [2*(x*y+z*w), 1-2*(x*x+z*z), 2*(y*z-x*w)],
           [2*(x*z-y*w), 2*(y*z+x*w), 1-2*(x*x+y*y)],
         ])
+        if not all(math.isfinite(v) for v in (tx, ty, tz)) or p[9] in images:
+            raise Blocked("Nonfinite translation or duplicate COLMAP image name")
         mat = np.eye(4); mat[:3,:3] = rot; mat[:3,3] = [tx,ty,tz]
         observations = raw[i+1].split()
         if len(observations) % 3: raise Blocked("Malformed COLMAP 2D observation triplets")
@@ -427,9 +436,19 @@ def report_poses(run_dir: Path, train_text: Path, registered_text: Path) -> dict
     cameras, train_poses = parse_colmap_text(train_text)
     test_cameras, all_poses = parse_colmap_text(registered_text)
     poses = []
+    selected = {Path(f["image_relpath"]).relative_to("images").as_posix(): f for f in m["frames"]}
+    if len(selected) != len(m["frames"]) or not (train_poses.keys() | all_poses.keys()) <= selected.keys():
+        raise Blocked("COLMAP model contains unknown or duplicate selected image names")
     wrong_split = set(train_poses).intersection({Path(x["image_relpath"]).relative_to("images").as_posix() for x in m["frames"] if x["split"] == "test"})
     if wrong_split:
         raise Blocked(f"TEST LEAKAGE: test image appears in train COLMAP mapper: {sorted(wrong_split)}")
+    if all((train_text / n).is_file() for n in IMAGE_KEYS):
+        for name, entry in train_poses.items():
+            localized = all_poses.get(name)
+            if (localized is None or cameras.get(entry["camera_id"]) != test_cameras.get(localized["camera_id"])
+                    or not np.allclose(entry["world_to_camera_4x4"], localized["world_to_camera_4x4"],
+                                       atol=1e-8, rtol=0)):
+                raise Blocked(f"Held-out localization changed frozen train camera or pose: {name}")
     for frame in m["frames"]:
         name = Path(frame["image_relpath"]).relative_to("images").as_posix()
         entry = (train_poses if frame["split"] == "train" else all_poses).get(name)
@@ -458,6 +477,9 @@ def report_poses(run_dir: Path, train_text: Path, registered_text: Path) -> dict
     emit_json(run_dir / "camera_poses.json", {"schema_version": "mycon.reconstruction.camera_poses.v1",
               "run_id": run_dir.name, "train_colmap_model_sha256": sha256(train_text / "images.txt"),
               "registered_colmap_model_sha256": sha256(registered_text / "images.txt"),
+              "dataset_manifest_sha256": sha256(run_dir / "dataset_manifest.json"),
+              "train_colmap_text_sha256": {n: sha256(train_text / n) for n in IMAGE_KEYS}
+              if all((train_text / n).is_file() for n in IMAGE_KEYS) else None,
               "test_pose_method": "colmap_image_registrator_frozen_train_sparse_no_test_bundle_adjustment",
               "test_pixels_used_only_for_pose_localization": True, "poses": poses})
     rtrain = sum(1 for p in poses if p["split"] == "train" and p["registered"])

@@ -47,48 +47,88 @@ def _read_tracks(path: Path, *, error_px: float, min_track_length: int):
             np.asarray(ntrack,np.int32),rejected)
 
 
-def _r_compat(root:Path, model_images_txt:Path, r_dataset:Path|None, r_poses:Path|None)->dict:
-    """Only a registered, same-run, SHA-matched R model could claim the same frame."""
+def reconcile_r_model(root: Path, cameras: Path, images: Path, points: Path,
+                      r_dataset: Path | None, r_poses: Path | None) -> dict:
+    """Reconcile the frozen train model with its source image and camera receipts."""
     if r_dataset is None and r_poses is None:
-        return {'status':'R_OUTPUT_NOT_SUPPLIED','shared_world_frame_verified':False,
-                'reason':'R real pilot has no newly registered COLMAP pose model; historical model must remain independent'}
-    if (r_dataset is None)!=(r_poses is None):
-        raise ValueError('R dataset_manifest and camera_poses must be supplied together')
-    rp=cam.confined(root,r_poses);rd=cam.confined(root,r_dataset)
-    poses=json.loads(rp.read_text(encoding='utf-8')); dataset=json.loads(rd.read_text(encoding='utf-8'))
-    if poses.get('schema_version')!='mycon.reconstruction.camera_poses.v1' or dataset.get('schema_version')!='mycon.reconstruction.dataset.v1':
-        raise ValueError('Unsupported Team R dataset/pose contract version')
-    if poses.get('run_id')!=dataset.get('run_id') or not str(poses.get('run_id','')).startswith('recon-'):
-        raise ValueError('Team R run mismatch')
-    if poses.get('registered_colmap_model_sha256')!=_sha(model_images_txt):
-        return {'status':'UNREGISTERED_DIFFERENT_R_COLMAP_MODEL','shared_world_frame_verified':False,
-                'r_run_id':poses['run_id'],'reason':'R registered model images.txt SHA differs from historical COLMAP; no model transform provided',
-                'r_pose_sha256':_sha(rp),'r_dataset_sha256':_sha(rd)}
-    by_frame={x.get('view_id'):x for x in dataset.get('frames',[])}
-    if len(by_frame)!=len(dataset.get('frames',[])) or not by_frame:
-        raise ValueError('Duplicate/empty R dataset views')
-    registered=0
-    for p in poses.get('poses',[]):
-        s=by_frame.get(p.get('view_id'))
-        if not s or any(p.get(f)!=s.get(f) for f in ('image_sha256','capture_session_id','split','image_relpath')):
-            raise ValueError('R pose image/session/split/hash identity mismatch')
-        photo=cam.confined(root,rd.parent/s['image_relpath'])
-        if _sha(photo)!=s['image_sha256']:
-            raise ValueError('Team R source image SHA mismatch')
-        if p.get('registered'):
-            if p.get('coordinate_frame')!='colmap_opencv_world_to_camera' or p.get('metric_scale_verified') is not False:
-                raise ValueError('R pose convention or metric gate violation')
-            w=np.asarray(p.get('world_to_camera_4x4'),dtype=float)
-            if w.shape!=(4,4) or not np.isfinite(w).all() or not np.allclose(w[3],[0,0,0,1]) or not np.allclose(w[:3,:3].T@w[:3,:3],np.eye(3),atol=1e-5) or abs(np.linalg.det(w[:3,:3])-1)>1e-5:
-                raise ValueError('Nonrigid Team R W2C matrix')
-            registered+=1
-    if registered==0:
-        return {'status':'R_POSES_NOT_REGISTERED','shared_world_frame_verified':False,'r_run_id':poses['run_id']}
-    # Model SHA alone is insufficient if R image-to-model view names have not been independently
-    # reconciled with the selected COLMAP image record and its actual pose. Never promote.
-    return {'status':'SAME_COLMAP_IMAGES_HASH_PENDING_PER_VIEW_POSE_VERIFICATION',
-            'shared_world_frame_verified':False,'r_run_id':poses['run_id'],'registered_R_views':registered,
-            'reason':'Complete independently checked view-name/pose mapping required before frame equivalence'}
+        return {"status": "R_OUTPUT_NOT_SUPPLIED", "shared_world_frame_verified": False}
+    if (r_dataset is None) != (r_poses is None):
+        raise ValueError("R dataset_manifest and camera_poses must be supplied together")
+    from reconstruction.workflow import COLMAP_FRAME, IMAGE_KEYS, parse_colmap_text
+
+    rp = cam.confined(root, r_poses)
+    rd = cam.confined(root, r_dataset)
+    poses = json.loads(rp.read_text(encoding="utf-8"))
+    dataset = json.loads(rd.read_text(encoding="utf-8"))
+    if (poses.get("schema_version") != "mycon.reconstruction.camera_poses.v1"
+            or dataset.get("schema_version") != "mycon.reconstruction.dataset.v1"):
+        raise ValueError("Unsupported Team R dataset/pose contract version")
+    run = poses.get("run_id")
+    if run != dataset.get("run_id") or not isinstance(run, str) or not run.startswith("recon-"):
+        raise ValueError("Team R run mismatch")
+
+    images_sha = _sha(images)
+    is_train = poses.get("train_colmap_model_sha256") == images_sha
+    is_registered = poses.get("registered_colmap_model_sha256") == images_sha
+    evidence = {"r_run_id": run, "r_pose_sha256": _sha(rp), "r_dataset_sha256": _sha(rd),
+                "shared_world_frame_verified": False}
+    if not (is_train or is_registered):
+        return {**evidence, "status": "UNREGISTERED_DIFFERENT_R_COLMAP_MODEL"}
+
+    frames = {f["view_id"]: f for f in dataset["frames"]}
+    by_id = {p["view_id"]: p for p in poses["poses"]}
+    if (not frames or len(frames) != len(dataset["frames"]) or len(by_id) != len(poses["poses"])
+            or frames.keys() != by_id.keys()):
+        raise ValueError("R poses must cover exactly the unique dataset views")
+    names = {}
+    for view, f in frames.items():
+        p = by_id[view]
+        rel = Path(f["image_relpath"])
+        if (rel.is_absolute() or ".." in rel.parts or "\\" in str(rel) or rel.parts[:1] != ("images",)
+                or f["split"] not in ("train", "test")
+                or any(p.get(k) != f.get(k) for k in ("image_sha256", "capture_session_id", "split", "image_relpath"))):
+            raise ValueError("R pose image/session/split/hash identity mismatch")
+        name = rel.relative_to("images").as_posix()
+        if name in names:
+            raise ValueError("Duplicate R source image name")
+        names[name] = (f, p)
+        if _sha(cam.confined(rd.parent, rel)) != f["image_sha256"]:
+            raise ValueError("Team R source image SHA mismatch")
+
+    digests = dict(zip(IMAGE_KEYS, map(_sha, (cameras, images, points))))
+    if not is_train or poses.get("train_colmap_text_sha256") is None:
+        return {**evidence, "status": "R_MODEL_NOT_BOUND_TO_FROZEN_TRAIN_TRIPLET"}
+    if (poses.get("train_colmap_text_sha256") != digests
+            or poses.get("dataset_manifest_sha256") != evidence["r_dataset_sha256"]
+            or poses.get("test_pixels_used_only_for_pose_localization") is not True
+            or dataset.get("metric_scale_verified") is not False
+            or poses.get("metric_scale_verified") is True):
+        raise ValueError("R train text model or dataset receipt mismatch")
+    if tuple(p.name for p in (cameras, images, points)) != IMAGE_KEYS or len(
+            {p.parent for p in (cameras, images, points)}) != 1:
+        raise ValueError("R train text model must be one COLMAP directory")
+    intrinsics, model_views = parse_colmap_text(images.parent)
+    training = {name for name, (f, p) in names.items()
+                if f["split"] == "train" and p.get("registered") is True}
+    if len(training) < 3 or model_views.keys() != training:
+        raise ValueError("R frozen train model has held-out, unknown or missing registered views")
+    for name, model_view in model_views.items():
+        frame, pose = names[name]
+        camera = intrinsics.get(model_view["camera_id"])
+        matrix = np.asarray(pose.get("world_to_camera_4x4"), dtype=float)
+        if (camera is None or pose.get("camera") != camera
+                or (camera["width"], camera["height"]) != (frame.get("width"), frame.get("height"))
+                or pose.get("camera_id") != model_view["camera_id"]
+                or pose.get("coordinate_frame") != COLMAP_FRAME
+                or pose.get("units") != "reconstruction_units_unscaled"
+                or pose.get("metric_scale_verified") is not False
+                or matrix.shape != (4, 4)
+                or not np.allclose(matrix, model_view["world_to_camera_4x4"],
+                                   atol=1e-8, rtol=0)):
+            raise ValueError("R registered train camera parameters or world-to-camera pose mismatch")
+    return {**evidence, "status": "R_FROZEN_TRAIN_MODEL_INTERNALLY_RECONCILED",
+            "model_role": "frozen_train", "source_model_sha256": digests,
+            "registered_train_views": len(training), "shared_world_frame_verified": True}
 
 
 def generate(root:Path, *, cameras:Path, images:Path, points:Path, photos:list[Path],
@@ -103,16 +143,28 @@ def generate(root:Path, *, cameras:Path, images:Path, points:Path, photos:list[P
     if dest.parent.exists():raise FileExistsError('Refusing to overwrite an existing research run')
     cams_path=cam.confined(root,cameras);images_path=cam.confined(root,images);points_path=cam.confined(root,points)
     pictures=[cam.confined(root,p) for p in photos]
-    if len(pictures)<3 or len(set(p.name for p in pictures))!=len(pictures):
+    r_status = reconcile_r_model(root, cams_path, images_path, points_path, r_dataset, r_poses)
+    shared = r_status["shared_world_frame_verified"]
+    if shared:
+        dataset_path = cam.confined(root, r_dataset)
+        dataset = json.loads(dataset_path.read_text(encoding="utf-8"))
+        allowed = {cam.confined(dataset_path.parent, Path(f["image_relpath"]))
+                   for f in dataset["frames"] if f["split"] == "train"}
+        if not set(pictures) <= allowed:
+            raise ValueError("A source photo is not in the frozen R training split")
+        picture_names = {p: p.relative_to(dataset_path.parent / "images").as_posix() for p in pictures}
+    else:
+        picture_names = {p: p.name for p in pictures}
+    if len(pictures)<3 or len(set(picture_names.values()))!=len(pictures):
         raise ValueError('Need 3+ distinct source photos with registered COLMAP names')
-    r_status=_r_compat(root,images_path,r_dataset,r_poses)
     c=cam.parse_cameras(cams_path);p3=cam.parse_points(points_path)
-    selected,number=cam.parse_images(images_path,set(p.name for p in pictures))
+    selected,number=cam.parse_images(images_path,set(picture_names.values()))
     from PIL import Image
     frame_evidence=[]
     observed={}
     for picture in sorted(pictures):
-        im=selected[picture.name];intr=c.get(im['camera_id'])
+        name = picture_names[picture]
+        im=selected[name];intr=c.get(im['camera_id'])
         if not intr:raise ValueError('Image camera not available')
         with Image.open(picture) as photo:
             if photo.size!=(intr['width'],intr['height']) or photo.format not in ('JPEG','PNG'):
@@ -122,8 +174,8 @@ def generate(root:Path, *, cameras:Path, images:Path, points:Path, photos:list[P
         if repro['median_px']>2. or repro['p95_px']>5.:
             raise ValueError('COLMAP sparse-camera reprojection quality gate failed')
         obs={int(pid):(float(u),float(v)) for u,v,pid in im['observations']}
-        observed[picture.name]=obs
-        frame_evidence.append({'name':picture.name,'view_id':im['view_id'],
+        observed[name]=obs
+        frame_evidence.append({'name':name,'view_id':im['view_id'],
               'image_sha256':_sha(picture),'image_path_relative':picture.relative_to(root).as_posix(),
               'intrinsics':intr,'w2c':im['world_to_camera_4x4'].tolist(),
               'c2w':im['camera_to_world_4x4'].tolist(),
@@ -155,7 +207,7 @@ def generate(root:Path, *, cameras:Path, images:Path, points:Path, photos:list[P
                             for i,pid,uv in found[:50]]
             samples.append({'view_id':row['view_id'],'image_name':view,'image_sha256':row['image_sha256'],
                             'tracked_support_count':len(found),'observed_tracks':source_samples,
-                            'meaning':'historical_COLMAP_internal_2D_3D_correspondence_NOT_independent_wall_or_edge_validation'})
+                            'meaning':'COLMAP_internal_2D_3D_correspondence_NOT_independent_wall_or_edge_validation'})
         return samples
     for kind,arr,key in [('plane',planes,'plane_id'),('edge',edges,'edge_id'),('corner',corners,'corner_id')]:
         out=[]
@@ -211,8 +263,8 @@ def generate(root:Path, *, cameras:Path, images:Path, points:Path, photos:list[P
                 w.writerow([feat.get({'planes':'plane_id','edges':'edge_id','corners':'corner_id'}[kind]),kind,len(set(sp)),feat['number_of_photo_views_with_tracked_inliers'],
                             feat.get('residual_p95_units'),'candidate_unverified',False,'',''])
     stats={'schema_version':SCHEMA,'run_id':run_id,'source_model_frame_verified_internal':True,
-          'r_new_run_frame_verified':False,'r_compatibility':r_status,
-          'source_kind':'historical_COLMAP_sparse_reconstruction_NOT_DENSE',
+          'r_new_run_frame_verified':shared,'r_compatibility':r_status,
+          'source_kind':('fresh_R' if shared else 'historical') + '_COLMAP_sparse_reconstruction_NOT_DENSE',
           'source_point_count':len(p3),'quality_gated_point_count':len(ids),
           'quality_rejected_count':rejected,'source_model_registered_camera_count':number,
           'queried_photo_count':len(frame_evidence),'coordinate_frame':FRAME,
@@ -224,7 +276,7 @@ def generate(root:Path, *, cameras:Path, images:Path, points:Path, photos:list[P
           'max_per_point_COLMAP_reprojection_error_px':max_error_px,
           'source_reconstruction_diagnostics':qa,
           'photos':frame_evidence,
-          'known_limitations':['Original R new 35s video differs from this old COLMAP model; cannot transfer frame',
+          'known_limitations':[
             'COLMAP sparse tracks are not a dense structural surface or independent metric GT',
             'Plane normals have unsigned/unknown gravity; floor, wall, ceiling all unknown',
             'Bounded convex hull can enclose unobserved holes; candidates not building elements',
@@ -260,32 +312,33 @@ def generate(root:Path, *, cameras:Path, images:Path, points:Path, photos:list[P
               'edges':[{'id':e['edge_id'],'ends':e['endpoints_xyz']} for e in features['edges']],
               'corners':[{'id':f['corner_id'],'xyz':f['xyz'],'state':'candidate_extrapolated'} for f in features['corners']]}
     (dest/'viewer_overlay.json').write_text(json.dumps({'schema_version':SCHEMA,'frame':FRAME,
-         'status':'historical_SfM_same_camera_frame_only','metric_scale_verified':False,
+         'status':'frozen_train_SfM_internal_only' if shared else 'historical_SfM_same_camera_frame_only','metric_scale_verified':False,
          'feature_physical_confirmation':False,'render_data':viewdata},separators=(',',':')),encoding='utf-8')
     (dest/'shape3_sfm_review.html').write_text(_html(viewdata),encoding='utf-8')
     outs={p.name:{'relative_path':p.relative_to(root).as_posix(),'sha256':_sha(p),'bytes':p.stat().st_size}
           for p in sorted(dest.iterdir()) if p.is_file()}
     receipt={'schema_version':SCHEMA,'run_id':run_id,'created_at_utc':datetime.now(timezone.utc).isoformat(),
              'coordinate_frame':FRAME,'units':'arbitrary_COLMAP_units','metric_scale_verified':False,
-             'r_run_shared_frame_verified':False,'source_historical_colmap_model_sha256':{k:_sha(v) for k,v in
+             'r_run_shared_frame_verified':shared,'r_compatibility':r_status,
+             ('source_colmap_model_sha256' if shared else 'source_historical_colmap_model_sha256'):{k:_sha(v) for k,v in
                [('cameras.txt',cams_path),('images.txt',images_path),('points3D.txt',points_path)]},
-             'source_photo_sha256':{p.name:_sha(p) for p in pictures},
+             'source_photo_sha256':{picture_names[p]:_sha(p) for p in pictures},
              'source_model_physical_surface_verified':False,
-             'registration_state':'SFM_SAME_MODEL_ONLY_R_UNREGISTERED',
+             'registration_state':'SFM_R_TRAIN_MODEL_INTERNAL' if shared else 'SFM_SAME_MODEL_ONLY_R_UNREGISTERED',
              'quality_gate':{'min_track_length':min_track_length,'max_error_px':max_error_px,
                  'plane_threshold_unscaled':threshold},
              'outputs':outs}
     (dest/'civil_r_frame_manifest.json').write_text(json.dumps(receipt,indent=2),encoding='utf-8')
-    return {'status':'generated_historical_sparse_same_camera_frame','run_id':run_id,'planes':len(planes),
+    return {'status':'generated_frozen_train_sparse_same_camera_frame' if shared else 'generated_historical_sparse_same_camera_frame','run_id':run_id,'planes':len(planes),
         'edges':len(edges),'hypothetical_corners':len(corners),'confirmed_corners':0,
-        'quality_points':len(ids),'R_shared_world_frame':False,'output_dir':str(dest)}
+        'quality_points':len(ids),'R_shared_world_frame':shared,'output_dir':str(dest)}
 
 
 def _html(data:dict)->str:
     # All data are generated from local numeric arrays. Do not fetch external JS/CDN.
     return '''<!doctype html><meta charset="utf-8"><title>MyCON sparse Shape3</title>
 <style>body{background:#121c2c;color:#f0f3f8;font:14px system-ui;margin:16px}canvas{border:1px solid #536176;width:100%;height:68vh;touch-action:none}pre{max-height:180px;overflow:auto;white-space:pre-wrap}b{color:#f3bd72}</style>
-<h3>MyCON historical COLMAP — inspectable Shape3</h3><p><b>UNSCALED / NO FIELD CERTIFIED FEATURES.</b> Only SAME-MODEL COLMAP sparse 3D→2D tracks. Separate new R capture and Depth Fusion are UNREGISTERED. Drag to rotate; scroll to zoom; click plane boundary/edge to inspect.</p>
+<h3>MyCON COLMAP — inspectable Shape3</h3><p><b>UNSCALED / NO FIELD CERTIFIED FEATURES.</b> Only SAME-MODEL COLMAP sparse 3D→2D tracks. External depth and independent physical measurements require separate validation. Drag to rotate; scroll to zoom; click plane boundary/edge to inspect.</p>
 <canvas id="v" width="1100" height="650"></canvas><pre id="ins">Select a drawn feature...</pre>
 <script>const d='''+json.dumps(data,separators=(',',':'))+''';let a=0.8,b=0.4,z=2.6,drag=false,px=0,py=0,targets=[];
 const cv=document.getElementById('v'),ctx=cv.getContext('2d'),info=document.getElementById('ins');

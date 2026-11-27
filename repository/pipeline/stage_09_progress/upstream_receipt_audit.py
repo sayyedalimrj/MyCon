@@ -19,6 +19,9 @@ SCHEMAS = {
 }
 
 
+A_SPARSE_SCHEMA = "mycon.civil_sfm_feature_evidence.v1"
+
+
 def _digest(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as stream:
@@ -51,8 +54,11 @@ def audit_receipt(owner: str, manifest: Path | None, expected_sha256: str | None
         if not valid_sha256(expected_sha256) or digest != expected_sha256.lower():
             raise ValueError("independent_receipt_hash_missing_or_mismatch")
         doc = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(doc, dict) or doc.get("schema_version") != SCHEMAS[owner]:
+        schema = doc.get("schema_version") if isinstance(doc, dict) else None
+        sparse = owner == "A" and schema == A_SPARSE_SCHEMA
+        if schema != SCHEMAS[owner] and not sparse:
             raise ValueError("receipt_schema_mismatch")
+        result["schema_version"] = schema
         run = doc.get("run_id")
         if not isinstance(run, str) or not run.startswith("geom-" if owner == "A" else "metric-bim-"):
             raise ValueError("invalid_producer_run_id")
@@ -61,12 +67,18 @@ def audit_receipt(owner: str, manifest: Path | None, expected_sha256: str | None
         required = ({"registration_qa.json", "feature_evidence.json", "unknown_regions.json"}
                     if owner == "A" else {"scale_estimate.json", "alignment_transform.json",
                     "heldout_control_errors.csv", "deviation_heatmap.json", "viewer_handoff.json"})
+        if sparse:
+            required = {"geometry_qa.json", "camera_views.json", "viewer_overlay.json"}
+            if (doc.get("metric_scale_verified") is not False
+                    or doc.get("source_model_physical_surface_verified") is not False):
+                raise ValueError("sparse_geometry_cannot_assert_metric_or_surface_authority")
         if not isinstance(outputs, dict) or not required.issubset(outputs):
             raise ValueError("required_producer_artifacts_missing")
         for desc in outputs.values():
             if not isinstance(desc, dict):
                 raise ValueError("invalid_artifact_descriptor")
-            rel = desc.get("path_relative_to_project" if owner == "A" else "path")
+            path_key = "relative_path" if sparse else "path_relative_to_project" if owner == "A" else "path"
+            rel = desc.get(path_key)
             if not isinstance(rel, str) or not rel or Path(rel).is_absolute() or "\\" in rel:
                 raise ValueError("unsafe_artifact_path")
             asset = _confined(root, root / rel)
@@ -76,7 +88,12 @@ def audit_receipt(owner: str, manifest: Path | None, expected_sha256: str | None
                 raise ValueError("artifact_hash_or_size_mismatch")
             result["verified_artifact_count"] += 1
         result["integrity_valid"] = True
-        if owner == "A":
+        if sparse:
+            result["source_frame"] = doc.get("coordinate_frame")
+            result["source_units"] = doc.get("units")
+            result["reconstruction_run_id"] = (doc.get("r_compatibility") or {}).get("r_run_id")
+            result["reason_codes"].append("A_sparse_diagnostic_only_no_ifc_visibility_or_quantity_authority")
+        elif owner == "A":
             result["source_civil_manifest_sha256"] = doc.get("source_civil_manifest_sha256")
             result["registration_status"] = doc.get("registration_status")
             result["source_frame"] = doc.get("coordinate_frame_depth")
@@ -87,6 +104,9 @@ def audit_receipt(owner: str, manifest: Path | None, expected_sha256: str | None
                 result["reason_codes"].append("A_camera_depth_or_metric_not_verified")
         else:
             result["metric_validation"] = doc.get("metric_validation")
+            geometry = (doc.get("source") or {}).get("geometry_manifest")
+            if isinstance(geometry, dict):
+                result["source_geometry_manifest_sha256"] = geometry.get("sha256")
             result["source_frame"] = doc.get("source_frame")
             result["source_units"] = doc.get("source_units")
             if (doc.get("metric_validation") != "approved" or
@@ -98,7 +118,8 @@ def audit_receipt(owner: str, manifest: Path | None, expected_sha256: str | None
         # No approved cross-team binding exists in these producer schemas.
         # Do not silently accept even a modified receipt claiming approved flags.
         result["reason_codes"].append("diagnostic_receipt_requires_coordinator_approved_stage8_binding")
-    except (OSError, ValueError, TypeError, KeyError) as exc:
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+        result["integrity_valid"] = False
         result["reason_codes"] = ["receipt_invalid:" + str(exc)]
     return result
 
@@ -108,6 +129,11 @@ def audit_upstream_receipts(*, project_root: Path, a_manifest: Path | None = Non
                             d_sha256: str | None = None) -> dict[str, Any]:
     a = audit_receipt("A", a_manifest, a_sha256, project_root)
     d = audit_receipt("D", d_manifest, d_sha256, project_root)
+    same_source = bool(a["integrity_valid"] and d["integrity_valid"]
+                       and a.get("source_civil_manifest_sha256")
+                       and a["source_civil_manifest_sha256"] == d.get("source_geometry_manifest_sha256")
+                       and a.get("source_frame") and a["source_frame"] == d.get("source_frame")
+                       and a.get("source_units") and a["source_units"] == d.get("source_units"))
     return {"schema_version": "mycon.progress_upstream_audit.v1", "A": a, "D": d,
-            "direct_geometry_gate": "blocked",
+            "same_comparison_geometry_source": same_source, "direct_geometry_gate": "blocked",
             "policy": "A/D receipts are diagnostic; use a separately approved IFC-linked Stage8 manifest for visibility. Never derive quantities from receipts."}
