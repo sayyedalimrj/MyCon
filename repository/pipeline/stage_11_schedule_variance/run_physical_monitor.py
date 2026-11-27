@@ -240,6 +240,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--expected-scan-sha256")
     parser.add_argument("--expected-registration-sha256")
     parser.add_argument("--expected-project-id")
+    parser.add_argument("--comparison-ready-manifest", type=Path)
+    parser.add_argument("--comparison-ready-project-id")
+    parser.add_argument("--comparison-feature-ifc-json", type=Path)
+    parser.add_argument("--expected-comparison-link-sha256")
+    parser.add_argument("--a-handoff-manifest", type=Path)
+    parser.add_argument("--expected-a-handoff-sha256")
+    parser.add_argument("--d-metric-manifest", type=Path)
+    parser.add_argument("--expected-d-metric-sha256")
     args = parser.parse_args(argv)
     try:
         run_id = args.research_run_id
@@ -249,6 +257,9 @@ def main(argv: list[str] | None = None) -> int:
         schedule = load_schedule_csv(args.schedule_csv)
         if schedule.provenance.n_rows_skipped:
             raise ValueError("schedule_has_skipped_invalid_rows")
+        mapping_rows = _read_csv(args.mapping_csv, ("activity_id", "ifc_global_id"))
+        if any(not (r.get("activity_id") or "").strip() or not (r.get("ifc_global_id") or "").strip() for r in mapping_rows):
+            raise ValueError("mapping_contains_unidentified_boq_rows")
         mapping = load_mapping_csv(args.mapping_csv)
         raw = _read_csv(args.element_metrics_csv, ("global_id",))
         baseline_path = args.baseline_csv or args.schedule_csv
@@ -258,7 +269,9 @@ def main(argv: list[str] | None = None) -> int:
         # Preflight source safety BEFORE creating any output files.
         selected_inputs = [args.element_metrics_csv, args.schedule_csv, args.mapping_csv, baseline_path]
         selected_inputs += [path for path in (args.geometry_manifest, args.ifc_index_manifest, args.ground_truth_csv,
-                                             args.expert_progress_csv) if path is not None]
+                                             args.expert_progress_csv, args.comparison_ready_manifest,
+                                             args.comparison_feature_ifc_json, args.a_handoff_manifest,
+                                             args.d_metric_manifest) if path is not None]
         if any(not path.resolve().is_relative_to(args.project_root.resolve())
                for path in selected_inputs):
             raise ValueError("input_outside_project_root")
@@ -268,6 +281,14 @@ def main(argv: list[str] | None = None) -> int:
             expected_scan_sha256=args.expected_scan_sha256,
             expected_registration_sha256=args.expected_registration_sha256,
             expected_project_id=args.expected_project_id, data_date=date,
+            comparison_ready_manifest_path=args.comparison_ready_manifest,
+            comparison_ready_project_id=args.comparison_ready_project_id,
+            comparison_ifc_linkage_path=args.comparison_feature_ifc_json,
+            expected_comparison_linkage_sha256=args.expected_comparison_link_sha256,
+            a_handoff_manifest=args.a_handoff_manifest,
+            expected_a_handoff_sha256=args.expected_a_handoff_sha256,
+            d_metric_manifest=args.d_metric_manifest,
+            expected_d_metric_sha256=args.expected_d_metric_sha256,
         )
         identity = read_ifc_identity_index(
             args.ifc_index_manifest, project_root=args.project_root,
@@ -291,6 +312,10 @@ def main(argv: list[str] | None = None) -> int:
             "element_metrics": args.element_metrics_csv, "schedule": args.schedule_csv,
             "mapping": args.mapping_csv, "baseline": baseline_path,
         }
+        for name in ("comparison_ready_manifest", "comparison_feature_ifc_json", "a_handoff_manifest", "d_metric_manifest"):
+            source = getattr(args, name)
+            if source is not None:
+                input_files[name] = source
         if args.geometry_manifest:
             input_files["geometry_manifest"] = args.geometry_manifest
         if args.ifc_index_manifest:
@@ -305,15 +330,7 @@ def main(argv: list[str] | None = None) -> int:
         inputs = {
             name: {"relative_path": str(path.resolve().relative_to(args.project_root.resolve())),
                    "sha256": _sha(path)}
-            for name, path in (
-                ("element_metrics", args.element_metrics_csv),
-                ("schedule", args.schedule_csv), ("mapping", args.mapping_csv),
-                ("baseline", baseline_path),
-                *((("geometry_manifest", args.geometry_manifest),) if args.geometry_manifest else ()),
-                *((("ifc_index_manifest", args.ifc_index_manifest),) if args.ifc_index_manifest else ()),
-                *((("ground_truth", args.ground_truth_csv),) if args.ground_truth_csv else ()),
-                *((("expert_progress", args.expert_progress_csv),) if args.expert_progress_csv else ()),
-            )
+            for name, path in input_files.items()
         }
         provenance = {
             "schema_version": SCHEMA, "run_id": run_id,
