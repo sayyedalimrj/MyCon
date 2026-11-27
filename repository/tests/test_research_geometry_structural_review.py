@@ -236,3 +236,18 @@ from test_research_geometry_camera_bridge import (
     test_reflection_does_not_count_as_registration,
     test_sparse_ply_and_points3d_must_match,
 )
+
+# Integration's frozen specialized CPU workflow only discovers this legacy A module.
+# Re-export the new A-owned frame/pose safety cases so PR-head CI truly executes
+# them; no coordinator-owned .github/workflows path is changed.
+from test_research_geometry_r_frame import (  # noqa: E402,F401
+    test_source_track_filter_and_ids,
+    test_synthetic_same_model_only_and_no_corners,
+    test_create_only_run_guard,
+    test_wrong_photo_dimensions_block_before_output,
+    test_wrong_2d_reprojection_blocks_before_output,
+    test_r_mismatch_model_explicit_unregistered,
+    test_r_same_model_bad_image_receipt_rejected,
+    test_bad_r_pose_schema_and_session_fail_closed,
+    test_repeatability_is_never_certification,
+)
