@@ -60,6 +60,13 @@ def extract_inventory(root: Path, ifc_rel: str, revision: str,
         raise ValueError("Optional IFC dependency missing: install ifcopenshell==0.8.4") from exc
     sha = digest(src)
     model = ifcopenshell.open(str(src))
+    projects = model.by_type("IfcProject")
+    if len(projects) != 1 or projects[0].UnitsInContext is None:
+        raise ValueError("IFC project must declare an explicit length unit")
+    declared = [u for u in projects[0].UnitsInContext.Units
+                if getattr(u, "UnitType", None) == "LENGTHUNIT"]
+    if len(declared) != 1:
+        raise ValueError("IFC project requires exactly one declared length unit")
     units = float(ifcopenshell.util.unit.calculate_unit_scale(model))
     if not np.isfinite(units) or units <= 0:
         raise ValueError("Invalid IFC declared length unit")
