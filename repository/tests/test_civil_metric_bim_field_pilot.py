@@ -30,7 +30,8 @@ def inputs(root):
     r = references()
     r["references"].append(span("held2", 4, role="control"))
     r["geometry_manifest_sha256"] = core.digest(gp)
-    for row in r["references"]:
+    for i, row in enumerate(r["references"]):
+        row["scan_endpoints_xyz"] = (np.asarray(row["scan_endpoints_xyz"]) + [0, 10+i, 10]).tolist()
         row.update(field_evidence=asset(root, "survey.txt"), measured_at="fixture-only",
                    instrument="synthetic", measurement_method="synthetic", operator="test",
                    endpoint_ids=[row["reference_id"] + "a", row["reference_id"] + "b"])
@@ -108,6 +109,14 @@ def test_repeated_endpoint_rejected(tmp_path):
     save(tmp_path,"survey.json",r)
     with pytest.raises(ValueError,match="separate physical groups"):
         run_field(tmp_path,"metric-bim-field-05","geometry.json","survey.json",length_tolerance_m=.01)
+
+
+def test_coincident_scan_endpoints_rejected(tmp_path):
+    r,_ = inputs(tmp_path)
+    r["references"][-1]["scan_endpoints_xyz"][0] = r["references"][0]["scan_endpoints_xyz"][0]
+    save(tmp_path,"survey.json",r)
+    with pytest.raises(ValueError,match="Coincident scan endpoints"):
+        run_field(tmp_path,"metric-bim-field-10","geometry.json","survey.json",length_tolerance_m=.01)
 
 
 def test_ifc_combined_candidate_and_mask(tmp_path):
