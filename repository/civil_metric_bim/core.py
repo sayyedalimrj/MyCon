@@ -453,7 +453,8 @@ def evaluate_controls(refs: dict | None, bim: dict | None, transform: tuple | No
                    "signed_error_m": None, "unsigned_error_m": None,
                    "normal_error_deg": None, "reason": "no_approved_holdout_or_scale"}
             scale_for_length = independent_scale if independent_scale is not None else (transform[0] if transform is not None else None)
-            if scale_for_length is not None and approved(r) and r.get("actual_length_m") is not None:
+            if (scale_for_length is not None and approved(r) and r.get("actual_length_m") is not None
+                    and r.get("confidence", {}).get("grade") == "high_reviewed"):
                 distance = np.linalg.norm(point(r["scan_endpoints_xyz"][0], "span") -
                                           point(r["scan_endpoints_xyz"][1], "span")) * scale_for_length
                 diff = float(distance - float(r["actual_length_m"]))
