@@ -1,0 +1,36 @@
+{
+  "schema_version": "mycon.validation.cpu_run_evidence.v1",
+  "utc": "2026-11-13T20:44:23.047887+00:00",
+  "scope": "isolated C-owned checked-in candidate snapshot; no complete GitHub checkout; no full A/B/C integration",
+  "exact_command": "pytest -q tests/test_research_validation_evidence_export.py",
+  "cwd": "repository",
+  "returncode": 0,
+  "stdout": ".......................                                                  [100%]\n23 passed in 1.79s\n",
+  "stderr": "",
+  "test_data_kind": "synthetic_only",
+  "real_site_count": 0,
+  "real_metric_cells": 0,
+  "gpu_tests": "not_executed",
+  "external_benchmarks": "not_executed",
+  "source_sha256": {
+    "benchmarks/mycon_2026/evidence_export.py": "39cde4abf6273c50c9f71355066005b9cf914ca4c0b9625344b6bacb08377538",
+    "benchmarks/mycon_2026/paired_views.py": "833f7312f7830beb04f0dacea594f462b142bf8a6263f040d8d90fb2d48aebf5",
+    "tests/test_research_validation_evidence_export.py": "0b8f0d64f34a84204f75a4d11f5b8e40b2d61ff50b60928049206eb1e5db81e8"
+  },
+  "source_git_blob_sha1": {
+    "benchmarks/mycon_2026/evidence_export.py": "c2ef5afef19a6e8b8c3daf60920ce1617bd04255",
+    "benchmarks/mycon_2026/paired_views.py": "b4eb0518d42677810b4a6d422a4efb638c0442db",
+    "tests/test_research_validation_evidence_export.py": "fc21b5d656e92515fb7e08693bc505ddbfd9b4a5"
+  },
+  "source_repository_ref": "research/mycon-validation-evidence-20261113",
+  "python": "3.13.5",
+  "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+  "versions": {
+    "pytest": "9.0.2",
+    "numpy": "2.3.5",
+    "scipy": "1.17.0",
+    "Pillow": "12.3.0",
+    "scikit-image": "0.26.0",
+    "matplotlib": "3.10.8"
+  }
+}

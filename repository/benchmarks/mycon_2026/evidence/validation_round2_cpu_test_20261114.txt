@@ -1,0 +1,7 @@
+$ pytest -q tests/test_research_validation_evidence_export.py
+.......................                                                  [100%]
+23 passed in 1.79s
+
+STDERR:
+
+EXIT CODE: 0
