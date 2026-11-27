@@ -1,0 +1,64 @@
+{
+  "schema_version": "mycon.validation.real_intake_audit.v1",
+  "run_id": "validation-c-real-source-a-20261127-003",
+  "package_sha256": "902e11df91b7c159f787b5730cd946ba220def57ed631882fd341ad9a26f996c",
+  "package_filename": "MyCON_Civil_Geometry_Round3_Camera_Registration_20261114.zip",
+  "data_kind": "real_source_diagnostic_only",
+  "source_producer": "A/Civil Geometry PR#42",
+  "source_schema_versions": [
+    "mycon.civil_geometry_review.v1",
+    "mycon.civil_camera_geometry_bridge.v1"
+  ],
+  "source_run_ids": [
+    "geom-civil-real-depth-20261113-final1",
+    "geom-civil-camera-20261114-real-depth-002"
+  ],
+  "coordinate_frames": {
+    "depth": "colmap_world_unverified",
+    "COLMAP_cameras": "COLMAP_sfm_world_unscaled"
+  },
+  "units": {
+    "depth": "arbitrary_reconstruction_units",
+    "COLMAP_cameras": "arbitrary_COLMAP_units"
+  },
+  "metric_scale_verified": false,
+  "depth_camera_registration_verified": false,
+  "independent_field_gt_available": false,
+  "heldout_test_set_verified": false,
+  "eligible_for_scientific_metric_claims": false,
+  "counts": {
+    "raw_sparse_points": 51894,
+    "colmap_image_records": 192,
+    "colmap_projected_correspondences": 283059,
+    "input_artifacts_sha256_verified": 25
+  },
+  "checks": {
+    "member_sha256": "passed",
+    "COLMAP_sparse_reprojection_independent_recalculation": "passed",
+    "source_register_flag": "UNREGISTERED"
+  },
+  "real_internal_diagnostics_not_for_thesis_comparison": {
+    "median_of_per_image_median_reprojection_px": 0.7440590007577315,
+    "median_of_per_image_p95_reprojection_px": 2.088479476359578,
+    "n_images_with_valid_sparse_correspondences": 192,
+    "independent_test_metric": false
+  },
+  "upstream_civil_comparison_ready_source_manifest_in_zip": false,
+  "scientific_metrics": {
+    "NVS_PSNR_SSIM_LPIPS": "not_evaluated",
+    "geometry_accuracy_completeness_f1": "not_evaluated",
+    "metric_registration": "not_evaluated",
+    "physical_progress": "not_evaluated",
+    "6999_vs_new": "not_evaluated",
+    "192_vs_more_frames": "not_evaluated"
+  },
+  "scientific_blockers": [
+    "no_locked_independent_real_Ground_Truth",
+    "no_independent_holdout",
+    "depth_cloud_and_COLMAP_cameras_UNREGISTERED",
+    "no_verified_metric_scale",
+    "no_paired_6999_or_new_render_predictions",
+    "original_comparison_ready_source_receipt_not_in_A_zip"
+  ],
+  "provenance": "read_only_SHA_verified_authentic_A_package; COLMAP_internal_sparse_SfM_fit_only"
+}

@@ -1,0 +1,65 @@
+{
+  "schema_version": "mycon.validation.execution_evidence.v3",
+  "created_at_utc": "2026-11-27T16:47:32.312966+00:00",
+  "run_id": "validation-c-real-source-a-20261127-003",
+  "source": {
+    "name": "MyCON_Civil_Geometry_Round3_Camera_Registration_20261114.zip",
+    "sha256": "902e11df91b7c159f787b5730cd946ba220def57ed631882fd341ad9a26f996c",
+    "drive_folder": "https://drive.google.com/drive/folders/1_sQwrYUEkKwLmFzAhrYXb8rXNtHsQEQz",
+    "producer": "A PR #42",
+    "real_data": true,
+    "independent_GT": false,
+    "originals_modified": false
+  },
+  "environment": {
+    "python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+    "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+    "numpy": "2.3.5",
+    "pytest": "9.0.2",
+    "matplotlib": "3.10.8"
+  },
+  "tests": {
+    "exact_command": "python -m pytest -q tests/test_research_validation_evidence_export.py tests/test_research_validation_real_intake_audit.py",
+    "exit_code": 0,
+    "passed": 32,
+    "failed": 0,
+    "skipped": 0,
+    "snapshot": "local_C_derived_from_20261114_zip_plus_new_files",
+    "github_exact_updated_head_test": "pending_new_pr_head_CI"
+  },
+  "real_intake_command": "PYTHONPATH=. python -m benchmarks.mycon_2026.real_intake_audit --package <immutable A zip> --expected-package-sha256 <full sha> --output-root <new> --run-id validation-c-real-source-a-20261127-003",
+  "real_intake_exit_code": 0,
+  "scientific_eligibility": false,
+  "real_diagnostic": "internal_COLMAP_sparse_reprojection_only",
+  "metric_scale_verified": false,
+  "depth_camera_registration_verified": false,
+  "not_executed": [
+    "GPU_tests",
+    "real_heldout_render_comparison",
+    "independent_survey_GT",
+    "paired_6999_vs_new",
+    "192_vs_expanded",
+    "signed_BOQ_progress_GT"
+  ],
+  "not_evaluated": [
+    "PSNR",
+    "SSIM",
+    "LPIPS",
+    "metric_geometry_F1",
+    "metric_accuracy",
+    "physical_progress"
+  ],
+  "source_file_sha256": {
+    "benchmarks/mycon_2026/diagnostic_figures.py": "3076b753c3cc23582c39f3d80c5e7c91f02d5a2cbece9f102255d1ad1733237e",
+    "benchmarks/mycon_2026/evidence_export.py": "39cde4abf6273c50c9f71355066005b9cf914ca4c0b9625344b6bacb08377538",
+    "benchmarks/mycon_2026/paired_views.py": "833f7312f7830beb04f0dacea594f462b142bf8a6263f040d8d90fb2d48aebf5",
+    "benchmarks/mycon_2026/real_intake_audit.py": "b8373b52d50c70fc50dcb047c6833978c47cc4584d762fc8465b200c76e2dbda"
+  },
+  "output_artifact_sha256": {
+    "source_asset_hashes.csv": "2e9776885b40798f5888267e15e21e3dd0bcc52367c9bc45d6f21a0a50168622",
+    "COLMAP_internal_reprojection_192_views_NOT_independent.png": "5bdffaec5369001a89d683c1ce319d50ab48eff434be76a154c3b0ed38d48de9",
+    "real_input_audit.json": "7c12ecc94115e0bbba1a8e3ddbb530c58fdfc1d24698f93350d5585609d20ba7",
+    "colmap_internal_reprojection.csv": "c9b417622d4783106d941c2e8759175de7ee8d4aa8c39373b360a85548d7c7aa"
+  },
+  "limitation": "Local isolated tests of current source snapshot, not GitHub CI/complete A+B+C integrated project. Real diagnostic in-sample, not independent test."
+}

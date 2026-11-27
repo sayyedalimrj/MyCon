@@ -189,3 +189,16 @@ Input remains `mycon.thesis_evidence.v1` with SHA256 project-relative immutable 
 
 **Coordinator request:** confirm G0 ownership and all changed files; run specialized GitHub Actions workflow and actual end-to-end integration on exact PR head; furnish independently reviewed files with immutable source SHA and a signed, disjoint site/session test set. Only coordinator may merge; no paper accuracy, scale, progress or superiority claims authorized.
 
+
+
+---
+
+## Owner C independent protocol v3 and read-only real A intake (2026-11-27)
+
+- Work branch `research/mycon-validation-evidence-20261113` / PR #46 Draft → `research/mycon-integration-20261112` ONLY; starting head `cf9aea1dd968955044989107948438767fefc7e1`. No merge/rebase/force or other-owner writes.
+- Scientific preregistration, independent GT SOP, locked test template, Baseline/Ablation and claim→source matrix in `repository/docs/research_validation/independent_benchmark_protocol_v3.md` and `repository/configs/research_validation/*v3*`.
+- Real A source audited read-only: ZIP SHA256 `902e11df91b7c159f787b5730cd946ba220def57ed631882fd341ad9a26f996c`; 25 source SHA receipts validated, 192 COLMAP camera records, 51,894 sparse points, 283,059 internal fit correspondences; in-sample median per-image median reprojection 0.744059 px. This is diagnostic only, never independent GT/field accuracy. `metric_scale_verified=false`, `registration_verified=false`.
+- Local CPU exact command `python -m pytest -q tests/test_research_validation_evidence_export.py tests/test_research_validation_real_intake_audit.py`: **32 passed, 0 failed, exit 0** (Python 3.13.5 Linux). Updated PR exact-HEAD CI to be checked by coordinator; no claim until observed.
+- New output hashes, CLI, schemas and file paths: `repository/benchmarks/mycon_2026/evidence/validation_c_real_intake_20261127.json` and `repository/docs/research_validation/validation_v3_handoff_20261127.md`. C-only evidence, no source captures/checkpoints/GT copied into Git.
+- **Blockers:** independently signed real GT/scale, unregistered depth↔COLMAP camera frame, 6999 train-membership and heldout renders, new R model outputs, approved IFC/BOQ and multi-site tests. LPIPS, field F1/Chamfer, independent TRE, progress and paper comparative CIs remain `not_evaluated`.
+- Coordinator-only merge after G0–G5; no direct PR merge by C.

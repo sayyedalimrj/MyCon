@@ -1,0 +1,10 @@
+<PARSED TEXT FOR SHEET: 1 / 1 TABS
+TAB NAME: configs__research_validation__ablation_plan_v3.csv>index,experiment_id,factor,reference_level,candidate_level,controlled_inputs,primary_metric,replicates,seed_set,status,reason
+0,E01,model_snapshot,GS6999,New_R,same_locked_test_rgb_pose_mask_color_space_resolution,PSNR_dB;SSIM;LPIPS,5,17|29|41|53|67,not_evaluated,no_matched_real_predictions
+1,E02,training_frame_count,192,expanded,same_fixed_holdout_and_model_code_GPU_budget_report,PSNR_dB;SSIM;LPIPS,5,17|29|41|53|67,not_evaluated,no_expanded_model_or_test_lock
+2,E03,conservative_cleaning,uncleaned,cleaned,same_source_cloud_mask_frame_unit_and_density_protocol,F1_tau;corner_recall;structural_retention,5,17|29|41|53|67,not_evaluated,no_independent_feature_GT
+3,E04,reconstruction_method,COLMAP_dense,GS_surface,same_scene_heldout_GT_metric_alignment_sampling,accuracy_tau;completeness_tau;F1_tau,5,17|29|41|53|67,not_evaluated,no_common_metric_surfaces
+4,E05,plane_detector,unguided,gravity_depth_guided,same_source_and_finite_GT_no_Manhattan_assumption,plane_F1;corner_MAE_m,5,17|29|41|53|67,not_evaluated,no_independent_finite_annotations
+5,ST01,noise,zero,controlled_levels,same_synthetic_GT_train_and_test_heldout_separate,F1_tau;feature_stability,5,17|29|41|53|67,not_executed,synthetic_stress_not_yet_executed
+6,ST02,occlusion,full_surface,graded_occlusion,same_synthetic_GT_training_and_scoring_masks,F1_tau;unknown_fraction,5,17|29|41|53|67,not_executed,synthetic_stress_not_yet_executed
+7,ST03,nonManhattan,orthogonal,sloped_irregular,same_synthetic_GT_and_voxel_quality,plane_F1;corner_F1,5,17|29|41|53|67,not_executed,synthetic_stress_not_yet_executed
