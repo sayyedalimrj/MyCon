@@ -21,20 +21,49 @@ def _files(root, paths):
     return result
 
 def _ply_vertices(path):
+    """Validate all XYZ rows of a COLMAP point-cloud PLY, not just its declared count."""
+    import numpy as np
+    types={"float":"f4","float32":"f4","double":"f8","float64":"f8",
+           "uchar":"u1","uint8":"u1","char":"i1","int8":"i1","short":"i2",
+           "ushort":"u2","int":"i4","uint":"u4","int32":"i4","uint32":"u4"}
     with path.open("rb") as f:
         if f.readline().strip() != b"ply":
             raise Blocked("Invalid PLY header")
-        n = None
+        n=None; fmt=None; vertex=False; props=[]
         for _ in range(1000):
-            line = f.readline()
-            if line.startswith(b"element vertex "):
-                n = int(line.split()[2])
-            if line.strip() == b"end_header":
-                if n is None or n <= 0 or not f.read(1):
-                    raise Blocked("PLY contains no vertex data")
+            line=f.readline()
+            if not line: break
+            parts=line.decode("ascii").strip().split()
+            if not parts: continue
+            if parts[0]=="format": fmt=parts[1]
+            elif parts[0]=="element":
+                vertex=parts[1]=="vertex"
+                if vertex: n=int(parts[2])
+            elif parts[0]=="property" and vertex:
+                if len(parts)!=3 or parts[1] not in types:
+                    raise Blocked("Unsupported PLY vertex layout")
+                props.append((parts[2],types[parts[1]]))
+            elif parts[0]=="end_header":
+                if not n or n<1 or not {"x","y","z"}.issubset({k for k,_ in props}):
+                    raise Blocked("PLY contains no XYZ vertices")
+                if fmt in ("binary_little_endian","binary_big_endian"):
+                    endian="<" if fmt=="binary_little_endian" else ">"
+                    dt=np.dtype([(k,endian+t) for k,t in props])
+                    remaining=n
+                    while remaining:
+                        a=np.fromfile(f,dtype=dt,count=min(remaining,100000))
+                        if len(a)==0 or not all(np.isfinite(a[k]).all() for k in ("x","y","z")):
+                            raise Blocked("Truncated or nonfinite point cloud")
+                        remaining-=len(a)
+                elif fmt=="ascii":
+                    inds=[next(i for i,(k,_) in enumerate(props) if k==v) for v in ("x","y","z")]
+                    for _ in range(n):
+                        p=f.readline().split()
+                        if len(p)!=len(props) or not np.isfinite([float(p[i]) for i in inds]).all():
+                            raise Blocked("Truncated or nonfinite point cloud")
+                else:
+                    raise Blocked("Unknown PLY format")
                 return n
-            if not line:
-                break
     raise Blocked("Invalid or truncated PLY header")
 
 def stage(run_dir: Path, executable="colmap", max_image_size=1600, run_dense=True, dense_backend="pycolmap_cuda12"):
@@ -80,6 +109,7 @@ def stage(run_dir: Path, executable="colmap", max_image_size=1600, run_dense=Tru
         shutil.copy2(src,dst)
         if sha256(dst)!=train[name]["image_sha256"]:
             raise Blocked("Copied train RGB hash mismatch")
+    _run_colmap([executable,"model_analyzer","--path",str(model)],log)
     sparse=out/"sparse_train.ply"
     _run_colmap([executable,"model_converter","--input_path",str(model),"--output_path",str(sparse),"--output_type","PLY"],log)
     sparse_n=_ply_vertices(sparse)
@@ -100,14 +130,22 @@ def stage(run_dir: Path, executable="colmap", max_image_size=1600, run_dense=Tru
     gs=out/"gs_train_dataset"
     (gs/"images").mkdir(parents=True)
     (gs/"sparse/0").mkdir(parents=True)
+    import cv2
     gs_images=[]
     for name in sorted(ui):
         src=dense/"images"/name
         dst=gs/"images"/name
         dst.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(src,dst)
+        cam=uc[ui[name]["camera_id"]]
+        rgb=cv2.imread(str(dst),cv2.IMREAD_COLOR)
+        if rgb is None or (rgb.shape[1],rgb.shape[0])!=(cam["width"],cam["height"]):
+            raise Blocked("Undistorted RGB/intrinsics size mismatch")
+        if cam["model"] not in ("PINHOLE","SIMPLE_PINHOLE") or not np.isfinite(cam["parameters"]).all() or cam["parameters"][0]<=0:
+            raise Blocked("Invalid undistorted pinhole intrinsics")
         gs_images.append({"view_id":train[name]["view_id"],"source_image_sha256":train[name]["image_sha256"],
-                          "undistorted_image_sha256":sha256(dst),"path":dst.relative_to(root).as_posix()})
+                          "undistorted_image_sha256":sha256(dst),"path":dst.relative_to(root).as_posix(),
+                          "camera":cam,"world_to_camera_4x4":ui[name]["world_to_camera_4x4"]})
     for n in names:
         shutil.copy2(dense/"sparse"/n,gs/"sparse/0"/n)
     gs_receipt={"schema_version":"mycon.reconstruction.gs_staging.v1","run_id":root.name,
@@ -159,7 +197,7 @@ def stage(run_dir: Path, executable="colmap", max_image_size=1600, run_dense=Tru
             "units":"reconstruction_units_unscaled","metric_scale_verified":False,
             "independent_registration_verified":False,"field_surface_validated":False,
             "registered_train":len(known),"sparse_vertices":sparse_n,
-            "dense_status":status,"dense_backend":dense_backend,"dense_vertices_header":dense_n,
+            "dense_status":status,"dense_backend":dense_backend,"dense_vertices_validated":dense_n,
             "dense_candidate_path":fused.relative_to(root).as_posix() if dense_n else None,
             "same_world_basis":"COLMAP undistorter of frozen TRAIN model; W2C numerical consistency checked",
             "gs_training":"not_executed_requires_new_explicit_approval",
