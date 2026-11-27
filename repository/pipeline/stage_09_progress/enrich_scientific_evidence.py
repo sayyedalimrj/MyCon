@@ -11,11 +11,12 @@ import datetime as dt
 import hashlib
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
 from .evidence_metrics import element_scientific_fields, valid_sha256
-from .geometry_evidence_adapter import load_geometry_evidence_manifest
+from .geometry_evidence_adapter import GeometryEvidenceBundle, load_geometry_evidence_manifest
 from .comparison_ready_adapter import load_comparison_ready_geometry, comparison_for_element
 from .upstream_receipt_audit import audit_upstream_receipts
 
@@ -46,7 +47,7 @@ def enrich_scientific_evidence_rows(
         a_manifest=a_handoff_manifest, a_sha256=expected_a_handoff_sha256,
         d_manifest=d_metric_manifest, d_sha256=expected_d_metric_sha256)
     ids=[str(r.get('global_id') or '').strip() for r in rows]
-    count={gid:ids.count(gid) for gid in set(ids)}
+    count=Counter(ids)
     independent_inputs_valid = (all(valid_sha256(x) for x in (expected_ifc_sha256, expected_scan_sha256, expected_registration_sha256)) and bool(expected_project_id))
     bundle=(load_geometry_evidence_manifest(
         manifest_path, project_root=project_root, expected_global_ids=set(ids),
@@ -94,17 +95,14 @@ def enrich_scientific_evidence_rows(
         # revalidate signed quantity from the *raw* audit fields below.
         pre=element_scientific_fields(source,require_audit=True,data_date=data_date)
         if not bundle:
-            from .geometry_evidence_adapter import GeometryEvidenceBundle
             reason = ('upstream_receipts_not_bound_to_approved_stage8' if upstream_requested else
                       'manifest_not_supplied' if not manifest_path else 'independent_geometry_hashes_missing')
             geom=GeometryEvidenceBundle(False,(reason,),None,{}).for_element(gid)
         else:
             geom=bundle.for_element(gid,pre['physical_progress_estimate'])
         if count.get(gid,0) != 1 or not gid:
-            geom.update({'geometry_adapter_valid':False,
-                         'geometry_evidence_state':'unknown_duplicate_or_missing_global_id',
-                         'observability_ratio':None,
-                         'geometry_evidence_reason_codes':'duplicate_or_missing_global_id'})
+            geom=GeometryEvidenceBundle(False,('duplicate_or_missing_global_id',),None,{}).for_element(gid)
+            geom['geometry_evidence_state']='unknown_duplicate_or_missing_global_id'
         source.update(geom)
         # Always overwrite CSV-derived flags; stale/untrusted claims must not
         # survive a missing manifest. A/D candidates cannot unlock linkage.
