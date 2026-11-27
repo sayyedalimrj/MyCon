@@ -167,8 +167,11 @@ def load_bundle(folder):
     camera_ids = set()
     for c in cameras:
         cid = c.get("camera_id")
+        unlinked = (manifest.get("camera_photo_policy") == "partial_native_model" and c.get("frame_id") is None
+                    and c.get("quality", {}).get("state") == "registered_pose_photo_not_supplied"
+                    and isinstance(c.get("source_view_id"), str) and bool(c["source_view_id"]))
         if (not isinstance(cid, str) or not RUN_ID.fullmatch(cid) or cid in camera_ids
-                or c.get("frame_id") not in ids):
+                or (c.get("frame_id") not in ids and not unlinked)):
             raise ViewerInputError("camera/frame identifier invalid")
         camera_ids.add(cid)
         if c.get("extrinsic_convention") != "camera_to_world" or not _matrix(c.get("camera_to_world")):
