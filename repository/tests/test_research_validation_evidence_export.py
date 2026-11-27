@@ -257,6 +257,7 @@ def test_paired_site_cluster_bootstrap_two_sites_exploratory(tmp_path):
         ci=[x for x in csv.DictReader(f) if x['metric']=='ssim'][0]
     assert ci['cluster_unit']=='site' and ci['reason']=='exploratory_small_site_count'
     assert float(ci['ci95_lower'])<=float(ci['ci95_upper'])
+
 # Validation/C additive regression discovery: the coordinator-owned specialized
 # CI currently selects this module explicitly. Import the independent real
 # source-intake correctness tests so it cannot silently skip their execution.
