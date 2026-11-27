@@ -129,3 +129,14 @@ def test_bad_r_pose_schema_and_session_fail_closed(tmp_path):
         g.generate(**{**x,'r_dataset':rp/'dataset_manifest.json','r_poses':rp/'camera_poses.json'},
                    min_points=180,max_planes=2,trials=20,threshold=.025)
     assert not (tmp_path/'runs').exists()
+
+
+def test_repeatability_is_never_certification(tmp_path):
+    from pipeline.stage_07_cleanup import r_frame_stability as s
+    x=fixture(tmp_path)
+    _,xyz,_,_,_,_=g._read_tracks(x['points'],error_px=1,min_track_length=4)
+    r=s.evaluate(xyz,threshold=.025,min_points=70,max_planes=2,trials=20)
+    assert r['not_independent_ground_truth'] and r['not_physical_surface_confirmation']
+    assert len(r['scenarios'])==5
+    assert all(v['synthetically_modified_input'] for v in r['scenarios'])
+    assert all(v['matched_reference_patches']<=v['baseline_patch_count'] for v in r['scenarios'])
