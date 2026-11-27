@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MyCON Civil Metric Length References v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_frame",
+    "source_units",
+    "references"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "mycon.length_references.v1"
+    },
+    "source_frame": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_units": {
+      "const": "reconstruction_units"
+    },
+    "references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "reference_id",
+          "source_kind",
+          "physical_source_id",
+          "role",
+          "scan_endpoints_xyz",
+          "confidence",
+          "approval"
+        ],
+        "properties": {
+          "reference_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_kind": {
+            "enum": [
+              "block",
+              "steel_section",
+              "field_measurement"
+            ]
+          },
+          "physical_source_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "enum": [
+              "fit",
+              "control"
+            ]
+          },
+          "scan_endpoints_xyz": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "items": {
+                "type": "number"
+              }
+            }
+          },
+          "nominal_length_m": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "actual_length_m": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "actual_uncertainty_m": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "scan_distance_uncertainty_units": {
+            "type": "number",
+            "minimum": 0
+          },
+          "confidence": {
+            "type": "object",
+            "required": [
+              "grade",
+              "calibrated_probability"
+            ],
+            "properties": {
+              "grade": {
+                "enum": [
+                  "high_reviewed",
+                  "medium_provisional",
+                  "low_unverified"
+                ]
+              },
+              "calibrated_probability": {
+                "type": "null"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          },
+          "approval": {
+            "type": "object",
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "enum": [
+                  "approved",
+                  "proposed",
+                  "rejected"
+                ]
+              },
+              "reviewer": {
+                "type": "string"
+              },
+              "evidence_id": {
+                "type": "string"
+              },
+              "evidence_sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          },
+          "material_metadata": {
+            "type": "object",
+            "properties": {
+              "code_or_standard": {
+                "type": "string"
+              },
+              "manufacturer_or_batch": {
+                "type": "string"
+              },
+              "measurement_method": {
+                "type": "string"
+              },
+              "nominal_tolerance_m": {
+                "type": "number",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
