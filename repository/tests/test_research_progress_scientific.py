@@ -243,3 +243,40 @@ def test_stage8_hashed_image_references_are_only_exposed_after_geometry_gate():
     )
     assert not invalid.valid
     assert json.loads(invalid.for_element("0AbCdeFgHiJkLmNoPqRsTu")["image_evidence_refs_json"]) == []
+
+
+def test_shared_element_across_activities_does_not_duplicate_quantity():
+    mapping = _mapping([("A1","E1",1,"approved_boq"), ("A2","E1",1,"approved_boq")])
+    baselines = _baseline() + [{**_baseline()[0], "activity_id":"A2"}]
+    report = _report(mapping, [_signed("E1", 10)], ids=("A1","A2"), schedule_rows=baselines)
+    assert report["overall"]["physical_progress_estimate"] is None
+    for activity in report["activities"]:
+        assert activity["physical_progress_estimate"] is None
+        assert any("shared_ifc_requires_activity_specific_quantity_allocation" in w for w in activity["warnings"])
+
+
+def test_same_day_future_baseline_and_duplicate_weight_snapshot_fail_closed():
+    mapping = _mapping([("A1","E1",1,"approved_boq")])
+    future = [{**_baseline()[0], "planned_as_of_utc":"2026-01-16T12:00:00+00:00"}]
+    for baseline in (future, _baseline()+_baseline()):
+        report = _report(mapping, [_signed("E1",5)], schedule_rows=baseline)
+        assert report["activities"][0]["physical_progress_estimate"] == 50
+        assert report["activities"][0]["planned_percent_complete"] is None
+        assert report["overall"]["activity_weights_approved"] is False
+        assert report["overall"]["schedule_variance_percent"] is None
+
+
+def test_quantity_basis_mixed_units_blocks_weighted_percentage():
+    mapping = _mapping([("A1","E1",1,"approved_quantity"),("A1","E2",1,"approved_quantity")])
+    report = _report(mapping, [_signed("E1",5), {**_signed("E2",5), "quantity_unit":"m2"}],
+                     schedule_rows=_baseline())
+    assert report["activities"][0]["physical_progress_estimate"] is None
+    assert "quantity_weight_units_unknown_or_mixed" in report["activities"][0]["warnings"]
+
+
+def test_project_and_wbs_bounds_keep_unknown_point_estimate():
+    mapping = _mapping([("A1","E1",3,"approved_boq"),("A1","E2",1,"approved_boq")])
+    report = _report(mapping, [_signed("E1",8)], schedule_rows=_baseline())
+    assert report["overall"]["physical_progress_estimate"] is None
+    assert report["overall"]["schedule_variance_bounds_pct"] == pytest.approx([10,35])
+    assert next(iter(report["wbs"].values()))["schedule_variance_bounds_pct"] == pytest.approx([10,35])
