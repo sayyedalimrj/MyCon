@@ -1,0 +1,98 @@
+name: MyCON six-stream merge rehearsal R4 (2026-11-27) (NO PUSH, NO MERGE)
+on:
+  push:
+    branches:
+      - research/mycon-integration-20261112
+    paths:
+      - '.github/workflows/mycon-six-stream-merge-rehearsal-round4-20261127.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dry-run-six-prs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Combine six frozen PR HEADs ONLY inside disposable runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "MyCON integration rehearsal"
+          git config user.email "mycon-integration-rehearsal@users.noreply.github.com"
+          git config commit.gpgsign false
+          git switch -c local-six-stream-dry-run bb33b9d871071fd6e1cb40a406cc6439688f2cfe
+          # Pinned at coordinator review; NEVER push this branch.
+          for item in \
+            "49:114a8df1cd5def7fed0c1e423a73febebe7a0de8" \
+            "42:9d9e346324876a68470280daf527dea6f465bf3b" \
+            "50:955cb3d98a5819204238a8ab9c2bade6232e426e" \
+            "45:a540728f4c61dddf891e1df42a4177e073e7b3cd" \
+            "46:9f5a40901f3b220ff7d833579ce56660e0b0c20a" \
+            "47:b12905e78fc5ebe4fbe396eccbfa5c0c35306674"
+          do
+            num="${item%%:*}"
+            sha="${item#*:}"
+            echo "::group::PR #${num} pinned head ${sha}"
+            git fetch --no-tags https://github.com/sayyedalimrj/MyCon.git "${sha}"
+            test "$(git rev-parse FETCH_HEAD)" = "${sha}"
+            git merge --no-ff --no-edit FETCH_HEAD
+            echo "::endgroup::"
+          done
+          printf 'TEMPORARY merged HEAD: '; git rev-parse HEAD
+          echo 'This state is LOCAL TO RUNNER only. It is NOT a GitHub merge.'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install combined CPU dependencies
+        run: |
+          python -m pip install 'numpy>=1.26,<2' 'scipy>=1.11,<2' 'pytest>=8,<10' 'trimesh>=4,<5' 'matplotlib>=3.8,<4' 'Pillow>=10,<13' 'pandas>=2' 'scikit-image>=0.22,<1' 'opencv-python-headless>=4.8,<5' 'PyYAML>=6' 'plotly>=5.20,<7' 'requests>=2.31' 'httpx>=0.27,<1'
+      - name: Compile all six streams together
+        working-directory: repository
+        run: |
+          python -m compileall -q reconstruction viewer_civil civil_metric_bim pipeline/stage_07_cleanup pipeline/stage_09_progress pipeline/stage_11_schedule_variance benchmarks/mycon_2026
+      - name: All new dedicated workstream tests in ONE Python environment
+        working-directory: repository
+        run: |
+          python -m pytest -q --maxfail=1 \
+            tests/test_research_reconstruction_round2.py \
+            tests/test_research_reconstruction_safety_gates.py \
+            tests/test_research_reconstruction_workflow.py \
+            tests/test_research_geometry_structural_review.py \
+            tests/test_research_geometry_camera_bridge.py \
+            tests/test_research_geometry_r_frame.py \
+            tests/test_research_viewer_bundle.py \
+            tests/test_research_viewer_producer_bridge.py \
+            tests/test_research_viewer_independent_review.py \
+            tests/test_civil_metric_bim_adversarial.py \
+            tests/test_civil_metric_bim_synthetic.py \
+            tests/test_civil_metric_bim_field_pilot.py \
+            tests/test_research_validation_evidence_export.py \
+            tests/test_research_validation_real_intake_audit.py \
+            tests/test_research_progress_monitor.py \
+            tests/test_research_progress_scientific.py
+      - name: Previously frozen cross-team regression tests
+        working-directory: repository
+        run: |
+          python -m pytest -q --maxfail=1 \
+            tests/test_research_geometry_comparison_ready.py \
+            tests/test_comparison_ready_progress_contract.py \
+            tests/test_research_validation_model_agnostic.py \
+            tests/test_research_validation_metrics.py \
+            tests/test_research_validation_round2_contract.py \
+            tests/test_research_progress_geometry.py \
+            tests/test_round2_progress_contract.py \
+            tests/test_mycon_integration_geometry.py \
+            tests/test_geometry_before_after_audit.py \
+            tests/test_final_colab_notebook_integration.py \
+            tests/test_colab_notebook_runall_dryrun.py
+      - name: Audit proof
+        if: always()
+        run: |
+          echo "Dry-run only; NO git push or remote merge was performed."
+          git log --oneline -7
