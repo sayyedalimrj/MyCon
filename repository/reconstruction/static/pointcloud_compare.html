@@ -1,0 +1,76 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MyCON | Same-view reconstruction review</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0c1420;color:#e9eef4;font:15px system-ui}
+header{padding:16px 22px;background:#141f2f;border-bottom:1px solid #314056;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+h1{font-size:18px;margin:0 0 5px}p{margin:0;color:#b9c5d6}button{background:#202f43;border:1px solid #435671;color:#f0f5fb;padding:8px 12px;border-radius:6px;cursor:pointer;margin:2px}
+main{position:relative;display:grid;grid-template-columns:repeat(var(--n), minmax(0,1fr));height:calc(100dvh - 115px);min-height:480px;touch-action:none}
+section{position:relative;min-width:0;border-right:1px solid #263144}canvas{width:100%;height:100%;display:block}
+label{position:absolute;top:12px;left:12px;pointer-events:none;background:#182438e8;border:1px solid #435671;padding:5px 9px;border-radius:4px}
+footer{padding:8px 22px;color:#aebcd0}#msg{color:#f3c780}
+</style>
+<header><div><h1>MyCON · Same-view reconstruction review</h1><p>Shared camera · original colors · nonmetric geometry</p></div><nav><button id="wide">Overview</button><button id="close">Short-reference crop</button><button id="spin">Orbit</button></nav></header>
+<main id="models"></main><footer>Drag to rotate both views. Scroll to zoom. <span id="msg" role="status"></span></footer>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+(()=>{'use strict';
+const info=JSON.parse(document.querySelector('#data').textContent), root=document.querySelector('#models'), status=document.querySelector('#msg');
+root.style.setProperty('--n',info.clouds.length);
+const sub=(a,b)=>a.map((x,i)=>x-b[i]), cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]], unit=a=>{const n=Math.hypot(...a);return a.map(x=>x/n)};
+const add=(a,b)=>a.map((x,i)=>x+b[i]), scale=(a,s)=>a.map(x=>x*s);
+const front=unit(info.front), up=unit(info.up), lateral=unit(cross(up,front));
+let yaw=.22, pitch=.15, zoom=1, center=info.detail_center, span=info.detail_span, orbit=false, drag=null;
+const drawing=[];
+const vs=`#version 300 es
+in vec3 pos;in vec3 rgb;uniform vec3 origin,right,down,forward;uniform vec2 focal;uniform float size;out vec3 color;
+void main(){vec3 d=pos-origin;float z=dot(d,forward);float f=0.99995;gl_Position=vec4(dot(d,right)*focal.x,-dot(d,down)*focal.y,z*f-.002,z);gl_PointSize=size;color=rgb;}`;
+const fs=`#version 300 es
+precision mediump float;in vec3 color;out vec4 pixel;
+void main(){if(length(gl_PointCoord-vec2(.5))>.52) discard;pixel=vec4(color,1.);}`;
+for(const item of info.clouds){
+ const panel=document.createElement('section'), label=document.createElement('label'), canvas=document.createElement('canvas');
+ label.textContent=item.label;panel.append(canvas,label);root.append(panel);
+ const gl=canvas.getContext('webgl2',{antialias:false,preserveDrawingBuffer:true});
+ if(!gl){status.textContent='WebGL 2 is required.';return;}
+ const program=gl.createProgram();
+ for(const [kind,src] of [[gl.VERTEX_SHADER,vs],[gl.FRAGMENT_SHADER,fs]]){
+  const shader=gl.createShader(kind);gl.shaderSource(shader,src);gl.compileShader(shader);
+  if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(shader));
+  gl.attachShader(program,shader);
+ }
+ gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));
+ gl.useProgram(program);const raw=atob(item.data), bytes=new Uint8Array(raw.length);
+ for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
+ const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,bytes,gl.STATIC_DRAW);
+ for(const [n,type,offset,norm] of [['pos',gl.FLOAT,0,false],['rgb',gl.UNSIGNED_BYTE,12,true]]){
+  const loc=gl.getAttribLocation(program,n);gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,type,norm,16,offset);
+ }
+ const uniforms=Object.fromEntries(['origin','right','down','forward','focal','size'].map(n=>[n,gl.getUniformLocation(program,n)]));
+ gl.enable(gl.DEPTH_TEST);gl.clearColor(.048,.070,.105,1);
+ drawing.push({canvas,gl,uniforms,count:item.count});
+}
+function draw(){
+ const dir=add(scale(add(scale(front,Math.cos(yaw)),scale(lateral,Math.sin(yaw))),Math.cos(pitch)),scale(up,Math.sin(pitch)));
+ const eye=add(center,scale(dir,span*zoom)), forward=unit(sub(center,eye)), right=unit(cross(forward,up)), down=unit(cross(forward,right));
+ for(const {canvas,gl,uniforms:u,count} of drawing){
+  const r=canvas.getBoundingClientRect(),pixel=Math.min(2,devicePixelRatio);
+  const w=Math.round(r.width*pixel),h=Math.round(r.height*pixel);
+  if(!w||!h)continue;if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
+  gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  for(const [k,v] of Object.entries({origin:eye,right,down,forward}))gl.uniform3fv(u[k],v);
+  gl.uniform2f(u.focal,1.95*h/w,1.95);gl.uniform1f(u.size,Math.max(1.9,2.25*pixel));gl.drawArrays(gl.POINTS,0,count);
+ }
+ window.myconState={yaw,pitch,zoom,frames:drawing.length};
+}
+root.onpointerdown=e=>{drag=[e.clientX,e.clientY];orbit=false;root.setPointerCapture(e.pointerId)};
+root.onpointermove=e=>{if(!drag)return;yaw+=(e.clientX-drag[0])*.008;pitch=Math.max(-1.45,Math.min(1.45,pitch+(e.clientY-drag[1])*.008));drag=[e.clientX,e.clientY];draw()};
+root.onpointerup=root.onpointercancel=()=>{drag=null};
+root.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(.19,Math.min(8,zoom*Math.exp(e.deltaY*.001)));draw()},{passive:false});
+document.querySelector('#wide').onclick=()=>{center=info.center;span=info.span;zoom=1;draw()};
+document.querySelector('#close').onclick=()=>{center=info.detail_center;span=info.detail_span;zoom=1;draw()};
+document.querySelector('#spin').onclick=()=>{orbit=!orbit;if(orbit)animate()};
+function animate(){if(!orbit)return;yaw+=.012;draw();requestAnimationFrame(animate)}
+window.myconSetOrbit=(a,b)=>{yaw=a;pitch=b;draw()};window.addEventListener('resize',draw);
+draw();window.myconReady=true;
+})();
+</script></html>
