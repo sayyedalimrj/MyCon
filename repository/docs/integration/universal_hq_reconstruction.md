@@ -46,7 +46,7 @@ This release uses a global image graph and overlapping temporal neighbors. It ha
 
 Restart with the same inputs and profile. Pass the same local `--out` directory or an empty workspace with the same persistent mirror. Each completed stage has an immutable receipt with sizes and SHA256 digests. Camera databases are sealed before publication and mapping uses a separate SQLite copy. Dense CPU cache entries are checked individually. An interrupted stage stays under a `.working` or `.interrupted` directory. A completeness label on a stage means it emitted its documented artifacts. The quality report carries the geometry disposition independently. When a digest differs, preserve the directory and restore the known-good checkpoint or choose a fresh output path. Extract all release files before opening `Viewer.html`, including its `frames/` and `tiles/` neighbors.
 
-Read `capture_analysis.json`, `Quality_Report.json`, and the execution log before interpreting coverage. Image reprojection assesses consistency of registered images. It does not establish accuracy or survey scale. PSNR, SSIM, LPIPS, Chamfer, F1, accuracy and completeness require independent references and remain unevaluated in this release.
+Read `capture_analysis.json`, `Quality_Report.json`, and the execution log before interpreting coverage. Image reprojection assesses consistency of registered images. It does not establish accuracy or survey scale. The Fountain sensor-reference comparison below reports geometry distances and coverage for one scene. PSNR, SSIM and LPIPS remain unevaluated. The construction footage has no independent field reference in this release.
 
 ## Method references
 
@@ -70,3 +70,20 @@ Read `capture_analysis.json`, `Quality_Report.json`, and the execution log befor
 | Independent native Rollercoaster MP4 | A separate native video failed the visual structure gate. No model was exported. |
 
 The same-camera comparison uses a checked similarity from the prior SfM world to the historical short reference, fitted on early matching cameras and checked on reserved early cameras. This supports same-view inspection. It does not establish global accuracy or field-scale drift.
+
+
+### Fountain RGB-D reference evaluation
+
+After the independent RGB-only reconstruction, compare it to the public sensor-derived Fountain mesh and trajectory. The similarity is fitted from reference cameras and verified on six reserved reference poses. The position P95 was 0.0151 in reference coordinates and rotation P95 was 1.23°. Depth and camera references were excluded from reconstruction. Thresholds use the supplied reference coordinate units.
+
+| Geometry | Accuracy fraction at 0.05 | Completeness at 0.05 | F1 at 0.05 | Symmetric mean nearest-vertex distance |
+| --- | ---: | ---: | ---: | ---: |
+| Sparse SfM | 0.733 | 0.857 | 0.790 | 0.0707 |
+| Dense CPU stereo | 0.995 | 0.339 | 0.505 | 0.0735 |
+
+Dense stereo has more accurate points in supported areas and misses large parts of the reference. The F1 and distance tables come from the complete supplied mesh vertices. They are independent of the source RGB geometry and are limited to this one benchmark scene.
+
+```bash
+python -m reconstruction.universal.fountain_benchmark /scratch/mycon-run/export \
+  /data/SampleFountainRGBDImages.zip /scratch/Fountain_RGBD_Benchmark.json
+```
