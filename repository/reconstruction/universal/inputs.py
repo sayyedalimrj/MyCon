@@ -159,7 +159,7 @@ def collect(sources, work, profile, progress):
     raw=work/"frames";raw.mkdir()
     rows=[]; reports=[]; group=0; still_index=0
     images_in_group=False
-    for source in sources:
+    for source_number, source in enumerate(sources, 1):
         suffix=source.suffix.lower()
         if suffix in IMAGES:
             with Image.open(source) as img:
@@ -216,7 +216,7 @@ def collect(sources, work, profile, progress):
         # Extracted sidecars and videos are scratch data within the intake stage.
         if suffix==".zip":
             shutil.rmtree(rec)
-        progress(f"intake · source {index+1}/{len(sources)} · {selected} keyframes")
+        progress(f"intake · source {source_number}/{len(sources)} · {selected} keyframes")
     if len(rows)<3:
         raise ValueError("Fewer than three usable views")
     return {"frames": rows,"videos":reports,
