@@ -62,8 +62,9 @@ def main(argv: list[str] | None = None) -> int:
     cli.add_argument("--test-video", type=Path)
     cli.add_argument("--test-capture-id")
     cli.add_argument("--executable", default="colmap")
-    cli.add_argument("--sample-hz", type=float, default=2.)
-    cli.add_argument("--max-frames", type=int, default=64)
+    cli.add_argument("--long-video", action="store_true", help="Disk-backed full video scan, default 8 fps / up to 1200 frames per source")
+    cli.add_argument("--sample-hz", type=float)
+    cli.add_argument("--max-frames", type=int)
     cli.add_argument("--max-image-size", type=int, default=960)
     cli.add_argument("--train-matcher", choices=("sequential", "exhaustive"), default="sequential",
                      help="Exhaustive matching retries fragmented sequential captures under a new run ID")
@@ -73,6 +74,8 @@ def main(argv: list[str] | None = None) -> int:
     cli.add_argument("--attempt-dense", action="store_true", help="Run CUDA PatchMatch and fusion if available")
     args = cli.parse_args(argv)
     run = args.run_dir.resolve()
+    args.sample_hz = args.sample_hz if args.sample_hz is not None else (8. if args.long_video else 2.)
+    args.max_frames = args.max_frames if args.max_frames is not None else (1200 if args.long_video else 64)
     if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,39}", args.review_id)
             or not 0 < args.geometry_threshold < float("inf")):
         cli.error("Invalid review ID or nonpositive/nonfinite geometry threshold")
@@ -86,6 +89,9 @@ def main(argv: list[str] | None = None) -> int:
         cli.error("New reconstruction requires a new run directory. Omit --video to review completed SfM.")
     report = {"schema_version": "mycon.consolidated_pilot.v1", "run_id": run.name,
               "started_at_utc": stamp(), "stages": {},
+              "capture_profile": {"long_video": args.long_video, "sample_hz": args.sample_hz,
+                                  "max_frames_per_video": args.max_frames,
+                                  "quality": "diagnostic_only_not_validated"},
               "field_validation": {"metric": "NOT_EVALUATED", "bim": "NOT_EVALUATED",
                                    "semantic_accuracy": "NOT_EVALUATED",
                                    "physical_progress": None, "progress_state": "unknown",
@@ -101,13 +107,17 @@ def main(argv: list[str] | None = None) -> int:
                                train_session=args.capture_id, test_video=args.test_video,
                                test_session=args.test_capture_id, sample_hz=args.sample_hz,
                                max_frames=args.max_frames, min_blur=35.,
-                               min_mean=25., max_mean=230., max_clip=.38)
+                               min_mean=25., max_mean=230., max_clip=.38,
+                               stream_to_disk=args.long_video)
             stages[step] = {"status": "created", "counts": selected["counts"],
                             "dataset_sha256": sha256(run / "dataset_manifest.json")}
             step = "sfm"
             stages[step] = run_colmap(run, args.executable, execute=True,
                                       train_matcher=args.train_matcher,
                                       feature_image_size=args.feature_image_size)
+            if args.long_video:
+                from .long_video_quality import audit_long_video
+                stages["long_video_coverage"] = audit_long_video(run, args.review_id)
         else:
             step = "sfm"
             execution = run / "colmap/colmap_execution.json"
