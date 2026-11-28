@@ -9,11 +9,10 @@ import shutil
 import cv2
 import numpy as np
 import pycolmap as pc
-from PIL import Image
 import trimesh
 
 from reconstruction.da3_replay import load_ply, ply_write
-from reconstruction.pointcloud_compare import export as comparison, raster, text_panel
+from reconstruction.pointcloud_compare import export as comparison, raster, save_png, text_panel
 from reconstruction.workflow import emit_json
 
 
@@ -24,11 +23,16 @@ def spatial_sample(xyz, target):
     scale=max(float(np.linalg.norm(hi-lo)),1e-8)
     result=None
     a,b=0.,scale
-    for _ in range(22):
+    for _ in range(18):
         dim=(a+b)/2
         if dim<=0:break
         grid=np.floor((xyz-lo)/dim).astype(np.int64)
-        _,ind=np.unique(grid,axis=0,return_index=True)
+        dims=np.floor((hi-lo)/dim).astype(np.int64)+1
+        if np.prod(dims.astype(float)) < 2**61:
+            keys=np.ravel_multi_index(grid.T,tuple(dims))
+            _,ind=np.unique(keys,return_index=True)
+        else:
+            _,ind=np.unique(grid,axis=0,return_index=True)
         if len(ind)<=target:
             result=ind;b=dim
         else:a=dim
@@ -56,14 +60,17 @@ def tile_models(out,xyz,rgb):
     flat=ids.ravel();order=np.argsort(flat,kind="stable");stops=np.r_[0,np.cumsum(np.bincount(flat))]
     tile_dir=out/"tiles";tile_dir.mkdir()
     result=[]
-    for i,key in enumerate(keys):
-        r=order[stops[i]:stops[i+1]]
-        p=xyz[r];color=rgb[r];name=f"tiles/tile_{i:04d}.js"
-        center=(p.min(0)+p.max(0))/2
-        span=float(max(np.linalg.norm(np.ptp(p,axis=0))*2.,.01))
-        item={"count":len(p),"center":center.tolist(),"span":span,"data":data_blob(p,color)}
-        (out/name).write_text("window.myconTile("+json.dumps(name)+","+json.dumps(item)+");")
-        result.append({"label":f"Tile {i+1} · {len(p):,} points","script":name})
+    for i in range(len(keys)):
+        indices=order[stops[i]:stops[i+1]]
+        for offset in range(0,len(indices),150_000):
+            piece=indices[offset:offset+150_000]
+            p=xyz[piece]
+            name=f"tiles/tile_{len(result):04d}.js"
+            center=(p.min(0)+p.max(0))/2
+            span=float(max(np.linalg.norm(np.ptp(p,axis=0))*2.,.01))
+            item={"count":len(p),"center":center.tolist(),"span":span,"data":data_blob(p,rgb[piece])}
+            (out/name).write_text("window.myconTile("+json.dumps(name)+","+json.dumps(item)+");")
+            result.append({"label":f"Tile {len(result)+1} · {len(p):,} points","script":name})
     return result
 
 
@@ -144,7 +151,7 @@ def export(root,work,manifest,sparse_report,dense_report,seconds,say):
         if dense_usable:
             sections.append(text_panel(raster(points,rgb,*args),"Dense candidate"))
         path=view/f"camera_{i:05d}.png"
-        Image.fromarray(np.hstack(sections)).save(path)
+        save_png(path,np.hstack(sections))
         evidence.append({"path":str(path.relative_to(work)),"frame":c["name"],"pts_s":c["pts_s"]})
     report={"status":"dense_visual_candidate" if dense_usable else "sparse_visual_candidate",
             "metric_validated":False,"full_geometry":"Dense.ply" if dense_usable else "Sparse.ply",

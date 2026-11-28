@@ -9,7 +9,6 @@ import subprocess
 
 import cv2
 import numpy as np
-from PIL import Image
 from scipy.spatial.transform import Rotation
 
 from .da3_replay import load_ply
@@ -67,6 +66,16 @@ def text_panel(image,label):
     return np.vstack((top,image))
 
 
+
+def save_png(path, rgb):
+    # Keeping the PNG codec out of the PyCOLMAP process avoids incompatible
+    # native zlib symbols exposed by some Linux wheel combinations.
+    h,w=rgb.shape[:2]
+    subprocess.run(["ffmpeg","-nostdin","-loglevel","error","-f","rawvideo",
+                    "-pix_fmt","rgb24","-s",f"{w}x{h}","-i","-","-frames:v","1",
+                    "-threads","1","-update","1",str(path)],input=rgb.tobytes(),check=True)
+
+
 def export(models,pose_path,out,fps,seconds):
     out.mkdir(parents=True,exist_ok=False)
     clouds=[(name,*load_ply(path)) for name,path in models]
@@ -92,7 +101,7 @@ def export(models,pose_path,out,fps,seconds):
         eye,orientation=orbit(reference_center,reference_span,up,front,angle,.16)
         panels=[text_panel(raster(xyz,rgb,eye,orientation,(600,570),(570,570)),name)
                 for name,xyz,rgb in clouds]
-        Image.fromarray(np.hstack(panels)).save(out/f"same_view_{index}.png")
+        save_png(out/f"same_view_{index}.png",np.hstack(panels))
         details.append({"filename":f"same_view_{index}.png","center":eye.tolist(),
                         "world_to_camera_rotation":orientation.tolist(),"focal_px":[570,570],"size":[600,570]})
     for index,angle in enumerate((.35,1.65),1):
@@ -100,7 +109,7 @@ def export(models,pose_path,out,fps,seconds):
         panels=[text_panel(raster(xyz,rgb,eye,orientation,(600,570),(570,570)),name)
                 for name,xyz,rgb in clouds]
         path=f"overview_{index}.png"
-        Image.fromarray(np.hstack(panels)).save(out/path)
+        save_png(out/path,np.hstack(panels))
         details.append({"filename":path,"center":eye.tolist(),
                         "world_to_camera_rotation":orientation.tolist(),"focal_px":[570,570],"size":[600,570]})
     if seconds:
