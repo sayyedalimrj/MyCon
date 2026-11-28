@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -101,7 +102,8 @@ def _dhash(gray: np.ndarray) -> int:
 
 
 def _video_candidates(video: Path, *, source_id: str, sample_hz: float, min_blur: float,
-                      min_mean: float, max_mean: float, max_clip: float, max_frames: int) -> tuple[list[dict], dict]:
+                      min_mean: float, max_mean: float, max_clip: float, max_frames: int,
+                      spool_dir: Path | None = None) -> tuple[list[dict], dict]:
     import cv2
     if not video.is_file() or video.stat().st_size <= 0:
         raise Blocked(f"Source video absent/empty: {video}")
@@ -115,7 +117,7 @@ def _video_candidates(video: Path, *, source_id: str, sample_hz: float, min_blur
         sampled: list[dict] = []
         prev_hashes: list[int] = []
         idx = 0
-        while len(sampled) < max_frames * 12:
+        while spool_dir is not None or len(sampled) < max_frames * 12:
             ok, bgr = capture.read()
             if not ok:
                 break
@@ -135,11 +137,17 @@ def _video_candidates(video: Path, *, source_id: str, sample_hz: float, min_blur
             if duplicate: reasons.append("near_duplicate")
             if not reasons:
                 prev_hashes.append(dh)
+            spool_path = None
+            if spool_dir is not None and not reasons:
+                spool_path = spool_dir / f"frame_{idx:09d}.png"
+                if not cv2.imwrite(str(spool_path), bgr, [cv2.IMWRITE_PNG_COMPRESSION, 3]):
+                    raise Blocked(f"Could not spool frame {idx}")
             sampled.append({"source": source_id, "frame_index": idx, "timestamp_sec": round(idx / fps, 6),
                             "blur_var": round(blur, 4), "luma_mean": round(mean, 4),
                             "clipped_fraction": round(clipped, 6), "dhash": f"{dh:016x}",
                             "reason": ";".join(reasons) or "candidate", "accepted": not reasons,
-                            "image_bgr": bgr if not reasons else None, "width": int(bgr.shape[1]),
+                            "image_bgr": bgr if not reasons and spool_dir is None else None,
+                            "spool_path": spool_path, "width": int(bgr.shape[1]),
                             "height": int(bgr.shape[0])})
             idx += 1
         return sampled, {"fps": fps, "frames_reported": count, "frames_decoded": idx,
@@ -168,12 +176,30 @@ def _spread_select(rows: list[dict], max_count: int) -> list[dict]:
 def prepare(*, run_root: Path, run_id: str, train_video: Path, train_session: str,
             test_video: Path | None, test_session: str | None, sample_hz: float,
             max_frames: int, min_blur: float, min_mean: float, max_mean: float,
-            max_clip: float, embargo_sec: float = 1.0) -> dict:
+            max_clip: float, embargo_sec: float = 1.0, stream_to_disk: bool = False) -> dict:
+    """Opt-in full-source scanning with disk-backed candidate images for long captures."""
+    kwargs = dict(run_root=run_root, run_id=run_id, train_video=train_video,
+                  train_session=train_session, test_video=test_video, test_session=test_session,
+                  sample_hz=sample_hz, max_frames=max_frames, min_blur=min_blur,
+                  min_mean=min_mean, max_mean=max_mean, max_clip=max_clip, embargo_sec=embargo_sec)
+    if not stream_to_disk:
+        return _prepare_impl(**kwargs)
+    run_root.mkdir(parents=True, exist_ok=True)
+    if (run_root / run_id).exists():
+        raise Blocked("New run required; refusing to overwrite existing data")
+    with tempfile.TemporaryDirectory(prefix="mycon-candidates-", dir=run_root) as tmp:
+        return _prepare_impl(**kwargs, spool_root=Path(tmp))
+
+
+def _prepare_impl(*, run_root: Path, run_id: str, train_video: Path, train_session: str,
+            test_video: Path | None, test_session: str | None, sample_hz: float,
+            max_frames: int, min_blur: float, min_mean: float, max_mean: float,
+            max_clip: float, embargo_sec: float = 1.0, spool_root: Path | None = None) -> dict:
     if not RUN_PATTERN.fullmatch(run_id):
         raise Blocked("Run ID must be unique and match recon-... (min 4-character suffix)")
     if not re.fullmatch(r"[A-Za-z0-9_-]{2,70}", train_session):
         raise Blocked("Invalid capture_session_id")
-    if test_video and (not test_session or test_session == train_session):
+    if test_video and (not test_session or test_session == train_session or not re.fullmatch(r"[A-Za-z0-9_-]{2,70}", test_session)):
         raise Blocked("Independent test video needs a distinct session ID")
     if test_video and train_video.resolve() == test_video.resolve():
         raise Blocked("Train and test video cannot be the same file under different session IDs")
@@ -182,10 +208,17 @@ def prepare(*, run_root: Path, run_id: str, train_video: Path, train_session: st
     inputs = [(train_video, train_session), *(([(test_video, test_session)] if test_video else []))]
     candidates = {}
     source_stats = {}
-    for v, session in inputs:
+    for source_index, (v, session) in enumerate(inputs):
+        spool_kwargs = {}
+        if spool_root is not None:
+            spool_dir = spool_root / str(source_index)
+            spool_dir.mkdir()
+            spool_kwargs["spool_dir"] = spool_dir
         a, stat = _video_candidates(v, source_id=session, sample_hz=sample_hz, min_blur=min_blur,
                                     min_mean=min_mean, max_mean=max_mean, max_clip=max_clip,
-                                    max_frames=max_frames)
+                                    max_frames=max_frames, **spool_kwargs)
+        if spool_root is not None and stat["frames_decoded"] < stat["frames_reported"] - 1:
+            raise Blocked(f"Source decode incomplete: {session}: {stat['frames_decoded']}/{stat['frames_reported']}")
         candidates[session] = a
         source_stats[session] = {"video_parent_external": str(v.resolve().parent),
                                  "video_relpath": v.name, **stat}
@@ -234,7 +267,9 @@ def prepare(*, run_root: Path, run_id: str, train_video: Path, train_session: st
                 fname = f"{session}_{item['frame_index']:08d}.png"
                 path = run_dir / "images" / session / fname
                 import cv2
-                if not cv2.imwrite(str(path), item["image_bgr"], [cv2.IMWRITE_PNG_COMPRESSION, 3]):
+                if item.get("spool_path") is not None:
+                    shutil.copyfile(item["spool_path"], path)
+                elif not cv2.imwrite(str(path), item["image_bgr"], [cv2.IMWRITE_PNG_COMPRESSION, 3]):
                     raise Blocked(f"PNG write failed: {path}")
                 frames.append({"view_id": fname[:-4], "capture_session_id": session,
                                "source_frame_index": item["frame_index"], "timestamp_sec": item["timestamp_sec"],
@@ -260,7 +295,7 @@ def prepare(*, run_root: Path, run_id: str, train_video: Path, train_session: st
                     "train_list_sha256": sha256(run_dir / "train_image_names.txt"),
                     "selection_parameters": {"sample_hz": sample_hz, "max_frames_per_video": max_frames,
                       "min_blur": min_blur, "min_mean": min_mean, "max_mean": max_mean,
-                      "max_clip": max_clip, "embargo_sec": embargo_sec}, "frames": frames,
+                      "max_clip": max_clip, "embargo_sec": embargo_sec, "disk_backed_full_scan": spool_root is not None}, "frames": frames,
                     "counts": {"train": len(train), "test": len(test), "sampled": sum(len(x) for x in candidates.values()),
                                "rejected": sum(len(x) for x in candidates.values())-len(frames)},
                     "provenance": {"selector": "opencv_laplacian_luma_dhash_temporal_coverage_v1",
@@ -715,6 +750,7 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--max-mean", type=float, default=230.)
     a.add_argument("--max-clip", type=float, default=.38)
     a.add_argument("--embargo-sec", type=float, default=1.)
+    a.add_argument("--stream-to-disk", action="store_true", help="Scan full source with disk-backed candidate images")
     b = subs.add_parser("colmap", help="Dry-run by default; execute fresh train-only mapper and test localization")
     b.add_argument("--run-dir", type=Path, required=True)
     b.add_argument("--executable", default="colmap")
@@ -740,7 +776,7 @@ def main(argv: list[str] | None = None) -> int:
                           train_session=opts.train_session, test_video=opts.test_video, test_session=opts.test_session,
                           sample_hz=opts.sample_hz, max_frames=opts.max_frames, min_blur=opts.min_blur,
                           min_mean=opts.min_mean, max_mean=opts.max_mean, max_clip=opts.max_clip,
-                          embargo_sec=opts.embargo_sec)
+                          embargo_sec=opts.embargo_sec, stream_to_disk=opts.stream_to_disk)
         elif opts.action == "colmap":
             res = run_colmap(opts.run_dir, opts.executable, execute=opts.execute_colmap,
                              train_matcher=opts.train_matcher, feature_image_size=opts.feature_image_size)
