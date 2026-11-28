@@ -7,7 +7,10 @@ h1{font-size:18px;margin:0 0 5px}p{margin:0;color:#b9c5d6}button{background:#202
 main{position:relative;display:grid;grid-template-columns:repeat(var(--n), minmax(0,1fr));height:calc(100dvh - 115px);min-height:480px;touch-action:none}
 section{position:relative;min-width:0;border-right:1px solid #263144}canvas{width:100%;height:100%;display:block}
 label{position:absolute;top:12px;left:12px;pointer-events:none;background:#182438e8;border:1px solid #435671;padding:5px 9px;border-radius:4px}
-footer{padding:8px 22px;color:#aebcd0}#msg{color:#f3c780}
+footer{padding:8px 22px;color:#aebcd0}select,input{background:#202f43;color:#e9eef4}
+#inspector{position:absolute;right:14px;bottom:16px;z-index:2;background:#172638ee;padding:10px;border-radius:7px;width:min(200px,36vw)}
+#inspector img{max-width:100%;max-height:175px;display:block;margin:auto}
+#inspector canvas{height:72px;width:100%}#msg{color:#f3c780}
 </style>
 <header><div><h1>MyCON · Same-view reconstruction review</h1><p>Shared camera · original colors · nonmetric geometry</p></div><nav><button id="wide">Overview</button><button id="close">Short-reference crop</button><button id="spin">Orbit</button></nav></header>
 <main id="models"></main><footer>Drag to rotate both views. Scroll to zoom. <span id="msg" role="status"></span></footer>
@@ -19,11 +22,11 @@ root.style.setProperty('--n',info.clouds.length);
 const sub=(a,b)=>a.map((x,i)=>x-b[i]), cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]], unit=a=>{const n=Math.hypot(...a);return a.map(x=>x/n)};
 const add=(a,b)=>a.map((x,i)=>x+b[i]), scale=(a,s)=>a.map(x=>x*s);
 const front=unit(info.front), up=unit(info.up), lateral=unit(cross(up,front));
-let yaw=.22, pitch=.15, zoom=1, center=info.detail_center, span=info.detail_span, orbit=false, drag=null;
+let yaw=.22, pitch=.15, zoom=1, pointSize=2.25, cut=0, fixedCamera=null, center=info.detail_center, span=info.detail_span, orbit=false, drag=null;
 const drawing=[];
 const vs=`#version 300 es
-in vec3 pos;in vec3 rgb;uniform vec3 origin,right,down,forward;uniform vec2 focal;uniform float size;out vec3 color;
-void main(){vec3 d=pos-origin;float z=dot(d,forward);float f=0.99995;gl_Position=vec4(dot(d,right)*focal.x,-dot(d,down)*focal.y,z*f-.002,z);gl_PointSize=size;color=rgb;}`;
+in vec3 pos;in vec3 rgb;uniform vec3 origin,right,down,forward;uniform vec2 focal;uniform float size;uniform float cutX;out vec3 color;
+void main(){if(pos.x>cutX){gl_Position=vec4(3.,3.,3.,1.);gl_PointSize=0.;return;}vec3 d=pos-origin;float z=dot(d,forward);float f=0.99995;gl_Position=vec4(dot(d,right)*focal.x,-dot(d,down)*focal.y,z*f-.002,z);gl_PointSize=size;color=rgb;}`;
 const fs=`#version 300 es
 precision mediump float;in vec3 color;out vec4 pixel;
 void main(){if(length(gl_PointCoord-vec2(.5))>.52) discard;pixel=vec4(color,1.);}`;
@@ -45,32 +48,71 @@ for(const item of info.clouds){
  for(const [n,type,offset,norm] of [['pos',gl.FLOAT,0,false],['rgb',gl.UNSIGNED_BYTE,12,true]]){
   const loc=gl.getAttribLocation(program,n);gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,type,norm,16,offset);
  }
- const uniforms=Object.fromEntries(['origin','right','down','forward','focal','size'].map(n=>[n,gl.getUniformLocation(program,n)]));
+ const uniforms=Object.fromEntries(['origin','right','down','forward','focal','size','cutX'].map(n=>[n,gl.getUniformLocation(program,n)]));
  gl.enable(gl.DEPTH_TEST);gl.clearColor(.048,.070,.105,1);
- drawing.push({canvas,gl,uniforms,count:item.count});
+ drawing.push({canvas,gl,uniforms,buffer,count:item.count,initial:item});
 }
 function draw(){
  const dir=add(scale(add(scale(front,Math.cos(yaw)),scale(lateral,Math.sin(yaw))),Math.cos(pitch)),scale(up,Math.sin(pitch)));
- const eye=add(center,scale(dir,span*zoom)), forward=unit(sub(center,eye)), right=unit(cross(forward,up)), down=unit(cross(forward,right));
+ const eye=fixedCamera?.eye||add(center,scale(dir,span*zoom));
+ const forward=fixedCamera?.axes?.[2]||unit(sub(center,eye)), right=fixedCamera?.axes?.[0]||unit(cross(forward,up)), down=fixedCamera?.axes?.[1]||unit(cross(forward,right));
  for(const {canvas,gl,uniforms:u,count} of drawing){
   const r=canvas.getBoundingClientRect(),pixel=Math.min(2,devicePixelRatio);
   const w=Math.round(r.width*pixel),h=Math.round(r.height*pixel);
   if(!w||!h)continue;if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
   gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   for(const [k,v] of Object.entries({origin:eye,right,down,forward}))gl.uniform3fv(u[k],v);
-  gl.uniform2f(u.focal,1.95*h/w,1.95);gl.uniform1f(u.size,Math.max(1.9,2.25*pixel));gl.drawArrays(gl.POINTS,0,count);
+  gl.uniform2f(u.focal,1.95*h/w,1.95);gl.uniform1f(u.size,pointSize*pixel);gl.uniform1f(u.cutX,cut?center[0]+span*(1-2*cut):3.4028e38);gl.drawArrays(gl.POINTS,0,count);
  }
  window.myconState={yaw,pitch,zoom,frames:drawing.length};
 }
-root.onpointerdown=e=>{drag=[e.clientX,e.clientY];orbit=false;root.setPointerCapture(e.pointerId)};
+root.onpointerdown=e=>{drag=[e.clientX,e.clientY];orbit=false;fixedCamera=null;root.setPointerCapture(e.pointerId)};
 root.onpointermove=e=>{if(!drag)return;yaw+=(e.clientX-drag[0])*.008;pitch=Math.max(-1.45,Math.min(1.45,pitch+(e.clientY-drag[1])*.008));drag=[e.clientX,e.clientY];draw()};
 root.onpointerup=root.onpointercancel=()=>{drag=null};
 root.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(.19,Math.min(8,zoom*Math.exp(e.deltaY*.001)));draw()},{passive:false});
-document.querySelector('#wide').onclick=()=>{center=info.center;span=info.span;zoom=1;draw()};
-document.querySelector('#close').onclick=()=>{center=info.detail_center;span=info.detail_span;zoom=1;draw()};
-document.querySelector('#spin').onclick=()=>{orbit=!orbit;if(orbit)animate()};
+document.querySelector('#wide').onclick=()=>{fixedCamera=null;center=info.center;span=info.span;zoom=1;draw()};
+document.querySelector('#close').onclick=()=>{fixedCamera=null;center=info.detail_center;span=info.detail_span;zoom=1;draw()};
+document.querySelector('#spin').onclick=()=>{fixedCamera=null;orbit=!orbit;if(orbit)animate()};
 function animate(){if(!orbit)return;yaw+=.012;draw();requestAnimationFrame(animate)}
 window.myconSetOrbit=(a,b)=>{yaw=a;pitch=b;draw()};window.addEventListener('resize',draw);
+if(info.inspection){
+ const panel=document.createElement('aside');panel.id='inspector';root.append(panel);
+ panel.addEventListener('pointerdown',e=>e.stopPropagation());
+ const selector=document.createElement('select'), photo=document.createElement('img');
+ photo.alt='Original registered frame';panel.append(selector,photo);
+ const blank=document.createElement('option');blank.textContent='Camera frames';blank.value='';selector.append(blank);
+ const cams=info.inspection.cameras;
+ cams.forEach((c,i)=>{const o=document.createElement('option');o.value=String(i);o.textContent=c.label;selector.append(o)});
+ selector.onchange=()=>{if(selector.value==='')return;const c=cams[Number(selector.value)];photo.src=c.photo;fixedCamera=c;draw()};
+ const path=document.createElement('canvas');path.width=180;path.height=72;panel.append(path);
+ const context=path.getContext('2d');
+ const coordinates=cams.map(c=>[c.eye[0],c.eye[2]]), lo=[Math.min(...coordinates.map(c=>c[0])),Math.min(...coordinates.map(c=>c[1]))];
+ const hi=[Math.max(...coordinates.map(c=>c[0])),Math.max(...coordinates.map(c=>c[1]))];
+ const screen=coordinates.map(c=>[8+164*(c[0]-lo[0])/Math.max(hi[0]-lo[0],.0001),8+56*(c[1]-lo[1])/Math.max(hi[1]-lo[1],.0001)]);
+ context.fillStyle='#8296aa';context.font='9px system-ui';context.fillText('Camera path · X/Z',2,9);
+ context.strokeStyle='#58b7fd';context.beginPath();screen.forEach(([x,y],i)=>i?context.lineTo(x,y):context.moveTo(x,y));context.stroke();
+ path.onclick=e=>{const r=path.getBoundingClientRect(), x=(e.clientX-r.x)*180/r.width,y=(e.clientY-r.y)*72/r.height;
+   let closest=0,best=Infinity;screen.forEach(([a,b],i)=>{let d=Math.hypot(x-a,y-b);if(d<best){best=d;closest=i}});
+   selector.value=String(closest);selector.onchange();
+ };
+ const nav=document.querySelector('nav'), knob=(name,min,max,value,handler)=>{
+   const label=document.createElement('span'), input=document.createElement('input');label.textContent=name;
+   input.type='range';input.min=min;input.max=max;input.step='.1';input.value=value;input.oninput=()=>{handler(Number(input.value));draw()};
+   label.append(input);nav.append(label);
+ };
+ knob('Points',1,7,pointSize,v=>pointSize=v);
+ knob('Section',0,1,0,v=>cut=v);
+ if(info.inspection.tiles?.length){
+   const choose=document.createElement('select'), o=document.createElement('option');o.textContent='Lite overview';o.value='';choose.append(o);nav.append(choose);
+   info.inspection.tiles.forEach(t=>{const opt=document.createElement('option');opt.textContent=t.label;opt.value=t.script;choose.append(opt)});
+   let pending=null;
+   const uploadTile=(item)=>{const d=drawing[drawing.length-1],gl=d.gl,b=atob(item.data), bytes=new Uint8Array(b.length);
+       for(let i=0;i<b.length;i++)bytes[i]=b.charCodeAt(i);gl.bindBuffer(gl.ARRAY_BUFFER,d.buffer);gl.bufferData(gl.ARRAY_BUFFER,bytes,gl.STATIC_DRAW);d.count=item.count;
+       if(item.center){fixedCamera=null;center=item.center;span=item.span;zoom=1;}draw();};
+   window.myconTile=(id,item)=>{if(id===choose.value)uploadTile(item)};
+   choose.onchange=()=>{if(pending)pending.remove();if(!choose.value){uploadTile(drawing[drawing.length-1].initial);return;}pending=document.createElement('script');pending.src=choose.value;document.body.append(pending)};
+ }
+}
 draw();window.myconReady=true;
 })();
 </script></html>

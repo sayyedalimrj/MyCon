@@ -221,7 +221,22 @@ def optimize(cache,matching,sfm_to_short,prior,hz,keep_through):
     ini=np.zeros(7*len(location));lo=np.tile([-.7,-.5,-.5,-.5,-extent,-extent,-extent],len(location))
     opt=least_squares(residual,ini,bounds=(lo,-lo),jac_sparsity=structure.tocsr(),
                       loss="soft_l1",f_scale=1.5,max_nfev=50)
-    new=deltas(opt.x)
+    # Select by overlap evidence only. Reserved camera errors are evaluated
+    # once after selecting a surface-safe correction.
+    def seam_errors(changes):
+        return np.array([np.quantile(np.linalg.norm(changes[i](a)-changes[j](b),axis=1),.95)
+                         for i,j,a,b in cloud])
+
+    unadjusted=seam_errors(deltas(ini))
+    seam_cap=float(np.quantile(unadjusted,.95))
+    fraction=0.
+    exposed_change=seam_errors(deltas(opt.x))
+    for alpha in (1.,.75,.5,.25,.125,.0625,.03125):
+        candidate=seam_errors(deltas(alpha*opt.x))
+        if np.quantile(candidate,.95)<=seam_cap+1e-10 and np.max(candidate)<=np.max(unadjusted)+1e-10:
+            fraction=alpha
+            break
+    new=deltas(fraction*opt.x)
     before=np.array([np.linalg.norm(a-b) for _,a,b,_,_ in reserved])
     after=np.array([np.linalg.norm(new[j](a)-b) for j,a,b,_,_ in reserved])
     seams=[]
@@ -235,9 +250,12 @@ def optimize(cache,matching,sfm_to_short,prior,hz,keep_through):
             "before_reserved_p95":float(np.quantile(before,.95)),"after_reserved_p95":float(np.quantile(after,.95)),
             "overlap_p95_before":float(np.quantile(old_seam,.95)),"overlap_p95_after":float(np.quantile(new_seam,.95)),
             "source_units":"short DA3 world, no independent metric scale",
+            "seam_safe_update_fraction":fraction,"unrestricted_overlap_p95":float(np.quantile(exposed_change,.95)),
+            "surface_gate":"No increase in overlap P95 or worst edge; choose using overlap before checking cameras.",
             "window_seams":seams,"windows_with_colmap_views":chunks}
-    accepted=(np.median(after)<.85*np.median(before) and np.quantile(after,.95)<np.quantile(before,.95) and
-              np.quantile(new_seam,.95)<=max(2.5*np.quantile(old_seam,.95),.025*extent))
+    accepted=(fraction>0 and np.median(after)<.85*np.median(before) and
+              np.quantile(after,.95)<np.quantile(before,.95) and
+              np.quantile(new_seam,.95)<=np.quantile(old_seam,.95)+1e-10)
     result["status"]="accepted_for_exploratory_render" if accepted else "withheld_due_to_pose_or_overlap_gate"
     return [compose(d,T) for d,T in zip(new,prior)],result
 

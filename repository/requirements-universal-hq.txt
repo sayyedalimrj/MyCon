@@ -1,0 +1,6 @@
+# Linux Python 3.11/3.12. Install exactly one PyCOLMAP wheel separately.
+numpy==1.26.4
+scipy==1.17.1
+Pillow==13.0.0
+opencv-python-headless==4.11.0.86
+trimesh==5.2.2
