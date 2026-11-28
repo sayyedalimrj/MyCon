@@ -9,6 +9,7 @@ import subprocess
 
 import cv2
 import numpy as np
+from PIL import Image
 from scipy.spatial.transform import Rotation
 
 from .da3_replay import load_ply
@@ -91,7 +92,7 @@ def export(models,pose_path,out,fps,seconds):
         eye,orientation=orbit(reference_center,reference_span,up,front,angle,.16)
         panels=[text_panel(raster(xyz,rgb,eye,orientation,(600,570),(570,570)),name)
                 for name,xyz,rgb in clouds]
-        cv2.imwrite(str(out/f"same_view_{index}.png"),cv2.cvtColor(np.hstack(panels),cv2.COLOR_RGB2BGR))
+        Image.fromarray(np.hstack(panels)).save(out/f"same_view_{index}.png")
         details.append({"filename":f"same_view_{index}.png","center":eye.tolist(),
                         "world_to_camera_rotation":orientation.tolist(),"focal_px":[570,570],"size":[600,570]})
     for index,angle in enumerate((.35,1.65),1):
@@ -99,7 +100,7 @@ def export(models,pose_path,out,fps,seconds):
         panels=[text_panel(raster(xyz,rgb,eye,orientation,(600,570),(570,570)),name)
                 for name,xyz,rgb in clouds]
         path=f"overview_{index}.png"
-        cv2.imwrite(str(out/path),cv2.cvtColor(np.hstack(panels),cv2.COLOR_RGB2BGR))
+        Image.fromarray(np.hstack(panels)).save(out/path)
         details.append({"filename":path,"center":eye.tolist(),
                         "world_to_camera_rotation":orientation.tolist(),"focal_px":[570,570],"size":[600,570]})
     if seconds:

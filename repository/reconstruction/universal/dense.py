@@ -5,6 +5,8 @@ from collections import defaultdict
 import json
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 
 import cv2
 import numpy as np
@@ -308,10 +310,19 @@ def cuda_stereo(space,work,config,say):
         shutil.copytree(space,target)
         try:
             say(f"CUDA PatchMatch attempt · max side {size}px")
-            pc.patch_match_stereo(target,options=pc.PatchMatchOptions(
-                   max_image_size=size,geom_consistency=True,gpu_index="0"))
             target_ply=work/"Dense.ply"
-            pc.stereo_fusion(target_ply,target,input_type="geometric")
+            # The native CUDA backend can abort the interpreter on device errors.
+            # Isolate it so the CPU fallback and valid stage checkpoints survive.
+            worker = (
+                "import sys, pycolmap as pc; "
+                "pc.patch_match_stereo(sys.argv[1], options=pc.PatchMatchOptions("
+                "max_image_size=int(sys.argv[3]), geom_consistency=True, gpu_index='0')); "
+                "pc.stereo_fusion(sys.argv[2], sys.argv[1], input_type='geometric')"
+            )
+            log=work/f"cuda_{size}.log"
+            with log.open("w") as stream:
+                subprocess.run([sys.executable,"-c",worker,str(target),str(target_ply),str(size)],
+                               stdout=stream,stderr=subprocess.STDOUT,check=True)
             from reconstruction.da3_replay import load_ply
             xyz,_=load_ply(target_ply)
             if len(xyz)<1000 or not np.isfinite(xyz).all():
@@ -320,7 +331,7 @@ def cuda_stereo(space,work,config,say):
             shutil.rmtree(target)
             return {"status":"dense_candidate","engine":"CUDA COLMAP PatchMatch + geometric fusion",
                     "vertices":len(xyz),"max_side_px":size,"previous_attempts":errors,"metric_validated":False}
-        except (RuntimeError,OSError,ValueError) as exc:
+        except (RuntimeError,OSError,ValueError,subprocess.CalledProcessError) as exc:
             errors.append({"max_side_px":size,"error":str(exc)})
             shutil.rmtree(target,ignore_errors=True)
             if (work/"Dense.ply").is_file():

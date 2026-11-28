@@ -9,6 +9,7 @@ import shutil
 import cv2
 import numpy as np
 import pycolmap as pc
+from PIL import Image
 import trimesh
 
 from reconstruction.da3_replay import load_ply, ply_write
@@ -143,7 +144,7 @@ def export(root,work,manifest,sparse_report,dense_report,seconds,say):
         if dense_usable:
             sections.append(text_panel(raster(points,rgb,*args),"Dense candidate"))
         path=view/f"camera_{i:05d}.png"
-        cv2.imwrite(str(path),cv2.cvtColor(np.hstack(sections),cv2.COLOR_RGB2BGR))
+        Image.fromarray(np.hstack(sections)).save(path)
         evidence.append({"path":str(path.relative_to(work)),"frame":c["name"],"pts_s":c["pts_s"]})
     report={"status":"dense_visual_candidate" if dense_usable else "sparse_visual_candidate",
             "metric_validated":False,"full_geometry":"Dense.ply" if dense_usable else "Sparse.ply",
